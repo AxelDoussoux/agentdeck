@@ -7,7 +7,7 @@ in one place, and shows your session history and costs.
 Runs on Windows, macOS and Linux. Nothing leaves your machine.
 
 > Early development. Today AgentDeck lists the agents installed on your
-> machine and the MCP servers each one declares (read-only).
+> machine and lets you add, remove and copy MCP servers between them.
 
 ## Layout
 
@@ -30,6 +30,17 @@ cargo run -p agentdeck-cli -- mcp list  # CLI
 cargo test --workspace
 ```
 
+## CLI
+
+```sh
+agentdeck agents
+agentdeck mcp list [--json]
+agentdeck mcp add claude-code github -e GITHUB_TOKEN=ghp_x -- npx -y @modelcontextprotocol/server-github
+agentdeck mcp add cursor linear --url https://mcp.linear.app/mcp
+agentdeck mcp copy github --from claude-code --to codex gemini
+agentdeck mcp remove codex github
+```
+
 ## Config files read
 
 | Agent | MCP servers |
@@ -39,7 +50,13 @@ cargo test --workspace
 | Cursor | `~/.cursor/mcp.json` |
 | Gemini CLI | `~/.gemini/settings.json` |
 
-Environment values of MCP servers are never displayed, only their names.
+Environment and header values of MCP servers are never displayed, only
+their names. When copying a server between agents, secrets are copied by the
+Rust core and never reach the UI.
+
+Before changing a config file, AgentDeck saves the previous version next to
+it as `<file>.agentdeck.bak` and writes the new one atomically. Other settings,
+key order and TOML comments are kept.
 
 ## License
 

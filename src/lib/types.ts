@@ -11,16 +11,24 @@ export interface AgentInfo {
 
 export type Transport =
   | { kind: "stdio"; command: string; args: string[] }
-  | { kind: "http"; url: string };
+  | { kind: "http"; url: string }
+  | { kind: "sse"; url: string };
 
 export interface McpServer {
   agent: Agent;
   name: string;
   transport: Transport;
   envKeys: string[];
+  headerKeys: string[];
 }
 
 export interface McpListing {
   servers: McpServer[];
   errors: string[];
+}
+
+export interface ServerSpec {
+  transport: Transport;
+  env: Record<string, string>;
+  headers: Record<string, string>;
 }
