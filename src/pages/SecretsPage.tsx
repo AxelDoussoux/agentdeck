@@ -53,9 +53,9 @@ export function SecretsPage({ agents }: { agents: AgentInfo[] }) {
 
       {listing && !listing.launcher && (
         <p className="warning">
-          Moving secrets to the keychain needs the <code>agentdeck</code> command-line tool, which
-          was not found. Install it with <code>cargo install --path crates/agentdeck-cli</code> and
-          keep it where it is: protected servers start through it.
+          Moving secrets to the keychain needs the <code>agentdeck</code> command-line tool that
+          ships with AgentDeck, and it was not found next to the app. Reinstall AgentDeck, or
+          install the tool with <code>cargo install --path crates/agentdeck-cli</code>.
         </p>
       )}
       {listing?.errors.map((text) => (
