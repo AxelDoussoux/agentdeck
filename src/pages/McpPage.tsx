@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { AgentMark, Empty, Icon, Notice, PageHeader } from "../components/ui";
 import { addMcpServer, copyMcpServer, removeMcpServer } from "../lib/api";
 import type { Agent, AgentInfo, McpListing, McpServer, ServerSpec, Transport } from "../lib/types";
 
@@ -9,7 +10,7 @@ function describe(transport: Transport): string {
     case "http":
       return transport.url;
     case "sse":
-      return `${transport.url} (SSE)`;
+      return transport.url;
   }
 }
 
@@ -22,6 +23,7 @@ interface Props {
 export function McpPage({ agents, listing, onChange }: Props) {
   const [error, setError] = useState<string | null>(null);
   const [pendingRemoval, setPendingRemoval] = useState<string | null>(null);
+  const [adding, setAdding] = useState(false);
 
   // One row per server name, one column per agent.
   const rows = new Map<string, Map<Agent, McpServer>>();
@@ -30,90 +32,133 @@ export function McpPage({ agents, listing, onChange }: Props) {
     rows.get(server.name)!.set(server.agent, server);
   }
 
-  async function run(action: () => Promise<void>) {
+  async function run(action: () => Promise<void>): Promise<boolean> {
+    let ok = true;
     try {
       await action();
       setError(null);
     } catch (err) {
       setError(String(err));
+      ok = false;
     }
     setPendingRemoval(null);
     await onChange();
+    return ok;
   }
 
   return (
     <>
-      <h2>MCP servers</h2>
+      <PageHeader
+        title="MCP servers"
+        description="Each row is a server, each column an agent. Add a server to another agent in one click: its settings and secrets are copied for you."
+        actions={
+          <button className="primary" onClick={() => setAdding(!adding)}>
+            <Icon name="plus" /> Add server
+          </button>
+        }
+      />
       {[...listing.errors, ...(error ? [error] : [])].map((message) => (
-        <p key={message} className="error">{message}</p>
+        <Notice key={message} tone="error">{message}</Notice>
       ))}
 
-      {rows.size === 0 ? (
-        <p className="empty">No MCP server configured yet.</p>
-      ) : (
-        <table className="matrix">
-          <thead>
-            <tr>
-              <th>Server</th>
-              {agents.map((info) => (
-                <th key={info.agent}>{info.name}</th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            {[...rows].map(([name, byAgent]) => {
-              const [source] = byAgent.values();
-              return (
-                <tr key={name}>
-                  <td className="server">
-                    <strong>{name}</strong>
-                    <code>{describe(source.transport)}</code>
-                    {source.envKeys.length + source.headerKeys.length > 0 && (
-                      <small>Secrets: {[...source.envKeys, ...source.headerKeys].join(", ")}</small>
-                    )}
-                  </td>
-                  {agents.map(({ agent }) => {
-                    const key = `${agent}/${name}`;
-                    if (byAgent.has(agent)) {
-                      return (
-                        <td key={agent} className="present">
-                          {pendingRemoval === key ? (
-                            <button
-                              className="danger"
-                              onClick={() => run(() => removeMcpServer(agent, name))}
-                            >
-                              Remove?
-                            </button>
-                          ) : (
-                            <button title="Click to remove" onClick={() => setPendingRemoval(key)}>
-                              ✓ Installed
-                            </button>
-                          )}
-                        </td>
-                      );
-                    }
-                    const unsupported = agent === "codex" && source.transport.kind === "sse";
-                    return (
-                      <td key={agent}>
-                        <button
-                          className="ghost"
-                          disabled={unsupported}
-                          title={unsupported ? "Codex does not support SSE servers" : undefined}
-                          onClick={() => run(() => copyMcpServer(name, source.agent, agent))}
-                        >
-                          + Add here
-                        </button>
-                      </td>
-                    );
-                  })}
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
+      {adding && (
+        <AddServerForm
+          agents={agents}
+          onCancel={() => setAdding(false)}
+          onAdd={async (agent, name, spec) => {
+            if (await run(() => addMcpServer(agent, name, spec))) setAdding(false);
+          }}
+        />
       )}
 
-      <AddServerForm agents={agents} onAdd={(agent, name, spec) => run(() => addMcpServer(agent, name, spec))} />
+      {rows.size === 0 ? (
+        <Empty icon="plug" title="No MCP server configured yet">
+          Add one above, or install one in any agent: it shows up here.
+        </Empty>
+      ) : (
+        <div className="table-card">
+          <table className="matrix">
+            <thead>
+              <tr>
+                <th>Server</th>
+                {agents.map((info) => (
+                  <th key={info.agent} className="agent-col">
+                    <span className="th-agent">
+                      <AgentMark agent={info.agent} size={20} />
+                      {info.name}
+                    </span>
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {[...rows].map(([name, byAgent]) => {
+                const [source] = byAgent.values();
+                const secretKeys = [...source.envKeys, ...source.headerKeys];
+                return (
+                  <tr key={name}>
+                    <td className="server">
+                      <strong>{name}</strong>
+                      <span className="meta">
+                        <span className="tag">{source.transport.kind}</span>
+                        <code title={describe(source.transport)}>{describe(source.transport)}</code>
+                      </span>
+                      {secretKeys.length > 0 && (
+                        <small>
+                          <Icon name="key" size={12} /> {secretKeys.join(", ")}
+                        </small>
+                      )}
+                    </td>
+                    {agents.map(({ agent }) => {
+                      const key = `${agent}/${name}`;
+                      if (byAgent.has(agent)) {
+                        return (
+                          <td key={agent} className="agent-col">
+                            {pendingRemoval === key ? (
+                              <span className="confirm">
+                                <button
+                                  className="danger small"
+                                  onClick={() => run(() => removeMcpServer(agent, name))}
+                                >
+                                  Remove
+                                </button>
+                                <button className="small" onClick={() => setPendingRemoval(null)}>
+                                  Keep
+                                </button>
+                              </span>
+                            ) : (
+                              <button
+                                className="cell-on"
+                                title="Installed. Click to remove"
+                                onClick={() => setPendingRemoval(key)}
+                              >
+                                <Icon name="check" size={14} /> Installed
+                              </button>
+                            )}
+                          </td>
+                        );
+                      }
+                      const unsupported = agent === "codex" && source.transport.kind === "sse";
+                      return (
+                        <td key={agent} className="agent-col">
+                          <button
+                            className="cell-add"
+                            disabled={unsupported}
+                            title={unsupported ? "Codex does not support SSE servers" : `Copy ${name} to this agent`}
+                            onClick={() => run(() => copyMcpServer(name, source.agent, agent))}
+                          >
+                            <Icon name="plus" size={14} /> Add
+                          </button>
+                        </td>
+                      );
+                    })}
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
     </>
   );
 }
@@ -130,9 +175,10 @@ function parsePairs(text: string): Record<string, string> {
 interface FormProps {
   agents: AgentInfo[];
   onAdd: (agent: Agent, name: string, spec: ServerSpec) => Promise<void>;
+  onCancel: () => void;
 }
 
-function AddServerForm({ agents, onAdd }: FormProps) {
+function AddServerForm({ agents, onAdd, onCancel }: FormProps) {
   const [agent, setAgent] = useState<Agent>("claude-code");
   const [name, setName] = useState("");
   const [kind, setKind] = useState<Transport["kind"]>("stdio");
@@ -145,19 +191,17 @@ function AddServerForm({ agents, onAdd }: FormProps) {
     const transport: Transport =
       kind === "stdio" ? { kind, command, args } : { kind, url: target.trim() };
     const pairs = parsePairs(secrets);
+    // The form closes on success and keeps its fields on failure.
     await onAdd(agent, name.trim(), {
       transport,
       env: kind === "stdio" ? pairs : {},
       headers: kind === "stdio" ? {} : pairs,
     });
-    setName("");
-    setTarget("");
-    setSecrets("");
   }
 
   return (
-    <form className="add-server" onSubmit={submit}>
-      <h3>Add a server</h3>
+    <form className="card form" onSubmit={submit}>
+      <h3>New MCP server</h3>
       <div className="fields">
         <label>
           Agent
@@ -190,10 +234,13 @@ function AddServerForm({ agents, onAdd }: FormProps) {
         />
       </label>
       <label>
-        {kind === "stdio" ? "Environment variables" : "Headers"} (one KEY=VALUE per line)
-        <textarea rows={3} value={secrets} onChange={(e) => setSecrets(e.target.value)} />
+        {kind === "stdio" ? "Environment variables" : "Headers"}
+        <textarea rows={3} placeholder="GITHUB_TOKEN=ghp_…" value={secrets} onChange={(e) => setSecrets(e.target.value)} />
       </label>
-      <button type="submit" className="primary">Add</button>
+      <div className="form-actions">
+        <button type="submit" className="primary">Add server</button>
+        <button type="button" onClick={onCancel}>Cancel</button>
+      </div>
     </form>
   );
 }

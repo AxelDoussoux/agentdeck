@@ -1,64 +1,62 @@
 # AgentDeck
 
-A local control center for AI coding agents. AgentDeck manages the MCP
+**One control center for all your AI coding agents.** AgentDeck manages the MCP
 servers, rules, skills and secrets of Claude Code, Codex, Cursor and Gemini CLI
-in one place, and shows your session history and costs.
+in one desktop app, and shows what your sessions cost.
 
-Runs on Windows, macOS and Linux. Nothing leaves your machine.
+Runs on Windows, macOS and Linux. Local only: no account, no telemetry,
+nothing leaves your machine.
 
-> Early development. Today AgentDeck lists the agents installed on your
-> machine, lets you add, remove and copy MCP servers between them, and
-> edit or sync their global rules files, share skills between agents, move plain-text secrets to the system
-> keychain, and shows the token usage and
-> estimated cost of your Claude Code and Codex sessions.
+![AgentDeck overview](docs/screenshots/overview.png)
 
-## Layout
+## Why
 
-| Path | What it is |
+Every coding agent keeps its own config file in its own format. Adding the
+GitHub MCP server to four agents means editing JSON, TOML and JSON again, and
+pasting the same token in plain text four times. AgentDeck reads all of them,
+shows them side by side, and syncs them in one click.
+
+## Features
+
+- **MCP servers.** See every server across every agent in one grid. Copy a
+  server to another agent in one click, with its settings and secrets
+  translated to that agent's format. Add or remove servers safely: each write
+  keeps a backup and preserves comments in Codex's TOML.
+- **Rules.** Edit `CLAUDE.md`, `AGENTS.md` and `GEMINI.md` side by side and
+  copy them from one agent to the others.
+- **Skills.** See which agents load each Agent Skill, and share a skill with
+  another agent without duplicating folders needlessly.
+- **Secrets.** Find API keys stored in plain text in agent configs and move them
+  to the system keychain (Windows Credential Manager, macOS Keychain, Secret
+  Service). Values are never displayed.
+- **History & costs.** Token usage and estimated cost per day, per agent and
+  per session, from Claude Code and Codex logs.
+- **CLI.** Everything is also available from the `agentdeck` command line.
+
+| MCP servers | Secrets |
 | --- | --- |
-| `crates/agentdeck-core` | Rust library that reads and writes agent configs. All logic lives here. |
-| `crates/agentdeck-cli` | `agentdeck` command-line tool, built on the core. |
-| `src-tauri` | Tauri 2 desktop shell exposing the core to the UI. |
-| `src` | React + TypeScript frontend (Vite). |
+| ![MCP servers](docs/screenshots/mcp-dark.png) | ![Secrets](docs/screenshots/secrets.png) |
+| **History & costs** | **Skills** |
+| ![History & costs](docs/screenshots/history.png) | ![Skills](docs/screenshots/skills.png) |
 
-## Develop
+## Install
 
-Prerequisites: [Rust](https://rustup.rs), Node 22, pnpm 10 and the
-[Tauri system dependencies](https://tauri.app/start/prerequisites/) for your OS.
+Download the installer for your system from the
+[latest release](https://github.com/AxelDoussoux/agentdeck/releases/latest):
+`.msi` or `.exe` for Windows, `.dmg` for macOS (Apple Silicon or Intel),
+`.AppImage`, `.deb` or `.rpm` for Linux. The app updates itself when a new
+version is out.
 
-```sh
-pnpm install
-pnpm tauri dev                          # desktop app
-pnpm tauri build                        # installers in target/release/bundle
-cargo run -p agentdeck-cli -- mcp list  # CLI
-pnpm sidecar --debug && cargo test --workspace
-```
+The installers are not code-signed yet. On Windows, click "More info" then
+"Run anyway" in SmartScreen. On macOS, right-click the app, choose Open, then
+confirm.
 
-The app bundles the CLI as a Tauri sidecar. `pnpm tauri dev` and
-`pnpm tauri build` build it first; before a plain `cargo build` or
-`cargo test` of the whole workspace, run `pnpm sidecar` once, or the app's
-build script fails because `src-tauri/binaries/agentdeck-<target>` is missing.
+## Contributing
 
-## Release
-
-Bump `version` in `Cargo.toml`, `package.json` and `src-tauri/tauri.conf.json`,
-then push a tag:
-
-```sh
-git tag v0.1.0 && git push origin v0.1.0
-```
-
-The `Release` workflow builds the installers (Windows `.msi`/`.exe`, macOS
-`.dmg` for Apple Silicon and Intel, Linux `.deb`/`.rpm`/`.AppImage`) and
-attaches them to a draft GitHub release. Publishing the draft makes it the
-latest release, which installed apps offer to update to at startup.
-
-Updates are signed: the workflow needs the `TAURI_SIGNING_PRIVATE_KEY`
-repository secret, and the matching public key is in
-`src-tauri/tauri.conf.json`. Keep the private key safe: without it, existing
-installs can no longer be updated. The installers themselves are not
-code-signed yet, so Windows SmartScreen and macOS Gatekeeper warn on first
-launch.
+Issues and pull requests are welcome. See [CONTRIBUTING.md](CONTRIBUTING.md)
+to build from source, and the
+[good first issues](https://github.com/AxelDoussoux/agentdeck/labels/good%20first%20issue)
+to get started.
 
 ## CLI
 
