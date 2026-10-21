@@ -39,6 +39,27 @@ The app bundles the CLI as a Tauri sidecar. `pnpm tauri dev` and
 `cargo test` of the whole workspace, run `pnpm sidecar` once, or the app's
 build script fails because `src-tauri/binaries/agentdeck-<target>` is missing.
 
+## Release
+
+Bump `version` in `Cargo.toml`, `package.json` and `src-tauri/tauri.conf.json`,
+then push a tag:
+
+```sh
+git tag v0.1.0 && git push origin v0.1.0
+```
+
+The `Release` workflow builds the installers (Windows `.msi`/`.exe`, macOS
+`.dmg` for Apple Silicon and Intel, Linux `.deb`/`.rpm`/`.AppImage`) and
+attaches them to a draft GitHub release. Publishing the draft makes it the
+latest release, which installed apps offer to update to at startup.
+
+Updates are signed: the workflow needs the `TAURI_SIGNING_PRIVATE_KEY`
+repository secret, and the matching public key is in
+`src-tauri/tauri.conf.json`. Keep the private key safe: without it, existing
+installs can no longer be updated. The installers themselves are not
+code-signed yet, so Windows SmartScreen and macOS Gatekeeper warn on first
+launch.
+
 ## CLI
 
 ```sh
