@@ -8,7 +8,8 @@ Runs on Windows, macOS and Linux. Nothing leaves your machine.
 
 > Early development. Today AgentDeck lists the agents installed on your
 > machine, lets you add, remove and copy MCP servers between them, and
-> edit or sync their global rules files.
+> edit or sync their global rules files, and shows the token usage and
+> estimated cost of your Claude Code and Codex sessions.
 
 ## Layout
 
@@ -43,6 +44,7 @@ agentdeck mcp remove codex github
 agentdeck rules list
 agentdeck rules show claude-code
 agentdeck rules copy --from claude-code --to codex gemini
+agentdeck usage --days 30
 ```
 
 ## Config files read
@@ -53,6 +55,11 @@ agentdeck rules copy --from claude-code --to codex gemini
 | Codex | `~/.codex/config.toml` | `~/.codex/AGENTS.md` |
 | Cursor | `~/.cursor/mcp.json` | stored in Cursor's settings, not editable yet |
 | Gemini CLI | `~/.gemini/settings.json` | `~/.gemini/GEMINI.md` |
+
+Session history is read from `~/.claude/projects` (Claude Code) and
+`~/.codex/sessions` (Codex). Costs are estimates at API list prices
+(`crates/agentdeck-core/src/pricing.rs`); subscriptions are billed
+differently, and models without a known price are left out of the total.
 
 Environment and header values of MCP servers are never displayed, only
 their names. When copying a server between agents, secrets are copied by the

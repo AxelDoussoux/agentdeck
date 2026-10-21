@@ -1,7 +1,7 @@
 use std::collections::BTreeMap;
 use std::process::ExitCode;
 
-use agentdeck_core::{Agent, ServerSpec, Transport, agent, mcp, rules};
+use agentdeck_core::{Agent, ServerSpec, Transport, agent, mcp, rules, usage};
 use clap::{Parser, Subcommand, ValueEnum};
 
 #[derive(Parser)]
@@ -31,6 +31,15 @@ enum Command {
     Rules {
         #[command(subcommand)]
         command: RulesCommand,
+    },
+    /// Show token usage and estimated costs from local session logs
+    Usage {
+        /// Only count the last N days (UTC)
+        #[arg(long, default_value_t = 30)]
+        days: u32,
+        /// Number of sessions to list
+        #[arg(long, default_value_t = 10)]
+        sessions: usize,
     },
 }
 
@@ -152,6 +161,7 @@ fn run(cli: Cli) -> agentdeck_core::Result<()> {
         }
         Command::Mcp { command } => run_mcp(command, &home, cli.json)?,
         Command::Rules { command } => run_rules(command, &home, cli.json)?,
+        Command::Usage { days, sessions } => run_usage(&home, days, sessions, cli.json),
     }
     Ok(())
 }
@@ -280,4 +290,59 @@ fn run_rules(
         }
     }
     Ok(())
+}
+
+fn run_usage(home: &std::path::Path, days: u32, limit: usize, json: bool) {
+    let report = usage::report(home);
+    let since = usage::date_days_ago(days);
+    if json {
+        println!("{}", serde_json::to_string_pretty(&report).unwrap());
+        return;
+    }
+
+    println!("Last {days} days (estimated at API list prices):");
+    for agent in Agent::ALL {
+        let days: Vec<_> = report
+            .daily
+            .iter()
+            .filter(|day| day.agent == agent && day.date >= since)
+            .collect();
+        if days.is_empty() {
+            continue;
+        }
+        let cost: f64 = days.iter().map(|day| day.cost_usd).sum();
+        let tokens: u64 = days.iter().map(|day| day.tokens.total()).sum();
+        println!(
+            "  {:<12} ${cost:>9.2}  {:>8} tokens",
+            agent.display_name(),
+            format_tokens(tokens)
+        );
+    }
+
+    println!("\nRecent sessions:");
+    for session in report.sessions.iter().take(limit) {
+        println!(
+            "  {}  {:<12} ${:>8.2}  {:>8}  {}",
+            session
+                .ended_at
+                .as_deref()
+                .and_then(|t| t.get(..10))
+                .unwrap_or("?"),
+            session.agent.display_name(),
+            session.cost_usd,
+            format_tokens(session.tokens.total()),
+            session.title.as_deref().unwrap_or("(untitled)")
+        );
+    }
+    for error in &report.errors {
+        eprintln!("warning: {error}");
+    }
+}
+
+fn format_tokens(count: u64) -> String {
+    match count {
+        0..1_000 => count.to_string(),
+        1_000..1_000_000 => format!("{:.1}k", count as f64 / 1e3),
+        _ => format!("{:.1}M", count as f64 / 1e6),
+    }
 }

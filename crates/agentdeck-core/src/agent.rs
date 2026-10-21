@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 use crate::{Error, Result};
 
 /// An AI coding agent whose configuration AgentDeck can manage.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum Agent {
     ClaudeCode,
