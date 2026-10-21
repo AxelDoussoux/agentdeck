@@ -1,5 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
-import type { Agent, AgentInfo, McpListing, Rules, ServerSpec } from "./types";
+import type { Agent, AgentInfo, McpListing, Rules, ServerSpec, UsageReport } from "./types";
 
 // Typed wrappers around the commands of src-tauri/src/lib.rs.
 
@@ -20,3 +20,5 @@ export const listRules = () => invoke<Rules[]>("list_rules");
 
 export const saveRules = (agent: Agent, content: string) =>
   invoke<void>("save_rules", { agent, content });
+
+export const usageReport = () => invoke<UsageReport>("usage_report");

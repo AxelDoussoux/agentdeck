@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { listAgents, listMcpServers } from "./lib/api";
 import type { AgentInfo, McpListing } from "./lib/types";
 import { AgentsPage } from "./pages/AgentsPage";
+import { HistoryPage } from "./pages/HistoryPage";
 import { McpPage } from "./pages/McpPage";
 import { RulesPage } from "./pages/RulesPage";
 import "./App.css";
@@ -12,7 +13,7 @@ const PAGES = [
   { id: "rules", label: "Rules", ready: true },
   { id: "skills", label: "Skills", ready: false },
   { id: "secrets", label: "Secrets", ready: false },
-  { id: "history", label: "History & costs", ready: false },
+  { id: "history", label: "History & costs", ready: true },
 ] as const;
 
 type PageId = (typeof PAGES)[number]["id"];
@@ -60,6 +61,7 @@ function App() {
         {page === "agents" && <AgentsPage agents={agents} />}
         {page === "mcp" && <McpPage agents={agents} listing={listing} onChange={refresh} />}
         {page === "rules" && <RulesPage agents={agents} />}
+        {page === "history" && <HistoryPage agents={agents} />}
       </main>
     </div>
   );

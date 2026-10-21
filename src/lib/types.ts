@@ -38,3 +38,37 @@ export interface Rules {
   agent: Agent;
   content: string | null;
 }
+
+export interface Tokens {
+  input: number;
+  output: number;
+  cacheRead: number;
+  cacheWrite5m: number;
+  cacheWrite1h: number;
+}
+
+export interface Session {
+  agent: Agent;
+  id: string;
+  project: string | null;
+  title: string | null;
+  models: string[];
+  startedAt: string | null;
+  endedAt: string | null;
+  tokens: Tokens;
+  costUsd: number;
+  unpricedTokens: number;
+}
+
+export interface DayUsage {
+  date: string;
+  agent: Agent;
+  tokens: Tokens;
+  costUsd: number;
+}
+
+export interface UsageReport {
+  sessions: Session[];
+  daily: DayUsage[];
+  errors: string[];
+}

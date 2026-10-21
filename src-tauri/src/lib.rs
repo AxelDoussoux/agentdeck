@@ -1,4 +1,5 @@
 use agentdeck_core::rules::{self, Rules};
+use agentdeck_core::usage::{self, UsageReport};
 use agentdeck_core::{Agent, AgentInfo, McpServer, ServerSpec, agent, mcp};
 
 fn home() -> Result<std::path::PathBuf, String> {
@@ -57,6 +58,15 @@ fn save_rules(agent: Agent, content: String) -> Result<(), String> {
     rules::write(agent, &home()?, &content).map_err(|err| err.to_string())
 }
 
+/// Parsing months of logs takes a while, so it runs off the main thread.
+#[tauri::command]
+async fn usage_report() -> Result<UsageReport, String> {
+    let home = home()?;
+    tauri::async_runtime::spawn_blocking(move || usage::report(&home))
+        .await
+        .map_err(|err| err.to_string())
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -68,7 +78,8 @@ pub fn run() {
             remove_mcp_server,
             copy_mcp_server,
             list_rules,
-            save_rules
+            save_rules,
+            usage_report
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
