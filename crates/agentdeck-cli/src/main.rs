@@ -1,6 +1,7 @@
 use std::collections::BTreeMap;
 use std::process::ExitCode;
 
+use agentdeck_core::secrets::{self, Keychain};
 use agentdeck_core::skills::{self, Location};
 use agentdeck_core::{Agent, ServerSpec, Transport, agent, mcp, rules, usage};
 use clap::{Parser, Subcommand, ValueEnum};
@@ -38,6 +39,22 @@ enum Command {
         #[command(subcommand)]
         command: SkillsCommand,
     },
+    /// Find plain-text secrets and move them to the system keychain
+    Secrets {
+        #[command(subcommand)]
+        command: SecretsCommand,
+    },
+    /// Start a command with secrets read from the system keychain
+    ///
+    /// Protected MCP servers are started this way by their agent.
+    Exec {
+        /// Environment variable to set, as KEY=KEYCHAIN_ID
+        #[arg(long = "secret", value_parser = parse_pair)]
+        secrets: Vec<(String, String)>,
+        /// The command to run and its arguments
+        #[arg(last = true, required = true)]
+        command: Vec<String>,
+    },
     /// Show token usage and estimated costs from local session logs
     Usage {
         /// Only count the last N days (UTC)
@@ -47,6 +64,16 @@ enum Command {
         #[arg(long, default_value_t = 10)]
         sessions: usize,
     },
+}
+
+#[derive(Subcommand)]
+enum SecretsCommand {
+    /// List the secrets of every MCP server
+    List,
+    /// Move the environment variables of a local MCP server to the keychain
+    Protect { agent: AgentArg, server: String },
+    /// Put the secrets of a protected MCP server back in its config file
+    Unprotect { agent: AgentArg, server: String },
 }
 
 #[derive(Subcommand)]
@@ -188,6 +215,9 @@ fn parse_pair(text: &str) -> Result<(String, String), String> {
 
 fn main() -> ExitCode {
     let cli = Cli::parse();
+    if let Command::Exec { secrets, command } = cli.command {
+        return exec(&secrets, &command);
+    }
     match run(cli) {
         Ok(()) => ExitCode::SUCCESS,
         Err(err) => {
@@ -219,6 +249,8 @@ fn run(cli: Cli) -> agentdeck_core::Result<()> {
         Command::Mcp { command } => run_mcp(command, &home, cli.json)?,
         Command::Rules { command } => run_rules(command, &home, cli.json)?,
         Command::Skills { command } => run_skills(command, &home, cli.json)?,
+        Command::Secrets { command } => run_secrets(command, &home, cli.json)?,
+        Command::Exec { .. } => unreachable!("handled in main"),
         Command::Usage { days, sessions } => run_usage(&home, days, sessions, cli.json),
     }
     Ok(())
@@ -449,4 +481,100 @@ fn run_skills(
         }
     }
     Ok(())
+}
+
+fn run_secrets(
+    command: SecretsCommand,
+    home: &std::path::Path,
+    json: bool,
+) -> agentdeck_core::Result<()> {
+    match command {
+        SecretsCommand::List => {
+            let (all, errors) = secrets::inventory(home);
+            if json {
+                println!("{}", serde_json::to_string_pretty(&all).unwrap());
+            } else {
+                for secret in &all {
+                    let status = match (&secret.vault_id, secret.same_value_elsewhere) {
+                        (Some(_), _) => "keychain".to_owned(),
+                        (None, 0) => "plain text".to_owned(),
+                        (None, n) => format!("plain text, same value in {n} other place(s)"),
+                    };
+                    println!(
+                        "{:<12} {:<20} {:<24} {status}",
+                        secret.agent.display_name(),
+                        secret.server,
+                        secret.key
+                    );
+                }
+            }
+            for error in &errors {
+                eprintln!("warning: {error}");
+            }
+        }
+        SecretsCommand::Protect { agent, server } => {
+            let launcher = std::env::current_exe().map_err(|source| agentdeck_core::Error::Io {
+                path: "agentdeck".into(),
+                source,
+            })?;
+            let agent = Agent::from(agent);
+            secrets::protect(&Keychain, home, agent, &server, &launcher)?;
+            println!(
+                "Moved the secrets of \"{server}\" ({}) to the keychain",
+                agent.display_name()
+            );
+        }
+        SecretsCommand::Unprotect { agent, server } => {
+            let agent = Agent::from(agent);
+            secrets::unprotect(&Keychain, home, agent, &server)?;
+            println!(
+                "Put the secrets of \"{server}\" ({}) back in its config",
+                agent.display_name()
+            );
+        }
+    }
+    Ok(())
+}
+
+/// Runs `command` with secrets from the keychain, passing stdio through so
+/// it can serve MCP, and exits with its status.
+fn exec(secrets: &[(String, String)], command: &[String]) -> ExitCode {
+    let env = match secrets::resolve(&Keychain, secrets) {
+        Ok(env) => env,
+        Err(err) => {
+            eprintln!("agentdeck exec: {err}");
+            return ExitCode::FAILURE;
+        }
+    };
+    let program = resolve_program(&command[0]);
+    match std::process::Command::new(&program)
+        .args(&command[1..])
+        .envs(env)
+        .status()
+    {
+        Ok(status) => ExitCode::from(status.code().unwrap_or(1).clamp(0, 255) as u8),
+        Err(err) => {
+            eprintln!("agentdeck exec: cannot start {}: {err}", command[0]);
+            ExitCode::FAILURE
+        }
+    }
+}
+
+/// On Windows, finds `npx.cmd` and friends: `Command` only adds `.exe`.
+fn resolve_program(name: &str) -> std::path::PathBuf {
+    let path = std::path::Path::new(name);
+    if !cfg!(windows) || path.extension().is_some() || path.components().count() > 1 {
+        return path.to_path_buf();
+    }
+    let extensions = std::env::var("PATHEXT").unwrap_or_else(|_| ".EXE;.CMD;.BAT".into());
+    let dirs = std::env::var_os("PATH").unwrap_or_default();
+    std::env::split_paths(&dirs)
+        .flat_map(|dir| {
+            extensions
+                .split(';')
+                .filter(|ext| !ext.is_empty())
+                .map(move |ext| dir.join(format!("{name}{}", ext.to_lowercase())))
+        })
+        .find(|candidate| candidate.is_file())
+        .unwrap_or_else(|| path.to_path_buf())
 }

@@ -9,6 +9,7 @@ pub mod error;
 pub mod mcp;
 pub mod pricing;
 pub mod rules;
+pub mod secrets;
 pub mod skills;
 pub mod usage;
 

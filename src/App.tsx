@@ -5,16 +5,17 @@ import { AgentsPage } from "./pages/AgentsPage";
 import { HistoryPage } from "./pages/HistoryPage";
 import { McpPage } from "./pages/McpPage";
 import { RulesPage } from "./pages/RulesPage";
+import { SecretsPage } from "./pages/SecretsPage";
 import { SkillsPage } from "./pages/SkillsPage";
 import "./App.css";
 
 const PAGES = [
-  { id: "agents", label: "Agents", ready: true },
-  { id: "mcp", label: "MCP servers", ready: true },
-  { id: "rules", label: "Rules", ready: true },
-  { id: "skills", label: "Skills", ready: true },
-  { id: "secrets", label: "Secrets", ready: false },
-  { id: "history", label: "History & costs", ready: true },
+  { id: "agents", label: "Agents" },
+  { id: "mcp", label: "MCP servers" },
+  { id: "rules", label: "Rules" },
+  { id: "skills", label: "Skills" },
+  { id: "secrets", label: "Secrets" },
+  { id: "history", label: "History & costs" },
 ] as const;
 
 type PageId = (typeof PAGES)[number]["id"];
@@ -47,11 +48,9 @@ function App() {
           <button
             key={item.id}
             className={item.id === page ? "active" : undefined}
-            disabled={!item.ready}
             onClick={() => setPage(item.id)}
           >
             {item.label}
-            {!item.ready && <span className="soon">soon</span>}
           </button>
         ))}
         <button className="refresh" onClick={refresh}>Refresh</button>
@@ -63,6 +62,7 @@ function App() {
         {page === "mcp" && <McpPage agents={agents} listing={listing} onChange={refresh} />}
         {page === "rules" && <RulesPage agents={agents} />}
         {page === "skills" && <SkillsPage agents={agents} />}
+        {page === "secrets" && <SecretsPage agents={agents} />}
         {page === "history" && <HistoryPage agents={agents} />}
       </main>
     </div>

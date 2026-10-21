@@ -87,3 +87,19 @@ export interface SkillListing {
   skills: Skill[];
   errors: string[];
 }
+
+export interface SecretRef {
+  agent: Agent;
+  server: string;
+  kind: "env" | "header";
+  key: string;
+  vaultId: string | null;
+  sameValueElsewhere: number;
+  protectable: boolean;
+}
+
+export interface SecretListing {
+  secrets: SecretRef[];
+  errors: string[];
+  launcher: string | null;
+}

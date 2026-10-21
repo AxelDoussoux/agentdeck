@@ -1,4 +1,5 @@
 use agentdeck_core::rules::{self, Rules};
+use agentdeck_core::secrets::{self, Keychain, SecretRef};
 use agentdeck_core::skills::{self, Location, Skill};
 use agentdeck_core::usage::{self, UsageReport};
 use agentdeck_core::{Agent, AgentInfo, McpServer, ServerSpec, agent, mcp};
@@ -88,6 +89,37 @@ fn remove_skill(location: Location, name: String) -> Result<String, String> {
         .map_err(|err| err.to_string())
 }
 
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+struct SecretListing {
+    secrets: Vec<SecretRef>,
+    errors: Vec<String>,
+    /// The `agentdeck` CLI that protected servers start through, if installed.
+    launcher: Option<String>,
+}
+
+#[tauri::command]
+fn list_secrets() -> Result<SecretListing, String> {
+    let (secrets, errors) = secrets::inventory(&home()?);
+    Ok(SecretListing {
+        secrets,
+        errors,
+        launcher: secrets::find_launcher().map(|path| path.display().to_string()),
+    })
+}
+
+#[tauri::command]
+fn protect_server(agent: Agent, server: String) -> Result<(), String> {
+    let launcher = secrets::find_launcher()
+        .ok_or("Install the agentdeck CLI first: protected servers start through it.")?;
+    secrets::protect(&Keychain, &home()?, agent, &server, &launcher).map_err(|err| err.to_string())
+}
+
+#[tauri::command]
+fn unprotect_server(agent: Agent, server: String) -> Result<(), String> {
+    secrets::unprotect(&Keychain, &home()?, agent, &server).map_err(|err| err.to_string())
+}
+
 /// Parsing months of logs takes a while, so it runs off the main thread.
 #[tauri::command]
 async fn usage_report() -> Result<UsageReport, String> {
@@ -113,6 +145,9 @@ pub fn run() {
             read_skill,
             copy_skill,
             remove_skill,
+            list_secrets,
+            protect_server,
+            unprotect_server,
             usage_report
         ])
         .run(tauri::generate_context!())

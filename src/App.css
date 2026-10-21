@@ -65,15 +65,6 @@ body {
   font-weight: 600;
 }
 
-.sidebar button:disabled {
-  color: var(--muted);
-  cursor: default;
-}
-
-.sidebar .soon {
-  font-size: 11px;
-}
-
 .sidebar .refresh {
   margin-top: auto;
   border: 1px solid var(--border);
@@ -486,4 +477,38 @@ button.link:hover strong {
   background: var(--bg);
   font: 12px/1.5 ui-monospace, "Cascadia Code", Menlo, monospace;
   white-space: pre-wrap;
+}
+
+.warning {
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--danger);
+  border-radius: 6px;
+  background: var(--surface);
+}
+
+.danger-text {
+  color: var(--danger);
+}
+
+.secrets td small {
+  display: block;
+  color: var(--muted);
+}
+
+.secrets td {
+  vertical-align: top;
+}
+
+.secrets .actions {
+  white-space: nowrap;
+}
+
+.secrets .actions button + button {
+  margin-left: 8px;
+}
+
+.hint code,
+.warning code {
+  word-break: normal;
 }

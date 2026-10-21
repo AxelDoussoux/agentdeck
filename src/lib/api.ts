@@ -4,6 +4,7 @@ import type {
   AgentInfo,
   McpListing,
   Rules,
+  SecretListing,
   ServerSpec,
   SkillListing,
   SkillLocation,
@@ -43,3 +44,11 @@ export const copySkill = (name: string, from: SkillLocation, to: Agent) =>
 /** Returns where the skill folder was moved. */
 export const removeSkill = (location: SkillLocation, name: string) =>
   invoke<string>("remove_skill", { location, name });
+
+export const listSecrets = () => invoke<SecretListing>("list_secrets");
+
+export const protectServer = (agent: Agent, server: string) =>
+  invoke<void>("protect_server", { agent, server });
+
+export const unprotectServer = (agent: Agent, server: string) =>
+  invoke<void>("unprotect_server", { agent, server });

@@ -125,7 +125,7 @@ fn into_strings(map: BTreeMap<String, Value>) -> BTreeMap<String, String> {
 }
 
 /// Reads every MCP server of `agent`, secrets included.
-fn read_specs(agent: Agent, home: &Path) -> Result<BTreeMap<String, ServerSpec>> {
+pub(crate) fn read_specs(agent: Agent, home: &Path) -> Result<BTreeMap<String, ServerSpec>> {
     let path = agent.mcp_config_path(home);
     let Some(content) = config_file::read_optional(&path)? else {
         return Ok(BTreeMap::new());
@@ -219,6 +219,28 @@ pub fn copy(home: &Path, name: &str, from: Agent, to: Agent, overwrite: bool) ->
     add(to, home, name, &spec, overwrite)
 }
 
+/// Changes the command, arguments and environment of an existing stdio
+/// server, leaving every other setting of its entry untouched.
+pub(crate) fn set_launch(
+    agent: Agent,
+    home: &Path,
+    name: &str,
+    command: &str,
+    args: &[String],
+    env: &BTreeMap<String, String>,
+) -> Result<()> {
+    edit(
+        agent,
+        home,
+        Edit::Launch {
+            name,
+            command,
+            args,
+            env,
+        },
+    )
+}
+
 enum Edit<'a> {
     Upsert {
         name: &'a str,
@@ -228,12 +250,19 @@ enum Edit<'a> {
     Remove {
         name: &'a str,
     },
+    /// Changes how an existing stdio server is started, keeping its other settings.
+    Launch {
+        name: &'a str,
+        command: &'a str,
+        args: &'a [String],
+        env: &'a BTreeMap<String, String>,
+    },
 }
 
 impl Edit<'_> {
     fn name(&self) -> &str {
         match self {
-            Edit::Upsert { name, .. } | Edit::Remove { name } => name,
+            Edit::Upsert { name, .. } | Edit::Remove { name } | Edit::Launch { name, .. } => name,
         }
     }
 
@@ -244,7 +273,9 @@ impl Edit<'_> {
             Edit::Upsert {
                 overwrite: false, ..
             } if exists => Err(Error::AlreadyExists { agent, name }),
-            Edit::Remove { .. } if !exists => Err(Error::NotFound { agent, name }),
+            Edit::Remove { .. } | Edit::Launch { .. } if !exists => {
+                Err(Error::NotFound { agent, name })
+            }
             _ => Ok(()),
         }
     }
@@ -288,6 +319,28 @@ fn edit_json(agent: Agent, path: &Path, content: &str, edit: &Edit) -> Result<St
         }
         Edit::Remove { name } => {
             servers.remove(*name);
+        }
+        Edit::Launch {
+            name,
+            command,
+            args,
+            env,
+        } => {
+            let entry = servers
+                .get_mut(*name)
+                .and_then(Value::as_object_mut)
+                .ok_or_else(|| invalid("an MCP server entry is not an object"))?;
+            entry.insert("command".into(), (*command).into());
+            entry.insert("args".into(), args.to_vec().into());
+            if env.is_empty() {
+                entry.remove("env");
+            } else {
+                let object = env
+                    .iter()
+                    .map(|(k, v)| (k.clone(), v.as_str().into()))
+                    .collect();
+                entry.insert("env".into(), Value::Object(object));
+            }
         }
     }
 
@@ -355,6 +408,32 @@ fn edit_toml(path: &Path, content: &str, edit: &Edit) -> Result<String> {
         }
         Edit::Remove { name } => {
             servers.remove(name);
+        }
+        Edit::Launch {
+            name,
+            command,
+            args,
+            env,
+        } => {
+            let entry = servers
+                .get_mut(name)
+                .and_then(toml_edit::Item::as_table_like_mut)
+                .ok_or_else(|| Error::Invalid {
+                    path: path.to_path_buf(),
+                    reason: "an MCP server entry is not a table",
+                })?;
+            entry.insert("command", toml_edit::value(*command));
+            entry.insert(
+                "args",
+                toml_edit::value(args.iter().collect::<toml_edit::Array>()),
+            );
+            if env.is_empty() {
+                entry.remove("env");
+            } else {
+                let table: toml_edit::InlineTable =
+                    env.iter().map(|(k, v)| (k.as_str(), v.as_str())).collect();
+                entry.insert("env", toml_edit::value(table));
+            }
         }
     }
     Ok(doc.to_string())
