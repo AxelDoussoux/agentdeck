@@ -34,6 +34,10 @@ pub enum Error {
     AlreadyExists { agent: Agent, name: String },
     #[error("{} keeps its global rules in its own settings, not in a file", agent.display_name())]
     NoRulesFile { agent: Agent },
+    #[error("system keychain: {0}")]
+    Keychain(String),
+    #[error("{} \"{name}\" is not a local command, so its secrets cannot be moved to the keychain", agent.display_name())]
+    NotStdio { agent: Agent, name: String },
     #[error("\"{name}\" is not a valid skill name")]
     InvalidSkillName { name: String },
     #[error("no skill at {path}")]
