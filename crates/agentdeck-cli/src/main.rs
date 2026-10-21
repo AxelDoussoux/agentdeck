@@ -1,7 +1,8 @@
+use std::collections::BTreeMap;
 use std::process::ExitCode;
 
-use agentdeck_core::{Transport, agent, mcp};
-use clap::{Parser, Subcommand};
+use agentdeck_core::{Agent, ServerSpec, Transport, agent, mcp};
+use clap::{Parser, Subcommand, ValueEnum};
 
 #[derive(Parser)]
 #[command(
@@ -32,18 +33,86 @@ enum Command {
 enum McpCommand {
     /// List the MCP servers of every agent
     List,
+    /// Add an MCP server to an agent
+    ///
+    /// Examples:
+    ///   agentdeck mcp add claude-code github -e GITHUB_TOKEN=ghp_x -- npx -y @modelcontextprotocol/server-github
+    ///   agentdeck mcp add cursor linear --url https://mcp.linear.app/mcp
+    Add {
+        agent: AgentArg,
+        name: String,
+        /// URL of a remote server, instead of a command
+        #[arg(long, conflicts_with = "command")]
+        url: Option<String>,
+        /// Use the legacy SSE transport for --url
+        #[arg(long, requires = "url")]
+        sse: bool,
+        /// Environment variable, as KEY=VALUE
+        #[arg(short, long = "env", value_parser = parse_pair)]
+        env: Vec<(String, String)>,
+        /// HTTP header, as KEY=VALUE
+        #[arg(long = "header", value_parser = parse_pair)]
+        headers: Vec<(String, String)>,
+        /// Replace the server if it already exists
+        #[arg(long)]
+        force: bool,
+        /// Command and arguments of a local server, after `--`
+        #[arg(last = true, required_unless_present = "url")]
+        command: Vec<String>,
+    },
+    /// Remove an MCP server from an agent
+    Remove { agent: AgentArg, name: String },
+    /// Copy an MCP server, secrets included, from one agent to others
+    Copy {
+        name: String,
+        #[arg(long)]
+        from: AgentArg,
+        #[arg(long, required = true, num_args = 1..)]
+        to: Vec<AgentArg>,
+        /// Replace the server where it already exists
+        #[arg(long)]
+        force: bool,
+    },
+}
+
+#[derive(Clone, Copy, ValueEnum)]
+enum AgentArg {
+    ClaudeCode,
+    Codex,
+    Cursor,
+    Gemini,
+}
+
+impl From<AgentArg> for Agent {
+    fn from(arg: AgentArg) -> Agent {
+        match arg {
+            AgentArg::ClaudeCode => Agent::ClaudeCode,
+            AgentArg::Codex => Agent::Codex,
+            AgentArg::Cursor => Agent::Cursor,
+            AgentArg::Gemini => Agent::Gemini,
+        }
+    }
+}
+
+fn parse_pair(text: &str) -> Result<(String, String), String> {
+    text.split_once('=')
+        .map(|(key, value)| (key.to_owned(), value.to_owned()))
+        .ok_or_else(|| format!("expected KEY=VALUE, got \"{text}\""))
 }
 
 fn main() -> ExitCode {
     let cli = Cli::parse();
-    let home = match agent::home_dir() {
-        Ok(home) => home,
+    match run(cli) {
+        Ok(()) => ExitCode::SUCCESS,
         Err(err) => {
             eprintln!("error: {err}");
-            return ExitCode::FAILURE;
+            ExitCode::FAILURE
         }
-    };
+    }
+}
 
+fn run(cli: Cli) -> agentdeck_core::Result<()> {
+    let home = agent::home_dir()?;
     match cli.command {
         Command::Agents => {
             let agents = agent::detect(&home);
@@ -61,11 +130,16 @@ fn main() -> ExitCode {
                 }
             }
         }
-        Command::Mcp {
-            command: McpCommand::List,
-        } => {
-            let (servers, errors) = mcp::list_all(&home);
-            if cli.json {
+        Command::Mcp { command } => run_mcp(command, &home, cli.json)?,
+    }
+    Ok(())
+}
+
+fn run_mcp(command: McpCommand, home: &std::path::Path, json: bool) -> agentdeck_core::Result<()> {
+    match command {
+        McpCommand::List => {
+            let (servers, errors) = mcp::list_all(home);
+            if json {
                 println!("{}", serde_json::to_string_pretty(&servers).unwrap());
             } else {
                 for server in &servers {
@@ -74,6 +148,7 @@ fn main() -> ExitCode {
                             format!("{command} {}", args.join(" "))
                         }
                         Transport::Http { url } => url.clone(),
+                        Transport::Sse { url } => format!("{url} (sse)"),
                     };
                     println!(
                         "{:<12} {:<20} {}",
@@ -87,6 +162,53 @@ fn main() -> ExitCode {
                 eprintln!("warning: {}: {err}", agent.display_name());
             }
         }
+        McpCommand::Add {
+            agent,
+            name,
+            url,
+            sse,
+            env,
+            headers,
+            force,
+            command,
+        } => {
+            let transport = match url {
+                Some(url) if sse => Transport::Sse { url },
+                Some(url) => Transport::Http { url },
+                None => {
+                    let mut parts = command.into_iter();
+                    Transport::Stdio {
+                        command: parts.next().unwrap_or_default(),
+                        args: parts.collect(),
+                    }
+                }
+            };
+            let spec = ServerSpec {
+                transport,
+                env: BTreeMap::from_iter(env),
+                headers: BTreeMap::from_iter(headers),
+            };
+            let agent = Agent::from(agent);
+            mcp::add(agent, home, &name, &spec, force)?;
+            println!("Added \"{name}\" to {}", agent.display_name());
+        }
+        McpCommand::Remove { agent, name } => {
+            let agent = Agent::from(agent);
+            mcp::remove(agent, home, &name)?;
+            println!("Removed \"{name}\" from {}", agent.display_name());
+        }
+        McpCommand::Copy {
+            name,
+            from,
+            to,
+            force,
+        } => {
+            for target in to {
+                let target = Agent::from(target);
+                mcp::copy(home, &name, from.into(), target, force)?;
+                println!("Copied \"{name}\" to {}", target.display_name());
+            }
+        }
     }
-    ExitCode::SUCCESS
+    Ok(())
 }

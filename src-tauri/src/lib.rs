@@ -1,9 +1,12 @@
-use agentdeck_core::{AgentInfo, McpServer, agent, mcp};
+use agentdeck_core::{Agent, AgentInfo, McpServer, ServerSpec, agent, mcp};
+
+fn home() -> Result<std::path::PathBuf, String> {
+    agent::home_dir().map_err(|err| err.to_string())
+}
 
 #[tauri::command]
 fn list_agents() -> Result<Vec<AgentInfo>, String> {
-    let home = agent::home_dir().map_err(|err| err.to_string())?;
-    Ok(agent::detect(&home))
+    Ok(agent::detect(&home()?))
 }
 
 #[derive(serde::Serialize)]
@@ -14,8 +17,7 @@ struct McpListing {
 
 #[tauri::command]
 fn list_mcp_servers() -> Result<McpListing, String> {
-    let home = agent::home_dir().map_err(|err| err.to_string())?;
-    let (servers, errors) = mcp::list_all(&home);
+    let (servers, errors) = mcp::list_all(&home()?);
     Ok(McpListing {
         servers,
         errors: errors
@@ -25,11 +27,32 @@ fn list_mcp_servers() -> Result<McpListing, String> {
     })
 }
 
+#[tauri::command]
+fn add_mcp_server(agent: Agent, name: String, spec: ServerSpec) -> Result<(), String> {
+    mcp::add(agent, &home()?, &name, &spec, false).map_err(|err| err.to_string())
+}
+
+#[tauri::command]
+fn remove_mcp_server(agent: Agent, name: String) -> Result<(), String> {
+    mcp::remove(agent, &home()?, &name).map_err(|err| err.to_string())
+}
+
+#[tauri::command]
+fn copy_mcp_server(name: String, from: Agent, to: Agent) -> Result<(), String> {
+    mcp::copy(&home()?, &name, from, to, false).map_err(|err| err.to_string())
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
-        .invoke_handler(tauri::generate_handler![list_agents, list_mcp_servers])
+        .invoke_handler(tauri::generate_handler![
+            list_agents,
+            list_mcp_servers,
+            add_mcp_server,
+            remove_mcp_server,
+            copy_mcp_server
+        ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }
