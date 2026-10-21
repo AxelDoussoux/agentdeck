@@ -8,7 +8,7 @@ Runs on Windows, macOS and Linux. Nothing leaves your machine.
 
 > Early development. Today AgentDeck lists the agents installed on your
 > machine, lets you add, remove and copy MCP servers between them, and
-> edit or sync their global rules files, and shows the token usage and
+> edit or sync their global rules files, share skills between agents, and shows the token usage and
 > estimated cost of your Claude Code and Codex sessions.
 
 ## Layout
@@ -44,6 +44,9 @@ agentdeck mcp remove codex github
 agentdeck rules list
 agentdeck rules show claude-code
 agentdeck rules copy --from claude-code --to codex gemini
+agentdeck skills list
+agentdeck skills copy pdf --from claude-code --to codex gemini
+agentdeck skills remove pdf --from shared   # moved to ~/.agentdeck/trash
 agentdeck usage --days 30
 ```
 
@@ -55,6 +58,11 @@ agentdeck usage --days 30
 | Codex | `~/.codex/config.toml` | `~/.codex/AGENTS.md` |
 | Cursor | `~/.cursor/mcp.json` | stored in Cursor's settings, not editable yet |
 | Gemini CLI | `~/.gemini/settings.json` | `~/.gemini/GEMINI.md` |
+
+Skills are read from `~/.claude/skills` (Claude Code), `~/.agents/skills`
+(shared by Codex, Gemini CLI and Cursor), `~/.codex/skills`, `~/.gemini/skills`
+and `~/.cursor/skills`. Copying a skill for Codex writes it to the shared
+folder. Removing a skill moves its folder to `~/.agentdeck/trash`.
 
 Session history is read from `~/.claude/projects` (Claude Code) and
 `~/.codex/sessions` (Codex). Costs are estimates at API list prices

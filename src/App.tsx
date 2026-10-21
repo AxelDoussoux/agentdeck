@@ -5,13 +5,14 @@ import { AgentsPage } from "./pages/AgentsPage";
 import { HistoryPage } from "./pages/HistoryPage";
 import { McpPage } from "./pages/McpPage";
 import { RulesPage } from "./pages/RulesPage";
+import { SkillsPage } from "./pages/SkillsPage";
 import "./App.css";
 
 const PAGES = [
   { id: "agents", label: "Agents", ready: true },
   { id: "mcp", label: "MCP servers", ready: true },
   { id: "rules", label: "Rules", ready: true },
-  { id: "skills", label: "Skills", ready: false },
+  { id: "skills", label: "Skills", ready: true },
   { id: "secrets", label: "Secrets", ready: false },
   { id: "history", label: "History & costs", ready: true },
 ] as const;
@@ -61,6 +62,7 @@ function App() {
         {page === "agents" && <AgentsPage agents={agents} />}
         {page === "mcp" && <McpPage agents={agents} listing={listing} onChange={refresh} />}
         {page === "rules" && <RulesPage agents={agents} />}
+        {page === "skills" && <SkillsPage agents={agents} />}
         {page === "history" && <HistoryPage agents={agents} />}
       </main>
     </div>

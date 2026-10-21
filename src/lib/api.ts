@@ -1,5 +1,14 @@
 import { invoke } from "@tauri-apps/api/core";
-import type { Agent, AgentInfo, McpListing, Rules, ServerSpec, UsageReport } from "./types";
+import type {
+  Agent,
+  AgentInfo,
+  McpListing,
+  Rules,
+  ServerSpec,
+  SkillListing,
+  SkillLocation,
+  UsageReport,
+} from "./types";
 
 // Typed wrappers around the commands of src-tauri/src/lib.rs.
 
@@ -22,3 +31,15 @@ export const saveRules = (agent: Agent, content: string) =>
   invoke<void>("save_rules", { agent, content });
 
 export const usageReport = () => invoke<UsageReport>("usage_report");
+
+export const listSkills = () => invoke<SkillListing>("list_skills");
+
+export const readSkill = (location: SkillLocation, name: string) =>
+  invoke<string>("read_skill", { location, name });
+
+export const copySkill = (name: string, from: SkillLocation, to: Agent) =>
+  invoke<void>("copy_skill", { name, from, to });
+
+/** Returns where the skill folder was moved. */
+export const removeSkill = (location: SkillLocation, name: string) =>
+  invoke<string>("remove_skill", { location, name });

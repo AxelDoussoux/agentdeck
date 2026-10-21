@@ -72,3 +72,18 @@ export interface UsageReport {
   daily: DayUsage[];
   errors: string[];
 }
+
+export type SkillLocation = "claude-code" | "shared" | "codex" | "gemini" | "cursor";
+
+export interface Skill {
+  name: string;
+  description: string | null;
+  location: SkillLocation;
+  path: string;
+  readers: Agent[];
+}
+
+export interface SkillListing {
+  skills: Skill[];
+  errors: string[];
+}
