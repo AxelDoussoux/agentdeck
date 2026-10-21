@@ -21,6 +21,8 @@ pub struct AgentInfo {
     pub agent: Agent,
     pub name: &'static str,
     pub mcp_config_path: PathBuf,
+    /// `None` when the agent keeps its global rules outside of a file.
+    pub rules_path: Option<PathBuf>,
     pub installed: bool,
 }
 
@@ -51,6 +53,17 @@ impl Agent {
         }
     }
 
+    /// User-level instructions file loaded into every session, relative to
+    /// `home`. Cursor stores its user rules in its settings database instead.
+    pub fn rules_path(self, home: &Path) -> Option<PathBuf> {
+        match self {
+            Agent::ClaudeCode => Some(home.join(".claude").join("CLAUDE.md")),
+            Agent::Codex => Some(home.join(".codex").join("AGENTS.md")),
+            Agent::Cursor => None,
+            Agent::Gemini => Some(home.join(".gemini").join("GEMINI.md")),
+        }
+    }
+
     pub fn info(self, home: &Path) -> AgentInfo {
         let mcp_config_path = self.mcp_config_path(home);
         AgentInfo {
@@ -58,6 +71,7 @@ impl Agent {
             name: self.display_name(),
             installed: mcp_config_path.exists(),
             mcp_config_path,
+            rules_path: self.rules_path(home),
         }
     }
 }

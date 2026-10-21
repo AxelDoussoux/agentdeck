@@ -32,6 +32,8 @@ pub enum Error {
     NotFound { agent: Agent, name: String },
     #[error("{} already has an MCP server named \"{name}\"", agent.display_name())]
     AlreadyExists { agent: Agent, name: String },
+    #[error("{} keeps its global rules in its own settings, not in a file", agent.display_name())]
+    NoRulesFile { agent: Agent },
     #[error("{} does not support {what}", agent.display_name())]
     Unsupported { agent: Agent, what: &'static str },
 }

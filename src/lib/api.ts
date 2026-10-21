@@ -1,5 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
-import type { Agent, AgentInfo, McpListing, ServerSpec } from "./types";
+import type { Agent, AgentInfo, McpListing, Rules, ServerSpec } from "./types";
 
 // Typed wrappers around the commands of src-tauri/src/lib.rs.
 
@@ -15,3 +15,8 @@ export const removeMcpServer = (agent: Agent, name: string) =>
 
 export const copyMcpServer = (name: string, from: Agent, to: Agent) =>
   invoke<void>("copy_mcp_server", { name, from, to });
+
+export const listRules = () => invoke<Rules[]>("list_rules");
+
+export const saveRules = (agent: Agent, content: string) =>
+  invoke<void>("save_rules", { agent, content });
