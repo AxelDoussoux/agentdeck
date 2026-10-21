@@ -19,12 +19,12 @@ pub enum Error {
     #[error("invalid TOML in {path}: {source}")]
     Toml {
         path: PathBuf,
-        source: toml::de::Error,
+        source: Box<toml::de::Error>,
     },
     #[error("invalid TOML in {path}: {source}")]
     TomlEdit {
         path: PathBuf,
-        source: toml_edit::TomlError,
+        source: Box<toml_edit::TomlError>,
     },
     #[error("unexpected structure in {path}: {reason}")]
     Invalid { path: PathBuf, reason: &'static str },

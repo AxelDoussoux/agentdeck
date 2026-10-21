@@ -134,7 +134,10 @@ fn read_specs(agent: Agent, home: &Path) -> Result<BTreeMap<String, ServerSpec>>
     let raw = match agent {
         Agent::Codex => {
             toml::from_str::<CodexConfig>(&content)
-                .map_err(|source| Error::Toml { path, source })?
+                .map_err(|source| Error::Toml {
+                    path,
+                    source: Box::new(source),
+                })?
                 .mcp_servers
         }
         _ => {
@@ -330,7 +333,7 @@ fn json_entry(agent: Agent, spec: &ServerSpec) -> Value {
 fn edit_toml(path: &Path, content: &str, edit: &Edit) -> Result<String> {
     let mut doc: toml_edit::DocumentMut = content.parse().map_err(|source| Error::TomlEdit {
         path: path.to_path_buf(),
-        source,
+        source: Box::new(source),
     })?;
     let servers = doc
         .entry("mcp_servers")
