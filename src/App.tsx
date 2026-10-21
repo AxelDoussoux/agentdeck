@@ -7,6 +7,7 @@ import { McpPage } from "./pages/McpPage";
 import { RulesPage } from "./pages/RulesPage";
 import { SecretsPage } from "./pages/SecretsPage";
 import { SkillsPage } from "./pages/SkillsPage";
+import { UpdateBanner } from "./UpdateBanner";
 import "./App.css";
 
 const PAGES = [
@@ -57,6 +58,7 @@ function App() {
       </nav>
 
       <main className="content">
+        <UpdateBanner />
         {error && <p className="error">{error}</p>}
         {page === "agents" && <AgentsPage agents={agents} />}
         {page === "mcp" && <McpPage agents={agents} listing={listing} onChange={refresh} />}
