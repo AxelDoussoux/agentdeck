@@ -1,6 +1,7 @@
 use std::collections::BTreeMap;
 use std::process::ExitCode;
 
+use agentdeck_core::skills::{self, Location};
 use agentdeck_core::{Agent, ServerSpec, Transport, agent, mcp, rules, usage};
 use clap::{Parser, Subcommand, ValueEnum};
 
@@ -32,6 +33,11 @@ enum Command {
         #[command(subcommand)]
         command: RulesCommand,
     },
+    /// Manage Agent Skills
+    Skills {
+        #[command(subcommand)]
+        command: SkillsCommand,
+    },
     /// Show token usage and estimated costs from local session logs
     Usage {
         /// Only count the last N days (UTC)
@@ -41,6 +47,57 @@ enum Command {
         #[arg(long, default_value_t = 10)]
         sessions: usize,
     },
+}
+
+#[derive(Subcommand)]
+enum SkillsCommand {
+    /// List skills and the agents that load them
+    List,
+    /// Print the SKILL.md of a skill
+    Show {
+        name: String,
+        #[arg(long, value_enum, default_value = "claude-code")]
+        from: LocationArg,
+    },
+    /// Copy a skill folder so that other agents load it
+    Copy {
+        name: String,
+        #[arg(long, value_enum)]
+        from: LocationArg,
+        #[arg(long, required = true, num_args = 1..)]
+        to: Vec<AgentArg>,
+        /// Replace the skill where it already exists (the old copy goes to the trash)
+        #[arg(long)]
+        force: bool,
+    },
+    /// Move a skill folder to ~/.agentdeck/trash
+    Remove {
+        name: String,
+        #[arg(long, value_enum)]
+        from: LocationArg,
+    },
+}
+
+/// A skills folder: an agent's own, or `shared` for ~/.agents/skills.
+#[derive(Clone, Copy, ValueEnum)]
+enum LocationArg {
+    ClaudeCode,
+    Shared,
+    Codex,
+    Gemini,
+    Cursor,
+}
+
+impl From<LocationArg> for Location {
+    fn from(arg: LocationArg) -> Location {
+        match arg {
+            LocationArg::ClaudeCode => Location::ClaudeCode,
+            LocationArg::Shared => Location::Shared,
+            LocationArg::Codex => Location::Codex,
+            LocationArg::Gemini => Location::Gemini,
+            LocationArg::Cursor => Location::Cursor,
+        }
+    }
 }
 
 #[derive(Subcommand)]
@@ -161,6 +218,7 @@ fn run(cli: Cli) -> agentdeck_core::Result<()> {
         }
         Command::Mcp { command } => run_mcp(command, &home, cli.json)?,
         Command::Rules { command } => run_rules(command, &home, cli.json)?,
+        Command::Skills { command } => run_skills(command, &home, cli.json)?,
         Command::Usage { days, sessions } => run_usage(&home, days, sessions, cli.json),
     }
     Ok(())
@@ -345,4 +403,50 @@ fn format_tokens(count: u64) -> String {
         1_000..1_000_000 => format!("{:.1}k", count as f64 / 1e3),
         _ => format!("{:.1}M", count as f64 / 1e6),
     }
+}
+
+fn run_skills(
+    command: SkillsCommand,
+    home: &std::path::Path,
+    json: bool,
+) -> agentdeck_core::Result<()> {
+    match command {
+        SkillsCommand::List => {
+            let (all, errors) = skills::list(home);
+            if json {
+                println!("{}", serde_json::to_string_pretty(&all).unwrap());
+            } else {
+                for skill in &all {
+                    let readers: Vec<_> = skill.readers.iter().map(|a| a.display_name()).collect();
+                    println!(
+                        "{:<24} {:<40} {}",
+                        skill.name,
+                        skill.path.display(),
+                        readers.join(", ")
+                    );
+                }
+            }
+            for error in &errors {
+                eprintln!("warning: {error}");
+            }
+        }
+        SkillsCommand::Show { name, from } => print!("{}", skills::read(home, from.into(), &name)?),
+        SkillsCommand::Copy {
+            name,
+            from,
+            to,
+            force,
+        } => {
+            for target in to {
+                let target = Agent::from(target);
+                skills::copy(home, &name, from.into(), target, force)?;
+                println!("Copied \"{name}\" for {}", target.display_name());
+            }
+        }
+        SkillsCommand::Remove { name, from } => {
+            let trashed = skills::remove(home, from.into(), &name)?;
+            println!("Moved \"{name}\" to {}", trashed.display());
+        }
+    }
+    Ok(())
 }

@@ -419,3 +419,71 @@ button.ghost {
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
 }
+
+button.link {
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--text);
+  text-align: left;
+}
+
+button.link:hover strong {
+  color: var(--accent);
+}
+
+.matrix tr.selected td {
+  background: var(--bg);
+}
+
+.matrix td.present {
+  color: var(--ok);
+}
+
+.matrix td.present small {
+  display: block;
+  color: var(--muted);
+}
+
+.detail {
+  margin-top: 24px;
+  padding: 16px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+}
+
+.detail h3 {
+  margin: 0 0 12px;
+}
+
+.copies {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 0 0 12px;
+  padding: 0;
+  list-style: none;
+}
+
+.copies li {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+}
+
+.copies li button {
+  margin-left: auto;
+}
+
+.preview {
+  max-height: 360px;
+  margin: 0;
+  padding: 12px;
+  overflow: auto;
+  border-radius: 6px;
+  background: var(--bg);
+  font: 12px/1.5 ui-monospace, "Cascadia Code", Menlo, monospace;
+  white-space: pre-wrap;
+}

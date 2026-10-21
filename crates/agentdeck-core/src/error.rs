@@ -34,6 +34,12 @@ pub enum Error {
     AlreadyExists { agent: Agent, name: String },
     #[error("{} keeps its global rules in its own settings, not in a file", agent.display_name())]
     NoRulesFile { agent: Agent },
+    #[error("\"{name}\" is not a valid skill name")]
+    InvalidSkillName { name: String },
+    #[error("no skill at {path}")]
+    SkillNotFound { path: PathBuf },
+    #[error("a skill already exists at {path}")]
+    SkillExists { path: PathBuf },
     #[error("{} does not support {what}", agent.display_name())]
     Unsupported { agent: Agent, what: &'static str },
 }
