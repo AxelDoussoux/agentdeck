@@ -1,10 +1,13 @@
+use std::fs;
+use std::path::PathBuf;
+
 use agentdeck_core::rules::{self, Rules};
 use agentdeck_core::secrets::{self, Keychain, SecretRef};
 use agentdeck_core::skills::{self, Location, Skill};
 use agentdeck_core::usage::{self, UsageReport};
 use agentdeck_core::{Agent, AgentInfo, McpServer, ServerSpec, agent, mcp};
 
-fn home() -> Result<std::path::PathBuf, String> {
+fn home() -> Result<PathBuf, String> {
     agent::home_dir().map_err(|err| err.to_string())
 }
 
@@ -98,20 +101,43 @@ struct SecretListing {
     launcher: Option<String>,
 }
 
+/// The `agentdeck` CLI that protected servers start through, normally the one
+/// bundled next to the app. An AppImage runs from a mount that disappears when
+/// the app quits, so there the CLI is first copied to `~/.agentdeck/bin`.
+fn launcher() -> Option<PathBuf> {
+    let found = secrets::find_launcher()?;
+    let in_appimage = std::env::var_os("APPDIR")
+        .is_some_and(|dir| std::env::var_os("APPIMAGE").is_some() && found.starts_with(dir));
+    if !in_appimage {
+        return Some(found);
+    }
+    let stable = home().ok()?.join(".agentdeck/bin/agentdeck");
+    let bytes = fs::read(&found).ok()?;
+    if fs::read(&stable).ok().as_ref() != Some(&bytes) {
+        // Renaming over the old copy works even while an agent runs it.
+        let tmp = stable.with_extension("tmp");
+        fs::create_dir_all(stable.parent()?).ok()?;
+        fs::copy(&found, &tmp).ok()?;
+        fs::rename(&tmp, &stable).ok()?;
+    }
+    Some(stable)
+}
+
 #[tauri::command]
 fn list_secrets() -> Result<SecretListing, String> {
     let (secrets, errors) = secrets::inventory(&home()?);
     Ok(SecretListing {
         secrets,
         errors,
-        launcher: secrets::find_launcher().map(|path| path.display().to_string()),
+        launcher: launcher().map(|path| path.display().to_string()),
     })
 }
 
 #[tauri::command]
 fn protect_server(agent: Agent, server: String) -> Result<(), String> {
-    let launcher = secrets::find_launcher()
-        .ok_or("Install the agentdeck CLI first: protected servers start through it.")?;
+    let launcher = launcher().ok_or(
+        "The agentdeck CLI that protected servers start through was not found. Reinstall AgentDeck.",
+    )?;
     secrets::protect(&Keychain, &home()?, agent, &server, &launcher).map_err(|err| err.to_string())
 }
 

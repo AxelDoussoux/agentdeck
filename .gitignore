@@ -23,3 +23,6 @@ dist-ssr
 *.sln
 *.sw?
 /target/
+
+# Sidecar CLI built by scripts/build-sidecar.mjs
+/src-tauri/binaries/

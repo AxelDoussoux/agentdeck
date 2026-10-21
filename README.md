@@ -29,9 +29,15 @@ Prerequisites: [Rust](https://rustup.rs), Node 22, pnpm 10 and the
 ```sh
 pnpm install
 pnpm tauri dev                          # desktop app
+pnpm tauri build                        # installers in target/release/bundle
 cargo run -p agentdeck-cli -- mcp list  # CLI
-cargo test --workspace
+pnpm sidecar --debug && cargo test --workspace
 ```
+
+The app bundles the CLI as a Tauri sidecar. `pnpm tauri dev` and
+`pnpm tauri build` build it first; before a plain `cargo build` or
+`cargo test` of the whole workspace, run `pnpm sidecar` once, or the app's
+build script fails because `src-tauri/binaries/agentdeck-<target>` is missing.
 
 ## CLI
 
@@ -71,9 +77,12 @@ folder. Removing a skill moves its folder to `~/.agentdeck/trash`.
 Protecting a local MCP server stores its environment variables in the system
 keychain (Credential Manager, macOS Keychain or Secret Service) and rewrites
 its command to `agentdeck exec --secret KEY=ID -- <original command>`, which
-reads them back when the agent starts the server. The `agentdeck` CLI must
-therefore be installed (`cargo install --path crates/agentdeck-cli`) and stay
-where it is. Headers of remote servers are listed but stay in the config.
+reads them back when the agent starts the server. The app ships the
+`agentdeck` CLI next to its own executable and uses that copy (from an
+AppImage, it is copied to `~/.agentdeck/bin` first, since the AppImage mount
+goes away when the app quits). If you move or uninstall the app, unprotect your
+servers first or they will no longer start. Headers of remote servers are
+listed but stay in the config.
 
 Session history is read from `~/.claude/projects` (Claude Code) and
 `~/.codex/sessions` (Codex). Costs are estimates at API list prices
