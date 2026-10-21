@@ -7,7 +7,8 @@ in one place, and shows your session history and costs.
 Runs on Windows, macOS and Linux. Nothing leaves your machine.
 
 > Early development. Today AgentDeck lists the agents installed on your
-> machine and lets you add, remove and copy MCP servers between them.
+> machine, lets you add, remove and copy MCP servers between them, and
+> edit or sync their global rules files.
 
 ## Layout
 
@@ -39,16 +40,19 @@ agentdeck mcp add claude-code github -e GITHUB_TOKEN=ghp_x -- npx -y @modelconte
 agentdeck mcp add cursor linear --url https://mcp.linear.app/mcp
 agentdeck mcp copy github --from claude-code --to codex gemini
 agentdeck mcp remove codex github
+agentdeck rules list
+agentdeck rules show claude-code
+agentdeck rules copy --from claude-code --to codex gemini
 ```
 
 ## Config files read
 
-| Agent | MCP servers |
-| --- | --- |
-| Claude Code | `~/.claude.json` |
-| Codex | `~/.codex/config.toml` |
-| Cursor | `~/.cursor/mcp.json` |
-| Gemini CLI | `~/.gemini/settings.json` |
+| Agent | MCP servers | Global rules |
+| --- | --- | --- |
+| Claude Code | `~/.claude.json` | `~/.claude/CLAUDE.md` |
+| Codex | `~/.codex/config.toml` | `~/.codex/AGENTS.md` |
+| Cursor | `~/.cursor/mcp.json` | stored in Cursor's settings, not editable yet |
+| Gemini CLI | `~/.gemini/settings.json` | `~/.gemini/GEMINI.md` |
 
 Environment and header values of MCP servers are never displayed, only
 their names. When copying a server between agents, secrets are copied by the

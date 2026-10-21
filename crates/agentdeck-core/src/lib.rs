@@ -7,6 +7,7 @@ pub mod agent;
 pub mod config_file;
 pub mod error;
 pub mod mcp;
+pub mod rules;
 
 pub use agent::{Agent, AgentInfo};
 pub use error::{Error, Result};

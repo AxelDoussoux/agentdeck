@@ -241,3 +241,62 @@ button.ghost {
 .add-server .primary {
   align-self: flex-start;
 }
+
+.hint {
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.success {
+  color: var(--ok);
+}
+
+.tabs {
+  display: flex;
+  gap: 4px;
+  margin: 16px 0 8px;
+  border-bottom: 1px solid var(--border);
+}
+
+.tabs button {
+  border: none;
+  border-bottom: 2px solid transparent;
+  border-radius: 0;
+  background: transparent;
+}
+
+.tabs button.active {
+  border-bottom-color: var(--accent);
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.path {
+  display: block;
+  margin-bottom: 8px;
+}
+
+.editor {
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 360px;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--text);
+  font: 13px/1.5 ui-monospace, "Cascadia Code", Menlo, monospace;
+  resize: vertical;
+}
+
+.toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.toolbar .spacer {
+  flex: 1;
+}

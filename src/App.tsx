@@ -3,12 +3,13 @@ import { listAgents, listMcpServers } from "./lib/api";
 import type { AgentInfo, McpListing } from "./lib/types";
 import { AgentsPage } from "./pages/AgentsPage";
 import { McpPage } from "./pages/McpPage";
+import { RulesPage } from "./pages/RulesPage";
 import "./App.css";
 
 const PAGES = [
   { id: "agents", label: "Agents", ready: true },
   { id: "mcp", label: "MCP servers", ready: true },
-  { id: "rules", label: "Rules", ready: false },
+  { id: "rules", label: "Rules", ready: true },
   { id: "skills", label: "Skills", ready: false },
   { id: "secrets", label: "Secrets", ready: false },
   { id: "history", label: "History & costs", ready: false },
@@ -58,6 +59,7 @@ function App() {
         {error && <p className="error">{error}</p>}
         {page === "agents" && <AgentsPage agents={agents} />}
         {page === "mcp" && <McpPage agents={agents} listing={listing} onChange={refresh} />}
+        {page === "rules" && <RulesPage agents={agents} />}
       </main>
     </div>
   );

@@ -6,6 +6,7 @@ export interface AgentInfo {
   agent: Agent;
   name: string;
   mcpConfigPath: string;
+  rulesPath: string | null;
   installed: boolean;
 }
 
@@ -31,4 +32,9 @@ export interface ServerSpec {
   transport: Transport;
   env: Record<string, string>;
   headers: Record<string, string>;
+}
+
+export interface Rules {
+  agent: Agent;
+  content: string | null;
 }

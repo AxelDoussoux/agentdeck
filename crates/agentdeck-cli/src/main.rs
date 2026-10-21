@@ -1,7 +1,7 @@
 use std::collections::BTreeMap;
 use std::process::ExitCode;
 
-use agentdeck_core::{Agent, ServerSpec, Transport, agent, mcp};
+use agentdeck_core::{Agent, ServerSpec, Transport, agent, mcp, rules};
 use clap::{Parser, Subcommand, ValueEnum};
 
 #[derive(Parser)]
@@ -26,6 +26,26 @@ enum Command {
     Mcp {
         #[command(subcommand)]
         command: McpCommand,
+    },
+    /// Manage the global rules file of each agent
+    Rules {
+        #[command(subcommand)]
+        command: RulesCommand,
+    },
+}
+
+#[derive(Subcommand)]
+enum RulesCommand {
+    /// List where each agent keeps its global rules
+    List,
+    /// Print the global rules of an agent
+    Show { agent: AgentArg },
+    /// Replace the rules of other agents with those of one agent
+    Copy {
+        #[arg(long)]
+        from: AgentArg,
+        #[arg(long, required = true, num_args = 1..)]
+        to: Vec<AgentArg>,
     },
 }
 
@@ -131,6 +151,7 @@ fn run(cli: Cli) -> agentdeck_core::Result<()> {
             }
         }
         Command::Mcp { command } => run_mcp(command, &home, cli.json)?,
+        Command::Rules { command } => run_rules(command, &home, cli.json)?,
     }
     Ok(())
 }
@@ -207,6 +228,54 @@ fn run_mcp(command: McpCommand, home: &std::path::Path, json: bool) -> agentdeck
                 let target = Agent::from(target);
                 mcp::copy(home, &name, from.into(), target, force)?;
                 println!("Copied \"{name}\" to {}", target.display_name());
+            }
+        }
+    }
+    Ok(())
+}
+
+fn run_rules(
+    command: RulesCommand,
+    home: &std::path::Path,
+    json: bool,
+) -> agentdeck_core::Result<()> {
+    match command {
+        RulesCommand::List => {
+            let (all, errors) = rules::read_all(home);
+            if json {
+                println!("{}", serde_json::to_string_pretty(&all).unwrap());
+            } else {
+                for agent in Agent::ALL {
+                    let location = match agent.rules_path(home) {
+                        Some(path) => path.display().to_string(),
+                        None => "(stored in the app settings)".into(),
+                    };
+                    let lines = all
+                        .iter()
+                        .find(|found| found.agent == agent)
+                        .and_then(|found| found.content.as_ref())
+                        .map(|content| format!("{} lines", content.lines().count()))
+                        .unwrap_or_else(|| "-".into());
+                    println!("{:<12} {:<10} {location}", agent.display_name(), lines);
+                }
+            }
+            for (agent, err) in &errors {
+                eprintln!("warning: {}: {err}", agent.display_name());
+            }
+        }
+        RulesCommand::Show { agent } => {
+            let found = rules::read(agent.into(), home)?;
+            if json {
+                println!("{}", serde_json::to_string_pretty(&found).unwrap());
+            } else {
+                print!("{}", found.content.unwrap_or_default());
+            }
+        }
+        RulesCommand::Copy { from, to } => {
+            for target in to {
+                let target = Agent::from(target);
+                rules::copy(home, from.into(), target)?;
+                println!("Copied rules to {}", target.display_name());
             }
         }
     }

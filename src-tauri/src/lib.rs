@@ -1,3 +1,4 @@
+use agentdeck_core::rules::{self, Rules};
 use agentdeck_core::{Agent, AgentInfo, McpServer, ServerSpec, agent, mcp};
 
 fn home() -> Result<std::path::PathBuf, String> {
@@ -42,6 +43,20 @@ fn copy_mcp_server(name: String, from: Agent, to: Agent) -> Result<(), String> {
     mcp::copy(&home()?, &name, from, to, false).map_err(|err| err.to_string())
 }
 
+#[tauri::command]
+fn list_rules() -> Result<Vec<Rules>, String> {
+    let (all, errors) = rules::read_all(&home()?);
+    match errors.into_iter().next() {
+        Some((agent, err)) => Err(format!("{}: {err}", agent.display_name())),
+        None => Ok(all),
+    }
+}
+
+#[tauri::command]
+fn save_rules(agent: Agent, content: String) -> Result<(), String> {
+    rules::write(agent, &home()?, &content).map_err(|err| err.to_string())
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -51,7 +66,9 @@ pub fn run() {
             list_mcp_servers,
             add_mcp_server,
             remove_mcp_server,
-            copy_mcp_server
+            copy_mcp_server,
+            list_rules,
+            save_rules
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
