@@ -1,0 +1,25 @@
+name: Bug report
+description: Something does not work as expected
+labels: [bug]
+body:
+  - type: textarea
+    attributes:
+      label: What happened
+      description: What you did, what you expected, and what happened instead. Never paste real tokens or secret values.
+    validations:
+      required: true
+  - type: input
+    attributes:
+      label: AgentDeck version
+      placeholder: "0.1.0"
+  - type: dropdown
+    attributes:
+      label: Operating system
+      options: [Windows, macOS, Linux]
+    validations:
+      required: true
+  - type: dropdown
+    attributes:
+      label: Agents involved
+      multiple: true
+      options: [Claude Code, Codex, Cursor, Gemini CLI]

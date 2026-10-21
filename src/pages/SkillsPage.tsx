@@ -1,10 +1,11 @@
 import { useEffect, useState } from "react";
+import { AgentMark, Empty, Icon, Notice, PageHeader } from "../components/ui";
 import { copySkill, listSkills, readSkill, removeSkill } from "../lib/api";
 import type { Agent, AgentInfo, Skill, SkillListing, SkillLocation } from "../lib/types";
 
 const LOCATION_LABELS: Record<SkillLocation, string> = {
   "claude-code": "~/.claude/skills",
-  shared: "~/.agents/skills (shared)",
+  shared: "~/.agents/skills",
   codex: "~/.codex/skills",
   gemini: "~/.gemini/skills",
   cursor: "~/.cursor/skills",
@@ -58,80 +59,91 @@ export function SkillsPage({ agents }: { agents: AgentInfo[] }) {
 
   return (
     <>
-      <h2>Skills</h2>
-      <p className="hint">
-        Folders with a SKILL.md that agents load on demand. Codex, Gemini CLI and Cursor share
-        ~/.agents/skills, and Cursor also reads the Claude Code and Codex folders, so one copy can
-        reach several agents.
-      </p>
+      <PageHeader
+        title="Skills"
+        description="Folders with a SKILL.md that agents load on demand. Codex, Gemini CLI and Cursor share ~/.agents/skills, and Cursor also reads the Claude Code and Codex folders, so one copy can reach several agents."
+      />
       {listing.errors.map((text) => (
-        <p key={text} className="error">{text}</p>
+        <Notice key={text} tone="error">{text}</Notice>
       ))}
+      {message && <Notice tone={message.error ? "error" : "success"}>{message.text}</Notice>}
 
       {byName.size === 0 ? (
-        <p className="empty">No skill installed yet.</p>
+        <Empty icon="skills" title="No skill installed yet">
+          Skills you add to any agent's skills folder show up here.
+        </Empty>
       ) : (
-        <table className="matrix">
-          <thead>
-            <tr>
-              <th>Skill</th>
-              {agents.map((info) => (
-                <th key={info.agent}>{info.name}</th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            {[...byName].map(([name, found]) => (
-              <tr key={name} className={name === selected ? "selected" : undefined}>
-                <td className="server">
-                  <button className="link" onClick={() => open(name)}>
-                    <strong>{name}</strong>
-                  </button>
-                  {found[0].description && <small>{found[0].description}</small>}
-                </td>
-                {agents.map(({ agent }) => {
-                  const via = found.find((skill) => skill.readers.includes(agent));
-                  return via ? (
-                    <td key={agent} className="present" title={`Loaded from ${via.path}`}>
-                      ✓ <small>{LOCATION_LABELS[via.location]}</small>
-                    </td>
-                  ) : (
-                    <td key={agent}>
-                      <button
-                        className="ghost"
-                        onClick={() =>
-                          run(async () => {
-                            await copySkill(name, found[0].location, agent);
-                            return `Copied "${name}" for ${nameOf(agent)}.`;
-                          })
-                        }
-                      >
-                        + Add here
-                      </button>
-                    </td>
-                  );
-                })}
+        <div className="table-card">
+          <table className="matrix">
+            <thead>
+              <tr>
+                <th>Skill</th>
+                {agents.map((info) => (
+                  <th key={info.agent} className="agent-col">
+                    <span className="th-agent">
+                      <AgentMark agent={info.agent} size={20} />
+                      {info.name}
+                    </span>
+                  </th>
+                ))}
               </tr>
-            ))}
-          </tbody>
-        </table>
+            </thead>
+            <tbody>
+              {[...byName].map(([name, found]) => (
+                <tr key={name} className={name === selected ? "selected" : undefined}>
+                  <td className="server">
+                    <button className="link" onClick={() => open(name)}>
+                      <strong>{name}</strong>
+                    </button>
+                    {found[0].description && <small className="clamp">{found[0].description}</small>}
+                  </td>
+                  {agents.map(({ agent }) => {
+                    const via = found.find((skill) => skill.readers.includes(agent));
+                    return via ? (
+                      <td key={agent} className="agent-col" title={`Loaded from ${via.path}`}>
+                        <span className="cell-on static">
+                          <Icon name="check" size={14} /> {LOCATION_LABELS[via.location]}
+                        </span>
+                      </td>
+                    ) : (
+                      <td key={agent} className="agent-col">
+                        <button
+                          className="cell-add"
+                          onClick={() =>
+                            run(async () => {
+                              await copySkill(name, found[0].location, agent);
+                              return `Copied "${name}" for ${nameOf(agent)}.`;
+                            })
+                          }
+                        >
+                          <Icon name="plus" size={14} /> Add
+                        </button>
+                      </td>
+                    );
+                  })}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       )}
 
-      {message && <p className={message.error ? "error" : "success"}>{message.text}</p>}
-
       {selected && (
-        <section className="detail">
-          <h3>{selected}</h3>
+        <section className="card detail">
+          <header className="detail-header">
+            <h3>{selected}</h3>
+            <button className="small" onClick={() => setSelected(null)}>Close</button>
+          </header>
           <ul className="copies">
             {copies.map((skill) => (
               <li key={skill.location}>
-                <code>{skill.path}</code>
-                <span className="hint">
-                  Loaded by {skill.readers.map(nameOf).join(", ")}
-                </span>
+                <div>
+                  <code>{skill.path}</code>
+                  <span className="hint">Loaded by {skill.readers.map(nameOf).join(", ")}</span>
+                </div>
                 {pendingRemoval === skill.location ? (
                   <button
-                    className="danger"
+                    className="danger small"
                     onClick={() =>
                       run(async () => {
                         const trashed = await removeSkill(skill.location, skill.name);
@@ -142,7 +154,7 @@ export function SkillsPage({ agents }: { agents: AgentInfo[] }) {
                     Move to trash?
                   </button>
                 ) : (
-                  <button onClick={() => setPendingRemoval(skill.location)}>Remove</button>
+                  <button className="small" onClick={() => setPendingRemoval(skill.location)}>Remove</button>
                 )}
               </li>
             ))}

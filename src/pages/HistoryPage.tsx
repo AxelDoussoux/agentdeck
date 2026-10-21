@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { AgentMark, Empty, Notice, PageHeader } from "../components/ui";
 import { usageReport } from "../lib/api";
 import type { Agent, AgentInfo, Tokens, UsageReport } from "../lib/types";
 
@@ -70,111 +71,135 @@ export function HistoryPage({ agents }: { agents: AgentInfo[] }) {
   }
   const loggedAgents = [...new Set(report?.sessions.map((s) => s.agent) ?? [])];
 
+  const periodCost = [...costByDate.values()].reduce((sum, cost) => sum + cost, 0);
+
   return (
     <>
-      <h2>History & costs</h2>
-      <p className="hint">
-        Read from Claude Code and Codex session logs on this computer. Costs are estimated at API
-        list prices: a Claude or ChatGPT subscription is billed differently. Cursor and Gemini CLI
-        keep no usage logs locally.
-      </p>
+      <PageHeader
+        title="History & costs"
+        description="Read from Claude Code and Codex session logs on this computer. Costs are estimated at API list prices: a Claude or ChatGPT subscription is billed differently. Cursor and Gemini CLI keep no usage logs locally."
+        actions={<button onClick={load}>Reload logs</button>}
+      />
 
-      <div className="toolbar">
-        <div className="segmented">
+      <div className="toolbar toolbar-top">
+        <div className="segmented" role="group" aria-label="Period">
           {PERIODS.map((period) => (
             <button
               key={period}
               className={period === days ? "active" : undefined}
+              aria-pressed={period === days}
               onClick={() => setDays(period)}
             >
               {period} days
             </button>
           ))}
         </div>
-        <select value={filter} onChange={(e) => setFilter(e.target.value as Agent | "all")}>
+        <select
+          aria-label="Agent"
+          value={filter}
+          onChange={(e) => setFilter(e.target.value as Agent | "all")}
+        >
           <option value="all">All agents</option>
           {loggedAgents.map((agent) => (
             <option key={agent} value={agent}>{nameOf(agent)}</option>
           ))}
         </select>
-        <span className="spacer" />
-        <button onClick={load}>Reload logs</button>
       </div>
 
-      {error && <p className="error">{error}</p>}
+      {error && <Notice tone="error">{error}</Notice>}
       {report?.errors.map((message) => (
-        <p key={message} className="error">{message}</p>
+        <Notice key={message} tone="error">{message}</Notice>
       ))}
-      {!report && !error && <p className="hint">Reading session logs…</p>}
+      {!report && !error && <p className="hint loading">Reading session logs…</p>}
 
       {report && (
         <>
           <div className="stats">
+            <div className="stat">
+              <span className="label">Estimated cost</span>
+              <span className="value">{formatCost(periodCost)}</span>
+              <span className="hint">{sessions.length} sessions in {days} days</span>
+            </div>
             {[...byAgent].map(([agent, stats]) => (
               <div key={agent} className="stat">
-                <span className="label">{nameOf(agent)}</span>
+                <span className="label with-mark">
+                  <AgentMark agent={agent} size={18} /> {nameOf(agent)}
+                </span>
                 <span className="value">{formatCost(stats.cost)}</span>
                 <span className="hint">
                   {formatTokens(stats.tokens)} tokens · {stats.sessions} sessions
                 </span>
               </div>
             ))}
-            {byAgent.size === 0 && <p className="empty">No usage in this period.</p>}
           </div>
 
-          <div className="chart" role="img" aria-label={`Estimated cost per day over ${days} days`}>
-            {dates.map((date) => {
-              const cost = costByDate.get(date) ?? 0;
-              return (
-                <div key={date} className="bar" title={`${date}: ${formatCost(cost)}`}>
-                  <div style={{ height: `${(cost / maxCost) * 100}%` }} />
-                </div>
-              );
-            })}
-          </div>
-          <div className="chart-axis">
-            <span>{since}</span>
-            <span>Max {formatCost(maxCost)} / day</span>
-            <span>{dates[dates.length - 1]}</span>
-          </div>
+          <section className="card chart-card">
+            <header className="card-header">
+              <h3>Cost per day</h3>
+              <span className="hint">Peak {formatCost(maxCost)}</span>
+            </header>
+            <div className="chart" role="img" aria-label={`Estimated cost per day over ${days} days`}>
+              {dates.map((date) => {
+                const cost = costByDate.get(date) ?? 0;
+                return (
+                  <div key={date} className="bar" title={`${date}: ${formatCost(cost)}`}>
+                    <div style={{ height: `${(cost / maxCost) * 100}%` }} />
+                  </div>
+                );
+              })}
+            </div>
+            <div className="chart-axis">
+              <span>{since}</span>
+              <span>{dates[dates.length - 1]}</span>
+            </div>
+          </section>
 
-          <table className="sessions">
-            <thead>
-              <tr>
-                <th>Date</th>
-                <th>Agent</th>
-                <th>Session</th>
-                <th>Model</th>
-                <th className="number">Tokens</th>
-                <th className="number">Cost</th>
-              </tr>
-            </thead>
-            <tbody>
-              {sessions.slice(0, 200).map((session) => (
-                <tr key={`${session.agent}/${session.id}`}>
-                  <td>{session.endedAt?.slice(0, 10)}</td>
-                  <td>{nameOf(session.agent)}</td>
-                  <td>
-                    <strong>{session.title ?? "Untitled session"}</strong>
-                    <small>{basename(session.project)}</small>
-                  </td>
-                  <td><code>{session.models.join(", ")}</code></td>
-                  <td className="number">{formatTokens(totalTokens(session.tokens))}</td>
-                  <td
-                    className="number"
-                    title={
-                      session.unpricedTokens > 0
-                        ? `${formatTokens(session.unpricedTokens)} tokens from models without a known price are not counted`
-                        : undefined
-                    }
-                  >
-                    {formatCost(session.costUsd)}
-                    {session.unpricedTokens > 0 && "*"}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+          {sessions.length === 0 ? (
+            <Empty icon="chart" title="No session in this period" />
+          ) : (
+            <div className="table-card">
+              <table className="sessions">
+                <thead>
+                  <tr>
+                    <th>Date</th>
+                    <th>Session</th>
+                    <th>Model</th>
+                    <th className="number">Tokens</th>
+                    <th className="number">Cost</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {sessions.slice(0, 200).map((session) => (
+                    <tr key={`${session.agent}/${session.id}`}>
+                      <td className="nowrap">{session.endedAt?.slice(0, 10)}</td>
+                      <td>
+                        <span className="session-title">
+                          <AgentMark agent={session.agent} size={20} />
+                          <span>
+                            <strong>{session.title ?? "Untitled session"}</strong>
+                            <small>{basename(session.project)}</small>
+                          </span>
+                        </span>
+                      </td>
+                      <td><code>{session.models.join(", ")}</code></td>
+                      <td className="number">{formatTokens(totalTokens(session.tokens))}</td>
+                      <td
+                        className="number"
+                        title={
+                          session.unpricedTokens > 0
+                            ? `${formatTokens(session.unpricedTokens)} tokens from models without a known price are not counted`
+                            : undefined
+                        }
+                      >
+                        {formatCost(session.costUsd)}
+                        {session.unpricedTokens > 0 && "*"}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
           {sessions.length > 200 && <p className="hint">Showing the 200 most recent sessions.</p>}
         </>
       )}

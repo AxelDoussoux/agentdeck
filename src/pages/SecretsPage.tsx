@@ -1,8 +1,9 @@
 import { useEffect, useState } from "react";
+import { Empty, Icon, Notice, PageHeader } from "../components/ui";
 import { listSecrets, protectServer, unprotectServer } from "../lib/api";
 import type { Agent, AgentInfo, SecretListing, SecretRef } from "../lib/types";
 
-export function SecretsPage({ agents }: { agents: AgentInfo[] }) {
+export function SecretsPage({ agents, onChange }: { agents: AgentInfo[]; onChange: () => void }) {
   const [listing, setListing] = useState<SecretListing | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [message, setMessage] = useState<{ error: boolean; text: string } | null>(null);
@@ -29,6 +30,7 @@ export function SecretsPage({ agents }: { agents: AgentInfo[] }) {
     }
     setBusy(null);
     await load();
+    onChange();
   }
 
   const nameOf = (agent: Agent) => agents.find((a) => a.agent === agent)?.name ?? agent;
@@ -43,25 +45,29 @@ export function SecretsPage({ agents }: { agents: AgentInfo[] }) {
 
   return (
     <>
-      <h2>Secrets</h2>
-      <p className="hint">
-        API keys and tokens set in MCP server configs. In plain text, anyone or anything that can
-        read these files can read them. AgentDeck can move the environment variables of local
-        servers to your system keychain: the agent then starts the server through{" "}
-        <code>agentdeck exec</code>, which passes them to it. Values are never shown here.
-      </p>
+      <PageHeader
+        title="Secrets"
+        description={
+          <>
+            API keys and tokens set in MCP server configs. In plain text, anything that can read
+            these files can read them. AgentDeck moves the environment variables of local servers
+            to your system keychain, and the agent then starts the server through{" "}
+            <code>agentdeck exec</code>, which passes them back. Values are never shown here.
+          </>
+        }
+      />
 
       {listing && !listing.launcher && (
-        <p className="warning">
+        <Notice tone="warning">
           Moving secrets to the keychain needs the <code>agentdeck</code> command-line tool that
           ships with AgentDeck, and it was not found next to the app. Reinstall AgentDeck, or
           install the tool with <code>cargo install --path crates/agentdeck-cli</code>.
-        </p>
+        </Notice>
       )}
       {listing?.errors.map((text) => (
-        <p key={text} className="error">{text}</p>
+        <Notice key={text} tone="error">{text}</Notice>
       ))}
-      {message && <p className={message.error ? "error" : "success"}>{message.text}</p>}
+      {message && <Notice tone={message.error ? "error" : "success"}>{message.text}</Notice>}
 
       {listing && (
         <div className="stats">
@@ -71,83 +77,90 @@ export function SecretsPage({ agents }: { agents: AgentInfo[] }) {
           </div>
           <div className="stat">
             <span className="label">In the keychain</span>
-            <span className="value">{listing.secrets.length - plainCount}</span>
+            <span className="value ok-text">{listing.secrets.length - plainCount}</span>
           </div>
         </div>
       )}
 
-      {listing && groups.size === 0 && <p className="empty">No MCP server uses secrets.</p>}
+      {listing && groups.size === 0 && (
+        <Empty icon="shield" title="No MCP server uses secrets">
+          Servers with API keys or tokens in their config show up here.
+        </Empty>
+      )}
 
       {groups.size > 0 && (
-        <table className="secrets">
-          <thead>
-            <tr>
-              <th>Server</th>
-              <th>Secret</th>
-              <th>Where</th>
-              <th />
-            </tr>
-          </thead>
-          <tbody>
-            {[...groups].map(([key, secrets]) => {
-              const { agent, server } = secrets[0];
-              const canProtect = secrets.some((s) => s.protectable);
-              const protectedCount = secrets.filter((s) => s.vaultId).length;
-              return secrets.map((secret, index) => (
-                <tr key={`${key}/${secret.kind}/${secret.key}`}>
-                  {index === 0 && (
-                    <td rowSpan={secrets.length}>
-                      <strong>{server}</strong>
-                      <small>{nameOf(agent)}</small>
+        <div className="table-card">
+          <table className="secrets">
+            <thead>
+              <tr>
+                <th>Server</th>
+                <th>Secret</th>
+                <th>Stored</th>
+                <th />
+              </tr>
+            </thead>
+            <tbody>
+              {[...groups].map(([key, secrets]) => {
+                const { agent, server } = secrets[0];
+                const canProtect = secrets.some((s) => s.protectable);
+                const protectedCount = secrets.filter((s) => s.vaultId).length;
+                return secrets.map((secret, index) => (
+                  <tr key={`${key}/${secret.kind}/${secret.key}`}>
+                    {index === 0 && (
+                      <td rowSpan={secrets.length}>
+                        <strong>{server}</strong>
+                        <small>{nameOf(agent)}</small>
+                      </td>
+                    )}
+                    <td>
+                      <code>{secret.key}</code>
+                      <small>{secret.kind === "env" ? "Environment variable" : "HTTP header"}</small>
                     </td>
-                  )}
-                  <td>
-                    <code>{secret.key}</code>
-                    <small>{secret.kind === "env" ? "Environment variable" : "HTTP header"}</small>
-                  </td>
-                  <td>
-                    {secret.vaultId ? (
-                      <span className="success">Keychain</span>
-                    ) : (
-                      <span className="danger-text">Plain text</span>
-                    )}
-                    {secret.sameValueElsewhere > 0 && (
-                      <small>Same value in {secret.sameValueElsewhere} other place(s)</small>
-                    )}
-                    {!secret.vaultId && !secret.protectable && (
-                      <small>Headers of remote servers stay in the config for now</small>
-                    )}
-                  </td>
-                  {index === 0 && (
-                    <td rowSpan={secrets.length} className="actions">
-                      {canProtect && (
-                        <button
-                          className="primary"
-                          disabled={!listing?.launcher || busy !== null}
-                          onClick={() =>
-                            run(key, () => protectServer(agent, server), `Moved the secrets of ${server} to the keychain.`)
-                          }
-                        >
-                          {busy === key ? "Moving…" : "Move to keychain"}
-                        </button>
+                    <td>
+                      {secret.vaultId ? (
+                        <span className="pill pill-ok"><Icon name="shield" size={12} /> Keychain</span>
+                      ) : (
+                        <span className="pill pill-danger"><Icon name="alert" size={12} /> Plain text</span>
                       )}
-                      {protectedCount > 0 && (
-                        <button
-                          disabled={busy !== null}
-                          onClick={() =>
-                            run(key, () => unprotectServer(agent, server), `Put the secrets of ${server} back in its config.`)
-                          }
-                        >
-                          Restore to config
-                        </button>
+                      {secret.sameValueElsewhere > 0 && (
+                        <small>Same value in {secret.sameValueElsewhere} other place(s)</small>
+                      )}
+                      {!secret.vaultId && !secret.protectable && (
+                        <small>Headers of remote servers stay in the config for now</small>
                       )}
                     </td>
-                  )}
-                </tr>
-              ));
-            })}
-          </tbody>
-        </table>
+                    {index === 0 && (
+                      <td rowSpan={secrets.length} className="actions">
+                        {canProtect && (
+                          <button
+                            className="primary small"
+                            disabled={!listing?.launcher || busy !== null}
+                            onClick={() =>
+                              run(key, () => protectServer(agent, server), `Moved the secrets of ${server} to the keychain.`)
+                            }
+                          >
+                            {busy === key ? "Moving…" : "Move to keychain"}
+                          </button>
+                        )}
+                        {protectedCount > 0 && (
+                          <button
+                            className="small"
+                            disabled={busy !== null}
+                            onClick={() =>
+                              run(key, () => unprotectServer(agent, server), `Put the secrets of ${server} back in its config.`)
+                            }
+                          >
+                            Restore to config
+                          </button>
+                        )}
+                      </td>
+                    )}
+                  </tr>
+                ));
+              })}
+            </tbody>
+          </table>
+        </div>
       )}
     </>
   );

@@ -13,9 +13,9 @@
     "windows": [
       {
         "title": "AgentDeck",
-        "width": 1100,
-        "height": 720,
-        "minWidth": 800,
+        "width": 1240,
+        "height": 800,
+        "minWidth": 640,
         "minHeight": 500
       }
     ],
