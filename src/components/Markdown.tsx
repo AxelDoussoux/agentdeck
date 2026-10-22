@@ -85,12 +85,27 @@ function parseBlocks(text: string): Block[] {
   const blocks: Block[] = [];
   let i = 0;
   const startsBlock = (line: string) =>
-    /^\s{0,3}(#{1,6}\s|>|([-*_])\s*(\2\s*){2,}$)/.test(line) || FENCE.test(line) || LIST_ITEM.test(line);
+    /^\s{0,3}(#{1,6}\s|>|<!--|([-*_])\s*(\2\s*){2,}$)/.test(line) || FENCE.test(line) || LIST_ITEM.test(line);
 
   while (i < lines.length) {
     const line = lines[i];
     if (!line.trim()) {
       i++;
+      continue;
+    }
+
+    // HTML comments are not shown, as in any Markdown viewer.
+    if (/^\s{0,3}<!--/.test(line)) {
+      let end = i;
+      while (end < lines.length && !lines[end].includes("-->")) end++;
+      const after = end < lines.length ? lines[end].slice(lines[end].indexOf("-->") + 3) : "";
+      // Text after the comment, on its last line, is read as a line of its own.
+      if (after.trim()) {
+        lines[end] = after;
+        i = end;
+      } else {
+        i = end + 1;
+      }
       continue;
     }
 
