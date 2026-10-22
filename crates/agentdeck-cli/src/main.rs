@@ -497,6 +497,7 @@ fn run_secrets(
                 for secret in &all {
                     let status = match (&secret.vault_id, secret.same_value_elsewhere) {
                         (Some(_), _) => "keychain".to_owned(),
+                        (None, _) if !secret.likely => "setting, not a secret".to_owned(),
                         (None, 0) => "plain text".to_owned(),
                         (None, n) => format!("plain text, same value in {n} other place(s)"),
                     };

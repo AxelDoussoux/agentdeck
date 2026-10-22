@@ -18,8 +18,8 @@ export function OverviewPage({ agents, listing, secrets, onNavigate }: Props) {
       (info) => info.installed && !listing.servers.some((s) => s.name === name && s.agent === info.agent),
     ),
   ).length;
-  const plain = secrets?.secrets.filter((s) => !s.vaultId).length ?? 0;
-  const vaulted = (secrets?.secrets.length ?? 0) - plain;
+  const plain = secrets?.secrets.filter((s) => s.likely && !s.vaultId).length ?? 0;
+  const vaulted = secrets?.secrets.filter((s) => s.vaultId).length ?? 0;
 
   return (
     <>

@@ -80,9 +80,101 @@ pub struct SecretRef {
     /// How many other plain-text secrets have the same value, a hint that one
     /// key is copied in several places.
     pub same_value_elsewhere: usize,
+    /// Whether the name or value looks like a credential. The others are
+    /// settings such as `NODE_ENV`, listed but not counted as secrets.
+    pub likely: bool,
     /// Whether the secret can be moved to the keychain: only environment
-    /// variables of local servers can.
+    /// variables of local servers that look like credentials can.
     pub protectable: bool,
+}
+
+/// Name parts that mark a credential, matched on whole words of the name.
+const SECRET_WORDS: &[&str] = &[
+    "TOKEN",
+    "SECRET",
+    "PASSWORD",
+    "PASSWD",
+    "PASS",
+    "KEY",
+    "APIKEY",
+    "CREDENTIAL",
+    "CREDENTIALS",
+    "AUTH",
+    "AUTHORIZATION",
+    "BEARER",
+    "COOKIE",
+    "PAT",
+    "PRIVATE",
+    "DSN",
+    "SIGNATURE",
+];
+
+/// Value prefixes of well-known API keys and tokens.
+const SECRET_PREFIXES: &[&str] = &[
+    "ghp_",
+    "gho_",
+    "ghu_",
+    "ghs_",
+    "ghr_",
+    "github_pat_",
+    "glpat-",
+    "sk-",
+    "sk_live_",
+    "sk_test_",
+    "rk_live_",
+    "xoxb-",
+    "xoxp-",
+    "xoxa-",
+    "xapp-",
+    "AKIA",
+    "AIza",
+    "lin_api_",
+    "ntn_",
+    "secret_",
+    "Bearer ",
+    "Basic ",
+    "eyJ",
+];
+
+/// Whether an environment variable or header holds a credential, judging by
+/// its name (`GITHUB_TOKEN`, `apiKey`, `X-Api-Key`) or its value (`ghp_…`, a
+/// URL with a password).
+pub fn looks_secret(key: &str, value: &str) -> bool {
+    // Split camelCase and snake/kebab case into upper-case words.
+    let mut words = vec![String::new()];
+    let mut previous_lower = false;
+    for c in key.chars() {
+        if !c.is_ascii_alphanumeric() {
+            words.push(String::new());
+            previous_lower = false;
+            continue;
+        }
+        if c.is_ascii_uppercase() && previous_lower {
+            words.push(String::new());
+        }
+        previous_lower = c.is_ascii_lowercase() || c.is_ascii_digit();
+        words.last_mut().unwrap().push(c.to_ascii_uppercase());
+    }
+    if words
+        .iter()
+        .any(|word| SECRET_WORDS.contains(&word.as_str()))
+    {
+        return true;
+    }
+    let value = value.trim();
+    if SECRET_PREFIXES
+        .iter()
+        .any(|prefix| value.starts_with(prefix))
+    {
+        return true;
+    }
+    // postgres://user:password@host
+    value.split_once("://").is_some_and(|(_, rest)| {
+        let authority = rest.split('/').next().unwrap_or_default();
+        authority
+            .rsplit_once('@')
+            .is_some_and(|(userinfo, _)| userinfo.contains(':'))
+    })
 }
 
 /// A server started through `agentdeck exec`.
@@ -181,6 +273,7 @@ pub fn inventory(home: &Path) -> (Vec<SecretRef>, Vec<String>) {
                     key,
                     vault_id: Some(id),
                     same_value_elsewhere: 0,
+                    likely: true,
                     protectable: false,
                 });
             }
@@ -194,6 +287,7 @@ pub fn inventory(home: &Path) -> (Vec<SecretRef>, Vec<String>) {
                         .map(|entry| (SecretKind::Header, entry)),
                 );
             for (kind, (key, value)) in plain {
+                let likely = looks_secret(&key, &value);
                 *values.entry(value.clone()).or_default() += 1;
                 plain_values.push(value);
                 secrets.push(SecretRef {
@@ -203,7 +297,8 @@ pub fn inventory(home: &Path) -> (Vec<SecretRef>, Vec<String>) {
                     key,
                     vault_id: None,
                     same_value_elsewhere: 0,
-                    protectable: stdio && kind == SecretKind::Env,
+                    likely,
+                    protectable: stdio && kind == SecretKind::Env && likely,
                 });
             }
         }
@@ -217,8 +312,9 @@ pub fn inventory(home: &Path) -> (Vec<SecretRef>, Vec<String>) {
     (secrets, errors)
 }
 
-/// Moves the environment variables of a local server to the vault and makes
-/// the agent start it through `launcher exec`. Its other settings are kept.
+/// Moves the environment variables of a local server that look like
+/// credentials to the vault and makes the agent start it through
+/// `launcher exec`. Its other variables and settings are kept.
 pub fn protect(
     vault: &dyn Vault,
     home: &Path,
@@ -238,17 +334,21 @@ pub fn protect(
         Some(wrapped) => (wrapped.secrets, wrapped.command, wrapped.args),
         None => (BTreeMap::new(), command.clone(), args.clone()),
     };
-    if spec.env.is_empty() {
+    let (credentials, settings): (BTreeMap<_, _>, BTreeMap<_, _>) = spec
+        .env
+        .into_iter()
+        .partition(|(key, value)| looks_secret(key, value));
+    if credentials.is_empty() {
         return Ok(());
     }
-    for (key, value) in &spec.env {
+    for (key, value) in &credentials {
         let id = vault_id(agent, server, key);
         vault.set(&id, value)?;
         secrets.insert(key.clone(), id);
     }
     let launcher = launcher.to_string_lossy();
     let args = exec_args(&secrets, &command, &args);
-    mcp::set_launch(agent, home, server, &launcher, &args, &BTreeMap::new())
+    mcp::set_launch(agent, home, server, &launcher, &args, &settings)
 }
 
 /// Puts the secrets of a protected server back in plain text and removes them
@@ -453,6 +553,71 @@ mod tests {
             }
         );
         assert!(vault.0.borrow().is_empty());
+    }
+
+    #[test]
+    fn recognizes_credentials_by_name_or_value() {
+        for (key, value) in [
+            ("GITHUB_TOKEN", "x"),
+            ("GITHUB_PERSONAL_ACCESS_TOKEN", "x"),
+            ("OPENAI_API_KEY", "x"),
+            ("apiKey", "x"),
+            ("X-Api-Key", "x"),
+            ("Authorization", "x"),
+            ("DB_PASSWORD", "x"),
+            ("NOTION", "ntn_abc"),
+            ("GH", "ghp_abc"),
+            ("DATABASE_URL", "postgres://me:pw@localhost:5432/db"),
+        ] {
+            assert!(looks_secret(key, value), "{key}={value}");
+        }
+        for (key, value) in [
+            ("NODE_ENV", "production"),
+            ("LOG_LEVEL", "debug"),
+            ("KEYBOARD_LAYOUT", "fr"),
+            ("MONKEY", "banana"),
+            ("PASSTHROUGH", "1"),
+            ("DATABASE_URL", "postgres://localhost:5432/db"),
+            ("Accept", "application/json"),
+            ("HOME_URL", "https://example.com/@user:1"),
+        ] {
+            assert!(!looks_secret(key, value), "{key}={value}");
+        }
+    }
+
+    #[test]
+    fn settings_stay_in_the_config_when_protecting() {
+        let home = tempfile::tempdir().unwrap();
+        let home = home.path();
+        fs::write(
+            home.join(".claude.json"),
+            r#"{"mcpServers": {"pg": {"command": "npx", "args": ["server-postgres"], "env": {"DATABASE_URL": "postgres://u:pw@db/app", "NODE_ENV": "production"}}}}"#,
+        )
+        .unwrap();
+
+        let (secrets, _) = inventory(home);
+        let node_env = secrets.iter().find(|s| s.key == "NODE_ENV").unwrap();
+        assert!(!node_env.likely && !node_env.protectable);
+
+        let vault = MemoryVault::default();
+        protect(
+            &vault,
+            home,
+            Agent::ClaudeCode,
+            "pg",
+            Path::new("agentdeck"),
+        )
+        .unwrap();
+        let spec = &mcp::read_specs(Agent::ClaudeCode, home).unwrap()["pg"];
+        assert_eq!(
+            spec.env,
+            BTreeMap::from([("NODE_ENV".to_owned(), "production".to_owned())])
+        );
+        assert_eq!(vault.0.borrow().len(), 1);
+
+        unprotect(&vault, home, Agent::ClaudeCode, "pg").unwrap();
+        let spec = &mcp::read_specs(Agent::ClaudeCode, home).unwrap()["pg"];
+        assert_eq!(spec.env.len(), 2);
     }
 
     #[test]
