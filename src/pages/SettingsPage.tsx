@@ -9,7 +9,7 @@ import { useToast } from "../components/Toasts";
 import { AgentMark, Icon, Notice, PageHeader } from "../components/ui";
 import { appSettings, emptySkillTrash, openFolder } from "../lib/api";
 import type { AgentInfo, AppSettings, SecretListing } from "../lib/types";
-import { LANGUAGES, t, type LanguageSetting } from "../lib/i18n";
+import { errorText, LANGUAGES, t, type LanguageSetting } from "../lib/i18n";
 
 const RELEASES = "https://github.com/AxelDoussoux/agentdeck/releases";
 
@@ -47,7 +47,7 @@ export function SettingsPage({ agents, secrets, version, theme, setTheme, langua
       setSettings(await appSettings());
       setLoadError(null);
     } catch (err) {
-      setLoadError(String(err));
+      setLoadError(errorText(err));
     }
   }
 
@@ -57,7 +57,7 @@ export function SettingsPage({ agents, secrets, version, theme, setTheme, langua
 
   const nameOf = (agent: string) => agents.find((a) => a.agent === agent)?.name ?? agent;
   const open = (folder: Parameters<typeof openFolder>[0]) =>
-    openFolder(folder).catch((err) => notify({ tone: "error", text: String(err) }));
+    openFolder(folder).catch((err) => notify({ tone: "error", text: errorText(err) }));
 
   async function checkUpdates() {
     setUpdates({ kind: "checking" });
@@ -65,7 +65,7 @@ export function SettingsPage({ agents, secrets, version, theme, setTheme, langua
       const update = await check();
       setUpdates(update ? { kind: "available", update } : { kind: "latest" });
     } catch (err) {
-      setUpdates({ kind: "error", text: t.settings.checkFailed(String(err)) });
+      setUpdates({ kind: "error", text: t.settings.checkFailed(errorText(err)) });
     }
   }
 
@@ -76,7 +76,7 @@ export function SettingsPage({ agents, secrets, version, theme, setTheme, langua
       setUpdates({ kind: "installing", text: t.update.restarting });
       await relaunch();
     } catch (err) {
-      setUpdates({ kind: "error", text: t.update.failed(String(err)) });
+      setUpdates({ kind: "error", text: t.update.failed(errorText(err)) });
     }
   }
 
@@ -85,7 +85,7 @@ export function SettingsPage({ agents, secrets, version, theme, setTheme, langua
       const count = await emptySkillTrash();
       notify({ tone: "success", text: t.settings.trashEmptied(count) });
     } catch (err) {
-      notify({ tone: "error", text: String(err) });
+      notify({ tone: "error", text: errorText(err) });
     }
     setEmptying(false);
     load();

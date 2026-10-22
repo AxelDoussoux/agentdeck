@@ -3,7 +3,7 @@ import { repairLaunchers } from "../lib/api";
 import type { AgentInfo, SecretListing } from "../lib/types";
 import { useToast } from "./Toasts";
 import { Notice } from "./ui";
-import { t } from "../lib/i18n";
+import { errorText, t } from "../lib/i18n";
 
 /**
  * Warns that some protected servers no longer start because the `agentdeck`
@@ -36,7 +36,7 @@ export function LauncherRepair({
         text: t.launcher.repaired(repaired),
       });
     } catch (err) {
-      notify({ tone: "error", text: String(err) });
+      notify({ tone: "error", text: errorText(err) });
     }
     setBusy(false);
     onRepaired();

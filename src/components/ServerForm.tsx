@@ -7,7 +7,7 @@ import { splitCommand } from "../lib/command";
 import { parseServers, type ImportedServer } from "../lib/importServers";
 import { WITH_OPTIONS } from "../lib/servers";
 import type { Agent, AgentInfo, McpServer, ServerOptions, Transport } from "../lib/types";
-import { formatList, t } from "../lib/i18n";
+import { errorText, formatList, t } from "../lib/i18n";
 
 /** What the form submits: values are `null` for variables kept as they are. */
 export interface ServerDraft {
@@ -163,7 +163,7 @@ export function ServerForm({ agents, editing, has = () => false, onSubmit, onCan
       load(servers[0]);
       setPasted("");
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
+      setError(errorText(err));
     }
   }
 

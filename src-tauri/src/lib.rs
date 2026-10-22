@@ -9,15 +9,39 @@ use agentdeck_core::secrets::{self, Keychain, SecretRef};
 use agentdeck_core::skills::{self, Location, Skill};
 use agentdeck_core::usage::{self, ReadProgress, Session, UsageReport};
 use agentdeck_core::{
-    Agent, AgentInfo, Error, McpServer, ServerSpec, agent, config_file, mcp, probe,
+    Agent, AgentInfo, Error, ErrorInfo, McpServer, ServerSpec, agent, config_file, mcp, probe,
 };
 use tauri::ipc::Channel;
 use tauri::{Manager, State};
 
 mod watch;
 
-fn home() -> Result<PathBuf, String> {
-    agent::home_dir().map_err(|err| err.to_string())
+fn home() -> Result<PathBuf, UiError> {
+    Ok(agent::home_dir()?)
+}
+
+/// What a command sends back when it fails, for the UI to word in the
+/// user's language. Boxed, so that results stay small.
+#[derive(Debug, serde::Serialize)]
+#[serde(transparent)]
+struct UiError(Box<ErrorInfo>);
+
+impl From<ErrorInfo> for UiError {
+    fn from(info: ErrorInfo) -> Self {
+        UiError(Box::new(info))
+    }
+}
+
+impl From<Error> for UiError {
+    fn from(err: Error) -> Self {
+        ErrorInfo::from(err).into()
+    }
+}
+
+/// An error from outside the core, such as the opener or the save dialog,
+/// which the UI shows as it is.
+fn other(err: impl ToString) -> UiError {
+    ErrorInfo::new("other", err.to_string()).into()
 }
 
 /// How to take back a change made from the app, for the Undo button of its
@@ -74,12 +98,10 @@ fn undoable_mcp<T>(
     agent: Agent,
     name: &str,
     edit: impl FnOnce(&std::path::Path) -> agentdeck_core::Result<T>,
-) -> Result<(u64, T), String> {
+) -> Result<(u64, T), UiError> {
     let home = home()?;
-    let previous = mcp::get(agent, &home, name)
-        .map_err(|err| err.to_string())?
-        .map(Box::new);
-    let output = edit(&home).map_err(|err| err.to_string())?;
+    let previous = mcp::get(agent, &home, name)?.map(Box::new);
+    let output = edit(&home)?;
     let id = undo.push(UndoAction::Mcp {
         agent,
         name: name.to_owned(),
@@ -89,10 +111,10 @@ fn undoable_mcp<T>(
 }
 
 #[tauri::command]
-fn undo_change(undo: State<UndoStore>, id: u64) -> Result<(), String> {
+fn undo_change(undo: State<UndoStore>, id: u64) -> Result<(), UiError> {
     let action = undo
         .take(id)
-        .ok_or("This change can no longer be undone.")?;
+        .ok_or_else(|| ErrorInfo::new("undoExpired", "This change can no longer be undone."))?;
     let home = home()?;
     match action {
         UndoAction::Mcp {
@@ -113,15 +135,17 @@ fn undo_change(undo: State<UndoStore>, id: u64) -> Result<(), String> {
             previous,
             written,
         } => {
-            let current = rules::read(agent, &home)
-                .map_err(|err| err.to_string())?
-                .content
-                .unwrap_or_default();
+            let current = rules::read(agent, &home)?.content.unwrap_or_default();
             if current != written {
-                return Err(format!(
-                    "The {} rules changed since, so they were left as they are.",
-                    agent.display_name()
-                ));
+                return Err(ErrorInfo::new(
+                    "rulesChanged",
+                    format!(
+                        "The {} rules changed since, so they were left as they are.",
+                        agent.display_name()
+                    ),
+                )
+                .agent(agent)
+                .into());
             }
             rules::write(agent, &home, &previous)
         }
@@ -130,7 +154,7 @@ fn undo_change(undo: State<UndoStore>, id: u64) -> Result<(), String> {
             server,
             protect: true,
         } => {
-            let launcher = launcher().ok_or(LAUNCHER_MISSING)?;
+            let launcher = launcher().ok_or_else(launcher_missing)?;
             secrets::protect(&Keychain, &home, agent, &server, &launcher)
         }
         UndoAction::Protect {
@@ -139,22 +163,22 @@ fn undo_change(undo: State<UndoStore>, id: u64) -> Result<(), String> {
             protect: false,
         } => secrets::unprotect(&Keychain, &home, agent, &server),
     }
-    .map_err(|err| err.to_string())
+    .map_err(UiError::from)
 }
 
 #[tauri::command]
-fn list_agents() -> Result<Vec<AgentInfo>, String> {
+fn list_agents() -> Result<Vec<AgentInfo>, UiError> {
     Ok(agent::detect(&home()?))
 }
 
 /// Opens an agent's MCP config in the default editor, or shows it in the
 /// file manager. Only these files: the UI never passes a path.
 #[tauri::command]
-fn open_config(app: tauri::AppHandle, agent: Agent, reveal: bool) -> Result<(), String> {
+fn open_config(app: tauri::AppHandle, agent: Agent, reveal: bool) -> Result<(), UiError> {
     use tauri_plugin_opener::OpenerExt;
     let path = agent.mcp_config_path(&home()?);
     if !path.is_file() {
-        return Err(format!("{} does not exist yet.", path.display()));
+        return Err(not_created(&path));
     }
     let opener = app.opener();
     let opened = if reveal {
@@ -162,13 +186,13 @@ fn open_config(app: tauri::AppHandle, agent: Agent, reveal: bool) -> Result<(), 
     } else {
         opener.open_path(path.to_string_lossy(), None::<&str>)
     };
-    opened.map_err(|err| err.to_string())
+    opened.map_err(other)
 }
 
 #[derive(serde::Serialize)]
 struct McpListing {
     servers: Vec<McpServer>,
-    errors: Vec<String>,
+    errors: Vec<ErrorInfo>,
 }
 
 /// Where an agent's files are, and whether a variable moved them.
@@ -195,7 +219,7 @@ struct AppSettings {
 }
 
 #[tauri::command]
-fn app_settings() -> Result<AppSettings, String> {
+fn app_settings() -> Result<AppSettings, UiError> {
     let home = home()?;
     let folders = Agent::ALL
         .into_iter()
@@ -233,38 +257,36 @@ enum AppFolder {
 }
 
 #[tauri::command]
-fn open_folder(app: tauri::AppHandle, folder: AppFolder) -> Result<(), String> {
+fn open_folder(app: tauri::AppHandle, folder: AppFolder) -> Result<(), UiError> {
     use tauri_plugin_opener::OpenerExt;
     let home = home()?;
     let path = match folder {
         AppFolder::Backups => config_file::backups_root(&home),
         AppFolder::Trash => skills::trash_dir(&home),
         AppFolder::Agent(agent) => agent.folder(&home),
-        AppFolder::Skill { location, name } => {
-            skills::skill_dir(&home, location, &name).map_err(|err| err.to_string())?
-        }
+        AppFolder::Skill { location, name } => skills::skill_dir(&home, location, &name)?,
     };
     if !path.is_dir() {
-        return Err(format!("{} does not exist yet.", path.display()));
+        return Err(not_created(&path));
     }
     app.opener()
         .open_path(path.to_string_lossy(), None::<&str>)
-        .map_err(|err| err.to_string())
+        .map_err(other)
 }
 
 #[tauri::command]
-fn empty_skill_trash() -> Result<usize, String> {
-    skills::empty_trash(&home()?).map_err(|err| err.to_string())
+fn empty_skill_trash() -> Result<usize, UiError> {
+    skills::empty_trash(&home()?).map_err(UiError::from)
 }
 
 #[tauri::command]
-fn list_mcp_servers() -> Result<McpListing, String> {
+fn list_mcp_servers() -> Result<McpListing, UiError> {
     let (servers, errors) = mcp::list_all(&home()?);
     Ok(McpListing {
         servers,
         errors: errors
             .into_iter()
-            .map(|(agent, err)| format!("{}: {err}", agent.display_name()))
+            .map(|(agent, err)| ErrorInfo::from(err).agent(agent))
             .collect(),
     })
 }
@@ -275,7 +297,7 @@ fn add_mcp_server(
     agent: Agent,
     name: String,
     spec: ServerSpec,
-) -> Result<u64, String> {
+) -> Result<u64, UiError> {
     undoable_mcp(&undo, agent, &name, |home| {
         mcp::add(agent, home, &name, &spec, false)
     })
@@ -288,7 +310,7 @@ fn edit_mcp_server(
     agent: Agent,
     name: String,
     edit: mcp::ServerEdit,
-) -> Result<u64, String> {
+) -> Result<u64, UiError> {
     undoable_mcp(&undo, agent, &name, |home| {
         mcp::update(agent, home, &name, &edit)
     })
@@ -296,7 +318,7 @@ fn edit_mcp_server(
 }
 
 #[tauri::command]
-fn remove_mcp_server(undo: State<UndoStore>, agent: Agent, name: String) -> Result<u64, String> {
+fn remove_mcp_server(undo: State<UndoStore>, agent: Agent, name: String) -> Result<u64, UiError> {
     undoable_mcp(&undo, agent, &name, |home| mcp::remove(agent, home, &name)).map(|(id, ())| id)
 }
 
@@ -307,7 +329,7 @@ fn copy_mcp_server(
     from: Agent,
     to: Agent,
     overwrite: bool,
-) -> Result<CopyResult, String> {
+) -> Result<CopyResult, UiError> {
     let (undo, lost) = undoable_mcp(&undo, to, &name, |home| {
         mcp::copy(home, &name, from, to, overwrite)
     })?;
@@ -315,8 +337,8 @@ fn copy_mcp_server(
 }
 
 #[tauri::command]
-fn server_versions(agent: Agent, name: String) -> Result<Vec<mcp::ServerVersion>, String> {
-    mcp::versions(agent, &home()?, &name).map_err(|err| err.to_string())
+fn server_versions(agent: Agent, name: String) -> Result<Vec<mcp::ServerVersion>, UiError> {
+    mcp::versions(agent, &home()?, &name).map_err(UiError::from)
 }
 
 #[tauri::command]
@@ -325,7 +347,7 @@ fn restore_server_version(
     agent: Agent,
     name: String,
     id: String,
-) -> Result<u64, String> {
+) -> Result<u64, UiError> {
     undoable_mcp(&undo, agent, &name, |home| {
         mcp::restore_version(agent, home, &name, &id)
     })
@@ -341,22 +363,19 @@ struct CopyResult {
 }
 
 #[tauri::command]
-fn list_rules() -> Result<Vec<Rules>, String> {
+fn list_rules() -> Result<Vec<Rules>, UiError> {
     let (all, errors) = rules::read_all(&home()?);
     match errors.into_iter().next() {
-        Some((agent, err)) => Err(format!("{}: {err}", agent.display_name())),
+        Some((agent, err)) => Err(ErrorInfo::from(err).agent(agent).into()),
         None => Ok(all),
     }
 }
 
 #[tauri::command]
-fn save_rules(undo: State<UndoStore>, agent: Agent, content: String) -> Result<u64, String> {
+fn save_rules(undo: State<UndoStore>, agent: Agent, content: String) -> Result<u64, UiError> {
     let home = home()?;
-    let previous = rules::read(agent, &home)
-        .map_err(|err| err.to_string())?
-        .content
-        .unwrap_or_default();
-    rules::write(agent, &home, &content).map_err(|err| err.to_string())?;
+    let previous = rules::read(agent, &home)?.content.unwrap_or_default();
+    rules::write(agent, &home, &content)?;
     Ok(undo.push(UndoAction::Rules {
         agent,
         previous,
@@ -372,7 +391,7 @@ struct SkillListing {
 }
 
 #[tauri::command]
-fn list_skills() -> Result<SkillListing, String> {
+fn list_skills() -> Result<SkillListing, UiError> {
     let home = home()?;
     let (skills, errors) = skills::list(&home);
     Ok(SkillListing {
@@ -383,45 +402,45 @@ fn list_skills() -> Result<SkillListing, String> {
 }
 
 #[tauri::command]
-fn read_skill(location: Location, name: String) -> Result<String, String> {
-    skills::read(&home()?, location, &name).map_err(|err| err.to_string())
+fn read_skill(location: Location, name: String) -> Result<String, UiError> {
+    skills::read(&home()?, location, &name).map_err(UiError::from)
 }
 
 #[tauri::command]
-fn skill_files(location: Location, name: String) -> Result<Vec<skills::SkillFile>, String> {
-    skills::files(&home()?, location, &name).map_err(|err| err.to_string())
+fn skill_files(location: Location, name: String) -> Result<Vec<skills::SkillFile>, UiError> {
+    skills::files(&home()?, location, &name).map_err(UiError::from)
 }
 
 /// Creates a skill from the template and returns its folder.
 #[tauri::command]
-fn create_skill(location: Location, name: String, description: String) -> Result<String, String> {
+fn create_skill(location: Location, name: String, description: String) -> Result<String, UiError> {
     skills::create(&home()?, location, &name, &description)
         .map(|path| path.display().to_string())
-        .map_err(|err| err.to_string())
+        .map_err(UiError::from)
 }
 
 #[tauri::command]
-fn copy_skill(name: String, from: Location, to: Agent) -> Result<(), String> {
-    skills::copy(&home()?, &name, from, to, false).map_err(|err| err.to_string())
+fn copy_skill(name: String, from: Location, to: Agent) -> Result<(), UiError> {
+    skills::copy(&home()?, &name, from, to, false).map_err(UiError::from)
 }
 
 /// Replaces the copy of a skill in `to` with the one in `from`; the old copy
 /// goes to the trash.
 #[tauri::command]
-fn replace_skill(name: String, from: Location, to: Location) -> Result<(), String> {
-    skills::copy_to(&home()?, &name, from, to, true).map_err(|err| err.to_string())
+fn replace_skill(name: String, from: Location, to: Location) -> Result<(), UiError> {
+    skills::copy_to(&home()?, &name, from, to, true).map_err(UiError::from)
 }
 
 #[tauri::command]
-fn restore_skill(id: String, overwrite: bool) -> Result<Location, String> {
-    skills::restore(&home()?, &id, overwrite).map_err(|err| err.to_string())
+fn restore_skill(id: String, overwrite: bool) -> Result<Location, UiError> {
+    skills::restore(&home()?, &id, overwrite).map_err(UiError::from)
 }
 
 #[tauri::command]
-fn remove_skill(location: Location, name: String) -> Result<String, String> {
+fn remove_skill(location: Location, name: String) -> Result<String, UiError> {
     skills::remove(&home()?, location, &name)
         .map(|trashed| trashed.display().to_string())
-        .map_err(|err| err.to_string())
+        .map_err(UiError::from)
 }
 
 #[derive(serde::Serialize)]
@@ -460,7 +479,7 @@ fn launcher() -> Option<PathBuf> {
 }
 
 #[tauri::command]
-fn list_secrets() -> Result<SecretListing, String> {
+fn list_secrets() -> Result<SecretListing, UiError> {
     let (secrets, errors) = secrets::inventory(&home()?);
     let launcher = launcher();
     let shell = if cfg!(windows) {
@@ -479,14 +498,28 @@ fn list_secrets() -> Result<SecretListing, String> {
     })
 }
 
-const LAUNCHER_MISSING: &str =
-    "The agentdeck CLI that protected servers start through was not found. Reinstall AgentDeck.";
+fn launcher_missing() -> UiError {
+    ErrorInfo::new(
+        "launcherMissing",
+        "The agentdeck CLI that protected servers start through was not found. Reinstall AgentDeck.",
+    )
+    .into()
+}
+
+/// A file or folder the app was asked to open before anything created it.
+fn not_created(path: &std::path::Path) -> UiError {
+    ErrorInfo::new(
+        "notCreated",
+        format!("{} does not exist yet.", path.display()),
+    )
+    .path(path)
+    .into()
+}
 
 #[tauri::command]
-fn protect_server(undo: State<UndoStore>, agent: Agent, server: String) -> Result<u64, String> {
-    let launcher = launcher().ok_or(LAUNCHER_MISSING)?;
-    secrets::protect(&Keychain, &home()?, agent, &server, &launcher)
-        .map_err(|err| err.to_string())?;
+fn protect_server(undo: State<UndoStore>, agent: Agent, server: String) -> Result<u64, UiError> {
+    let launcher = launcher().ok_or_else(launcher_missing)?;
+    secrets::protect(&Keychain, &home()?, agent, &server, &launcher)?;
     Ok(undo.push(UndoAction::Protect {
         agent,
         server,
@@ -496,32 +529,31 @@ fn protect_server(undo: State<UndoStore>, agent: Agent, server: String) -> Resul
 
 /// How protecting a server would change its command, without writing it.
 #[tauri::command]
-fn preview_protect(agent: Agent, server: String) -> Result<secrets::ProtectPreview, String> {
-    let launcher = launcher().ok_or(LAUNCHER_MISSING)?;
-    secrets::preview_protect(&Keychain, &home()?, agent, &server, &launcher)
-        .map_err(|err| err.to_string())
+fn preview_protect(agent: Agent, server: String) -> Result<secrets::ProtectPreview, UiError> {
+    let launcher = launcher().ok_or_else(launcher_missing)?;
+    secrets::preview_protect(&Keychain, &home()?, agent, &server, &launcher).map_err(UiError::from)
 }
 
 /// Marks a variable name as a secret (`true`), a setting (`false`), or lets
 /// AgentDeck judge it again (`null`).
 #[tauri::command]
-fn mark_secret_name(name: String, secret: Option<bool>) -> Result<(), String> {
-    secrets::mark_name(&home()?, &name, secret).map_err(|err| err.to_string())
+fn mark_secret_name(name: String, secret: Option<bool>) -> Result<(), UiError> {
+    secrets::mark_name(&home()?, &name, secret).map_err(UiError::from)
 }
 
 /// Points protected servers whose launcher is missing at the current one.
 /// Returns how many were repaired.
 #[tauri::command]
-fn repair_launchers() -> Result<usize, String> {
-    let launcher = launcher().ok_or(LAUNCHER_MISSING)?;
+fn repair_launchers() -> Result<usize, UiError> {
+    let launcher = launcher().ok_or_else(launcher_missing)?;
     secrets::repair(&home()?, &launcher)
         .map(|repaired| repaired.len())
-        .map_err(|err| err.to_string())
+        .map_err(UiError::from)
 }
 
 #[tauri::command]
-fn unprotect_server(undo: State<UndoStore>, agent: Agent, server: String) -> Result<u64, String> {
-    secrets::unprotect(&Keychain, &home()?, agent, &server).map_err(|err| err.to_string())?;
+fn unprotect_server(undo: State<UndoStore>, agent: Agent, server: String) -> Result<u64, UiError> {
+    secrets::unprotect(&Keychain, &home()?, agent, &server)?;
     Ok(undo.push(UndoAction::Protect {
         agent,
         server,
@@ -532,23 +564,21 @@ fn unprotect_server(undo: State<UndoStore>, agent: Agent, server: String) -> Res
 /// Starts a server to list its tools. It can take a while, as `npx` may
 /// download the server first, so it runs off the main thread.
 #[tauri::command]
-async fn test_mcp_server(agent: Agent, name: String) -> Result<probe::ProbeReport, String> {
+async fn test_mcp_server(agent: Agent, name: String) -> Result<probe::ProbeReport, UiError> {
     let home = home()?;
     tauri::async_runtime::spawn_blocking(move || {
-        let spec = mcp::get(agent, &home, &name)
-            .map_err(|err| err.to_string())?
-            .ok_or_else(|| Error::NotFound { agent, name }.to_string())?;
+        let spec = mcp::get(agent, &home, &name)?.ok_or(Error::NotFound { agent, name })?;
         // The app does not run in the shell that sets protected headers' variables.
-        let spec = secrets::with_vault_variables(&Keychain, spec).map_err(|err| err.to_string())?;
-        Ok(probe::probe(&spec, probe::TIMEOUT))
+        let spec = secrets::with_vault_variables(&Keychain, spec)?;
+        Ok::<_, UiError>(probe::probe(&spec, probe::TIMEOUT))
     })
     .await
-    .map_err(|err| err.to_string())?
+    .map_err(other)?
 }
 
 /// Parsing months of logs takes a while, so it runs off the main thread.
 #[tauri::command]
-async fn usage_report(progress: Channel<ReadProgress>) -> Result<UsageReport, String> {
+async fn usage_report(progress: Channel<ReadProgress>) -> Result<UsageReport, UiError> {
     let home = home()?;
     tauri::async_runtime::spawn_blocking(move || {
         // Thousands of cached files are read in a blink: only say how far
@@ -563,7 +593,7 @@ async fn usage_report(progress: Channel<ReadProgress>) -> Result<UsageReport, St
         })
     })
     .await
-    .map_err(|err| err.to_string())
+    .map_err(other)
 }
 
 /// Saves sessions as CSV where the user picks in a save dialog. Returns the
@@ -574,7 +604,7 @@ async fn export_sessions_csv(
     app: tauri::AppHandle,
     sessions: Vec<Session>,
     file_name: String,
-) -> Result<Option<String>, String> {
+) -> Result<Option<String>, UiError> {
     use tauri_plugin_dialog::DialogExt;
     tauri::async_runtime::spawn_blocking(move || {
         let mut dialog = app
@@ -587,18 +617,20 @@ async fn export_sessions_csv(
             dialog = dialog.set_parent(&window);
         }
         let Some(picked) = dialog.blocking_save_file() else {
-            return Ok(None);
+            return Ok::<_, UiError>(None);
         };
-        let path = picked.into_path().map_err(|err| err.to_string())?;
+        let path = picked.into_path().map_err(other)?;
         // The byte order mark tells Excel the file is UTF-8, so accents and
         // emoji in titles show as written.
         let csv = format!("\u{feff}{}", usage::sessions_csv(&sessions));
-        fs::write(&path, csv)
-            .map_err(|err| format!("Could not write {}: {err}", path.display()))?;
+        fs::write(&path, csv).map_err(|source| Error::Io {
+            path: path.clone(),
+            source,
+        })?;
         Ok(Some(path.display().to_string()))
     })
     .await
-    .map_err(|err| err.to_string())?
+    .map_err(other)?
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]

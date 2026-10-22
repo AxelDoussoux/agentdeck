@@ -4,7 +4,7 @@ import { Empty, Icon, Notice, PageHeader } from "../components/ui";
 import { LauncherRepair } from "../components/LauncherRepair";
 import { useToast } from "../components/Toasts";
 import { listSecrets, markSecretName, previewProtect, protectServer, undoChange, unprotectServer } from "../lib/api";
-import { formatList, t } from "../lib/i18n";
+import { errorText, formatList, t } from "../lib/i18n";
 import { IS_MAC } from "../lib/keys";
 import { describe } from "../lib/servers";
 import { useFilesChanged } from "../lib/watch";
@@ -38,7 +38,7 @@ export function SecretsPage({ agents, servers, onChange }: Props) {
       setListing(await listSecrets());
       setLoadError(null);
     } catch (err) {
-      setLoadError(String(err));
+      setLoadError(errorText(err));
     }
   }
 
@@ -59,7 +59,7 @@ export function SecretsPage({ agents, servers, onChange }: Props) {
     try {
       for (const step of steps) ids.push(await step());
     } catch (err) {
-      notify({ tone: "error", text: String(err) });
+      notify({ tone: "error", text: errorText(err) });
     }
     if (ids.length > 0) {
       notify({
@@ -79,7 +79,7 @@ export function SecretsPage({ agents, servers, onChange }: Props) {
     try {
       setPending({ agent, server, preview: await previewProtect(agent, server) });
     } catch (err) {
-      notify({ tone: "error", text: String(err) });
+      notify({ tone: "error", text: errorText(err) });
     }
   }
 
@@ -91,7 +91,7 @@ export function SecretsPage({ agents, servers, onChange }: Props) {
         text: secret === null ? t.secrets.judgedAgain(name) : t.secrets.nowTreated(name, secret),
       });
     } catch (err) {
-      notify({ tone: "error", text: String(err) });
+      notify({ tone: "error", text: errorText(err) });
     }
     await refresh();
   }
@@ -101,7 +101,7 @@ export function SecretsPage({ agents, servers, onChange }: Props) {
       await navigator.clipboard.writeText(listing?.shellHook ?? "");
       notify({ tone: "success", text: t.secrets.copiedLine });
     } catch (err) {
-      notify({ tone: "error", text: t.secrets.copyFailed(String(err)) });
+      notify({ tone: "error", text: t.secrets.copyFailed(errorText(err)) });
     }
   }
 

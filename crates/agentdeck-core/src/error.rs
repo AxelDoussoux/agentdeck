@@ -65,3 +65,112 @@ pub enum Error {
 }
 
 pub type Result<T> = std::result::Result<T, Error>;
+
+/// An error as the app sends it to its UI: a code the UI words in the user's
+/// language with the values below, and the English message for UIs that do
+/// not know the code.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ErrorInfo {
+    pub code: &'static str,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub agent: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub name: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub path: Option<String>,
+    /// What the system or a parser said, which stays in English.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub detail: Option<String>,
+    pub message: String,
+}
+
+impl ErrorInfo {
+    /// An error with only a code and its English message.
+    pub fn new(code: &'static str, message: impl Into<String>) -> Self {
+        ErrorInfo {
+            code,
+            agent: None,
+            name: None,
+            path: None,
+            detail: None,
+            message: message.into(),
+        }
+    }
+
+    pub fn agent(mut self, agent: Agent) -> Self {
+        self.agent = Some(agent.display_name().to_owned());
+        self
+    }
+
+    pub fn name(mut self, name: impl Into<String>) -> Self {
+        self.name = Some(name.into());
+        self
+    }
+
+    pub fn path(mut self, path: &std::path::Path) -> Self {
+        self.path = Some(path.display().to_string());
+        self
+    }
+
+    pub fn detail(mut self, detail: impl ToString) -> Self {
+        self.detail = Some(detail.to_string());
+        self
+    }
+}
+
+impl From<&Error> for ErrorInfo {
+    fn from(err: &Error) -> Self {
+        let info = |code| ErrorInfo::new(code, err.to_string());
+        match err {
+            Error::NoHomeDir => info("noHomeDir"),
+            Error::Io { path, source } => info("io").path(path).detail(source),
+            Error::Json { path, source } => info("json").path(path).detail(source),
+            Error::Toml { path, source } => info("toml").path(path).detail(source),
+            Error::TomlEdit { path, source } => info("toml").path(path).detail(source),
+            Error::Conflict { path } => info("conflict").path(path),
+            Error::InvalidServer { path, name, source } => {
+                info("invalidServer").path(path).name(name).detail(source)
+            }
+            Error::MissingValue { key } => info("missingValue").name(key),
+            Error::Invalid { path, reason } => info("invalid").path(path).detail(reason),
+            Error::NotFound { agent, name } => info("notFound").agent(*agent).name(name),
+            Error::AlreadyExists { agent, name } => info("alreadyExists").agent(*agent).name(name),
+            Error::NoRulesFile { agent } => info("noRulesFile").agent(*agent),
+            Error::Keychain(detail) => info("keychain").detail(detail),
+            Error::NoSharedRules { agent } => info("noSharedRules").agent(*agent),
+            Error::InvalidSkillName { name } => info("invalidSkillName").name(name),
+            Error::NewSkillName { name } => info("newSkillName").name(name),
+            Error::SkillNotFound { path } => info("skillNotFound").path(path),
+            Error::SkillExists { path } => info("skillExists").path(path),
+            Error::Unsupported { agent, what } => info("unsupported").agent(*agent).detail(what),
+        }
+    }
+}
+
+impl From<Error> for ErrorInfo {
+    fn from(err: Error) -> Self {
+        ErrorInfo::from(&err)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn info_keeps_the_english_message_and_the_values_it_names() {
+        let err = Error::NotFound {
+            agent: Agent::Codex,
+            name: "github".into(),
+        };
+        let info = ErrorInfo::from(&err);
+        assert_eq!(info.code, "notFound");
+        assert_eq!(info.agent.as_deref(), Some("Codex"));
+        assert_eq!(info.name.as_deref(), Some("github"));
+        assert_eq!(info.message, err.to_string());
+        let json = serde_json::to_value(&info).unwrap();
+        assert_eq!(json["code"], "notFound");
+        assert!(json.get("path").is_none());
+    }
+}

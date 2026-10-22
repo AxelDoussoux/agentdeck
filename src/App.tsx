@@ -7,7 +7,7 @@ import { useToast } from "./components/Toasts";
 import { Tooltip } from "./components/Tooltip";
 import { Icon, type IconName } from "./components/ui";
 import { copyMcpServer, listAgents, listMcpServers, listSecrets, listSkills, undoChange } from "./lib/api";
-import { applyLanguage, formatList, storedLanguage, t, type LanguageSetting } from "./lib/i18n";
+import { applyLanguage, errorText, formatList, storedLanguage, t, type LanguageSetting } from "./lib/i18n";
 import { shortcut, withModifier } from "./lib/keys";
 import { byName } from "./lib/servers";
 import { useFilesChanged } from "./lib/watch";
@@ -112,7 +112,7 @@ function App() {
       setListing(await listMcpServers());
       setError(null);
     } catch (err) {
-      setError(String(err));
+      setError(errorText(err));
     }
     // Only feeds the sidebar badge and the overview; the Secrets page loads its own.
     listSecrets().then(setSecrets, () => setSecrets(null));
@@ -217,7 +217,7 @@ function App() {
         },
       });
     } catch (err) {
-      notify({ tone: "error", text: String(err) });
+      notify({ tone: "error", text: errorText(err) });
     }
     await refresh();
   }

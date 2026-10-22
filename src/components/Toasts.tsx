@@ -2,7 +2,7 @@ import { createContext, useCallback, useContext, useEffect, useRef, useState, ty
 import { createPortal } from "react-dom";
 import { Icon } from "./ui";
 import { Tooltip } from "./Tooltip";
-import { t } from "../lib/i18n";
+import { errorText, t } from "../lib/i18n";
 
 interface Toast {
   tone: "success" | "error";
@@ -64,7 +64,7 @@ export function ToastProvider({ children }: { children: ReactNode }) {
       await toast.undo!();
       update(toast.id, { tone: "success", text: t.toast.undone, undo: undefined, busy: false });
     } catch (err) {
-      update(toast.id, { tone: "error", text: t.toast.undoFailed(String(err)), undo: undefined, busy: false });
+      update(toast.id, { tone: "error", text: t.toast.undoFailed(errorText(err)), undo: undefined, busy: false });
     }
   }
 

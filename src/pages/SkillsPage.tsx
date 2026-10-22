@@ -22,7 +22,7 @@ import { moveInGrid } from "../lib/grid";
 import { matches } from "../lib/search";
 import { useFilesChanged } from "../lib/watch";
 import type { Agent, AgentInfo, Skill, SkillFile, SkillListing, SkillLocation, TrashedSkill } from "../lib/types";
-import { formatDateTime, formatList, formatNumber, t } from "../lib/i18n";
+import { errorText, formatDateTime, formatList, formatNumber, t } from "../lib/i18n";
 
 const LOCATION_LABELS: Record<SkillLocation, string> = {
   "claude-code": "~/.claude/skills",
@@ -80,7 +80,7 @@ export function SkillsPage({ agents, focus }: { agents: AgentInfo[]; focus?: Foc
       setListing(await listSkills());
       setLoadError(null);
     } catch (err) {
-      setLoadError(String(err));
+      setLoadError(errorText(err));
     }
   }
 
@@ -154,7 +154,7 @@ export function SkillsPage({ agents, focus }: { agents: AgentInfo[]; focus?: Foc
     try {
       notify({ tone: "success", text: await action() });
     } catch (err) {
-      notify({ tone: "error", text: String(err) });
+      notify({ tone: "error", text: errorText(err) });
     }
     setPendingRemoval(null);
     setPendingSpread(null);
@@ -174,7 +174,7 @@ export function SkillsPage({ agents, focus }: { agents: AgentInfo[]; focus?: Foc
       if (!overwrite && listing.skills.some((s) => s.name === skill.name && s.location === skill.location)) {
         setPendingRestore(skill);
       } else {
-        notify({ tone: "error", text: String(err) });
+        notify({ tone: "error", text: errorText(err) });
       }
     }
   }
@@ -402,7 +402,7 @@ export function SkillsPage({ agents, focus }: { agents: AgentInfo[]; focus?: Foc
                       className="small"
                       onClick={() =>
                         openFolder({ skill: { location: previewed, name: selected } }).catch((err) =>
-                          notify({ tone: "error", text: String(err) }),
+                          notify({ tone: "error", text: errorText(err) }),
                         )
                       }
                     >
@@ -561,7 +561,7 @@ function NewSkillForm({ taken, onSubmit, onCancel }: NewSkillProps) {
     try {
       await onSubmit(location, name, description);
     } catch (err) {
-      setError(String(err));
+      setError(errorText(err));
     }
   }
 
