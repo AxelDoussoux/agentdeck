@@ -30,6 +30,14 @@ pub enum Error {
         "{path} kept changing while AgentDeck was writing it. Close the agent that uses it and try again"
     )]
     Conflict { path: PathBuf },
+    #[error("invalid MCP server \"{name}\" in {path}: {source}")]
+    InvalidServer {
+        path: PathBuf,
+        name: String,
+        source: serde_json::Error,
+    },
+    #[error("{key} has no value: type one, or remove it")]
+    MissingValue { key: String },
     #[error("unexpected structure in {path}: {reason}")]
     Invalid { path: PathBuf, reason: &'static str },
     #[error("{} has no MCP server named \"{name}\"", agent.display_name())]

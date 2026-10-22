@@ -20,8 +20,9 @@ shows them side by side, and syncs them in one click.
 
 - **MCP servers.** See every server across every agent in one grid. Copy a
   server to another agent in one click, with its settings and secrets
-  translated to that agent's format. Add or remove servers safely: each write
-  keeps a backup and preserves comments in Codex's TOML.
+  translated to that agent's format. Add, edit or remove servers safely:
+  secrets stay hidden while you edit, and each write keeps a backup and
+  preserves comments in Codex's TOML.
 - **Rules.** Edit `CLAUDE.md`, `AGENTS.md` and `GEMINI.md` side by side and
   copy them from one agent to the others.
 - **Skills.** See which agents load each Agent Skill, and share a skill with
@@ -114,6 +115,12 @@ differently, and models without a known price are left out of the total.
 Environment and header values of MCP servers are never displayed, only
 their names. When copying a server between agents, secrets are copied by the
 Rust core and never reach the UI.
+
+A copy also carries the working directory, tool timeout and allowed tools
+between Codex and Gemini CLI, the only agents that have them. Settings the
+target agent cannot take are listed after the copy. Replacing an existing
+server keeps the settings of its entry that AgentDeck does not manage, such as
+Codex's `startup_timeout_sec`.
 
 Before changing a config file, AgentDeck saves the previous version next to
 it as `<file>.agentdeck.bak`, keeps the last 20 versions in

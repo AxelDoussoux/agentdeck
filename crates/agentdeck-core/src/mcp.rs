@@ -1,5 +1,8 @@
 use std::collections::BTreeMap;
+use std::collections::hash_map::RandomState;
+use std::hash::BuildHasher;
 use std::path::Path;
+use std::sync::OnceLock;
 
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
@@ -27,7 +30,8 @@ pub enum Transport {
 /// One MCP server as declared in an agent's configuration.
 ///
 /// Environment and header values are never exposed: they often hold API keys,
-/// so only their names are kept.
+/// so only their names are kept, with a hash of each value to tell whether two
+/// servers use the same one.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct McpServer {
@@ -36,6 +40,25 @@ pub struct McpServer {
     pub transport: Transport,
     pub env_keys: Vec<String>,
     pub header_keys: Vec<String>,
+    /// [`value_hash`] of each environment variable, by name.
+    pub env_hashes: BTreeMap<String, String>,
+    /// [`value_hash`] of each header, by name.
+    pub header_hashes: BTreeMap<String, String>,
+    pub options: ServerOptions,
+}
+
+/// A hash of `value` keyed at random for this process. Equal values get equal
+/// hashes, but a hash says nothing about the value, and means nothing outside
+/// the process that computed it.
+pub fn value_hash(value: &str) -> String {
+    static KEY: OnceLock<RandomState> = OnceLock::new();
+    format!("{:016x}", KEY.get_or_init(RandomState::new).hash_one(value))
+}
+
+fn hashes(map: &BTreeMap<String, String>) -> BTreeMap<String, String> {
+    map.iter()
+        .map(|(key, value)| (key.clone(), value_hash(value)))
+        .collect()
 }
 
 /// Everything needed to write an MCP server into an agent's config,
@@ -47,10 +70,108 @@ pub struct ServerSpec {
     pub env: BTreeMap<String, String>,
     #[serde(default)]
     pub headers: BTreeMap<String, String>,
+    #[serde(default)]
+    pub options: ServerOptions,
+}
+
+/// Changes to an existing server, from the edit form. Values are write-only:
+/// `None` keeps the current value of a variable, so the UI never needs it.
+/// Variables left out are removed.
+#[derive(Debug, Clone, Deserialize)]
+pub struct ServerEdit {
+    pub transport: Transport,
+    #[serde(default)]
+    pub env: BTreeMap<String, Option<String>>,
+    #[serde(default)]
+    pub headers: BTreeMap<String, Option<String>>,
+    #[serde(default)]
+    pub options: ServerOptions,
+}
+
+/// Settings of a server beyond how it is reached and its variables. Not every
+/// agent has them: see [`untranslated`].
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ServerOptions {
+    /// Working directory of a local server. Codex and Gemini CLI.
+    pub cwd: Option<String>,
+    /// How long a tool call may take, in milliseconds. Codex and Gemini CLI.
+    pub timeout_ms: Option<u64>,
+    /// The server is turned off. Only Codex can turn a server off.
+    #[serde(default)]
+    pub disabled: bool,
+    /// The only tools the agent may use. Codex and Gemini CLI.
+    pub include_tools: Option<Vec<String>>,
+    /// Tools the agent must not use. Codex and Gemini CLI.
+    pub exclude_tools: Option<Vec<String>>,
+    /// The other settings of the entry, which AgentDeck does not translate,
+    /// with the agent they come from: they are only written back to it.
+    #[serde(skip)]
+    pub extra: Option<(Agent, Map<String, Value>)>,
+}
+
+/// The keys of a server entry that AgentDeck reads and writes for `agent`.
+/// Every other key is an extra setting, kept as is.
+fn known_keys(agent: Agent) -> &'static [&'static str] {
+    match agent {
+        Agent::ClaudeCode | Agent::Cursor => &["type", "command", "args", "env", "url", "headers"],
+        Agent::Gemini => &[
+            "command",
+            "args",
+            "env",
+            "url",
+            "httpUrl",
+            "headers",
+            "cwd",
+            "timeout",
+            "includeTools",
+            "excludeTools",
+        ],
+        Agent::Codex => &[
+            "command",
+            "args",
+            "env",
+            "url",
+            "http_headers",
+            "headers",
+            "cwd",
+            "tool_timeout_sec",
+            "enabled",
+            "enabled_tools",
+            "disabled_tools",
+        ],
+    }
+}
+
+/// The settings of `spec` that `agent` cannot take, for telling the user what
+/// a copy leaves behind.
+pub fn untranslated(spec: &ServerSpec, agent: Agent) -> Vec<String> {
+    let options = &spec.options;
+    let full = matches!(agent, Agent::Codex | Agent::Gemini);
+    let mut lost = Vec::new();
+    if !full && options.cwd.is_some() {
+        lost.push("working directory".to_owned());
+    }
+    if !full && options.timeout_ms.is_some() {
+        lost.push("timeout".to_owned());
+    }
+    if !full && (options.include_tools.is_some() || options.exclude_tools.is_some()) {
+        lost.push("allowed tools".to_owned());
+    }
+    if options.disabled && agent != Agent::Codex {
+        lost.push("turned off (the copy is on)".to_owned());
+    }
+    if let Some((from, extra)) = &options.extra
+        && *from != agent
+    {
+        lost.extend(extra.keys().cloned());
+    }
+    lost
 }
 
 /// The shape shared by the JSON configs of Claude Code, Cursor and Gemini,
-/// and by the TOML tables of Codex.
+/// and by the TOML tables of Codex, once reduced to the [`known_keys`] of the
+/// agent.
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct RawServer {
@@ -67,22 +188,38 @@ struct RawServer {
     headers: BTreeMap<String, Value>,
     #[serde(default, rename = "http_headers")]
     codex_headers: BTreeMap<String, Value>,
+    cwd: Option<String>,
+    /// Gemini, in milliseconds.
+    timeout: Option<u64>,
+    /// Codex, in seconds.
+    #[serde(rename = "tool_timeout_sec")]
+    tool_timeout_sec: Option<f64>,
+    /// Codex.
+    enabled: Option<bool>,
+    /// Gemini.
+    include_tools: Option<Vec<String>>,
+    /// Gemini.
+    exclude_tools: Option<Vec<String>>,
+    #[serde(rename = "enabled_tools")]
+    enabled_tools: Option<Vec<String>>,
+    #[serde(rename = "disabled_tools")]
+    disabled_tools: Option<Vec<String>>,
 }
 
 #[derive(Debug, Deserialize)]
 struct JsonConfig {
     #[serde(default, rename = "mcpServers")]
-    mcp_servers: BTreeMap<String, RawServer>,
+    mcp_servers: BTreeMap<String, Map<String, Value>>,
 }
 
 #[derive(Debug, Deserialize)]
 struct CodexConfig {
     #[serde(default)]
-    mcp_servers: BTreeMap<String, RawServer>,
+    mcp_servers: BTreeMap<String, toml::Table>,
 }
 
 impl RawServer {
-    fn into_spec(self, agent: Agent) -> Option<ServerSpec> {
+    fn into_spec(self, agent: Agent, extra: Map<String, Value>) -> Option<ServerSpec> {
         let transport = if let Some(command) = self.command {
             Transport::Stdio {
                 command,
@@ -107,10 +244,21 @@ impl RawServer {
 
         let mut headers = self.headers;
         headers.extend(self.codex_headers);
+        let options = ServerOptions {
+            cwd: self.cwd,
+            timeout_ms: self
+                .timeout
+                .or_else(|| Some((self.tool_timeout_sec? * 1000.0).round() as u64)),
+            disabled: self.enabled == Some(false),
+            include_tools: self.include_tools.or(self.enabled_tools),
+            exclude_tools: self.exclude_tools.or(self.disabled_tools),
+            extra: (!extra.is_empty()).then_some((agent, extra)),
+        };
         Some(ServerSpec {
             transport,
             env: into_strings(self.env),
             headers: into_strings(headers),
+            options,
         })
     }
 }
@@ -131,26 +279,49 @@ pub(crate) fn read_specs(agent: Agent, home: &Path) -> Result<BTreeMap<String, S
         return Ok(BTreeMap::new());
     };
 
-    let raw = match agent {
-        Agent::Codex => {
-            toml::from_str::<CodexConfig>(&content)
-                .map_err(|source| Error::Toml {
-                    path,
-                    source: Box::new(source),
-                })?
-                .mcp_servers
-        }
+    let entries: BTreeMap<String, Map<String, Value>> = match agent {
+        Agent::Codex => toml::from_str::<CodexConfig>(&content)
+            .map_err(|source| Error::Toml {
+                path: path.clone(),
+                source: Box::new(source),
+            })?
+            .mcp_servers
+            .into_iter()
+            .map(|(name, table)| {
+                let entry = serde_json::to_value(table)
+                    .ok()
+                    .and_then(|value| value.as_object().cloned())
+                    .unwrap_or_default();
+                (name, entry)
+            })
+            .collect(),
         _ => {
             serde_json::from_str::<JsonConfig>(&content)
-                .map_err(|source| Error::Json { path, source })?
+                .map_err(|source| Error::Json {
+                    path: path.clone(),
+                    source,
+                })?
                 .mcp_servers
         }
     };
 
-    Ok(raw
-        .into_iter()
-        .filter_map(|(name, server)| Some((name, server.into_spec(agent)?)))
-        .collect())
+    let mut specs = BTreeMap::new();
+    for (name, entry) in entries {
+        let (known, extra): (Map<String, Value>, Map<String, Value>) = entry
+            .into_iter()
+            .partition(|(key, _)| known_keys(agent).contains(&key.as_str()));
+        let raw: RawServer = serde_json::from_value(Value::Object(known)).map_err(|source| {
+            Error::InvalidServer {
+                path: path.clone(),
+                name: name.clone(),
+                source,
+            }
+        })?;
+        if let Some(spec) = raw.into_spec(agent, extra) {
+            specs.insert(name, spec);
+        }
+    }
+    Ok(specs)
 }
 
 /// The full settings of one server, secrets included, or `None` when the agent
@@ -167,6 +338,12 @@ pub fn list_for_agent(agent: Agent, home: &Path) -> Result<Vec<McpServer>> {
         .map(|(name, spec)| McpServer {
             agent,
             name,
+            env_hashes: hashes(&spec.env),
+            header_hashes: hashes(&spec.headers),
+            options: ServerOptions {
+                extra: None,
+                ..spec.options
+            },
             transport: spec.transport,
             env_keys: spec.env.into_keys().collect(),
             header_keys: spec.headers.into_keys().collect(),
@@ -208,21 +385,62 @@ pub fn add(
     )
 }
 
+/// Applies `edit` to the server `name` of `agent`. The settings of its entry
+/// that AgentDeck does not manage are kept.
+pub fn update(agent: Agent, home: &Path, name: &str, edit: &ServerEdit) -> Result<()> {
+    let current = get(agent, home, name)?.ok_or_else(|| Error::NotFound {
+        agent,
+        name: name.to_owned(),
+    })?;
+    let resolve = |wanted: &BTreeMap<String, Option<String>>,
+                   current: &BTreeMap<String, String>|
+     -> Result<BTreeMap<String, String>> {
+        wanted
+            .iter()
+            .map(|(key, value)| {
+                let value = value
+                    .as_ref()
+                    .or_else(|| current.get(key))
+                    .ok_or_else(|| Error::MissingValue { key: key.clone() })?;
+                Ok((key.clone(), value.clone()))
+            })
+            .collect()
+    };
+    let spec = ServerSpec {
+        transport: edit.transport.clone(),
+        env: resolve(&edit.env, &current.env)?,
+        headers: resolve(&edit.headers, &current.headers)?,
+        options: ServerOptions {
+            extra: current.options.extra,
+            ..edit.options.clone()
+        },
+    };
+    add(agent, home, name, &spec, true)
+}
+
 /// Removes an MCP server from `agent`.
 pub fn remove(agent: Agent, home: &Path, name: &str) -> Result<()> {
     edit(agent, home, Edit::Remove { name })
 }
 
 /// Copies an MCP server, secrets included, from one agent to another. The
-/// secrets never leave the core.
-pub fn copy(home: &Path, name: &str, from: Agent, to: Agent, overwrite: bool) -> Result<()> {
+/// secrets never leave the core. Returns the settings `to` could not take
+/// (see [`untranslated`]).
+pub fn copy(
+    home: &Path,
+    name: &str,
+    from: Agent,
+    to: Agent,
+    overwrite: bool,
+) -> Result<Vec<String>> {
     let spec = read_specs(from, home)?
         .remove(name)
         .ok_or_else(|| Error::NotFound {
             agent: from,
             name: name.to_owned(),
         })?;
-    add(to, home, name, &spec, overwrite)
+    add(to, home, name, &spec, overwrite)?;
+    Ok(untranslated(&spec, to))
 }
 
 /// Changes the command, arguments and environment of an existing stdio
@@ -319,7 +537,22 @@ fn edit_json(agent: Agent, path: &Path, content: &str, edit: &Edit) -> Result<St
     edit.check(agent, servers.contains_key(edit.name()))?;
     match edit {
         Edit::Upsert { name, spec, .. } => {
-            servers.insert((*name).to_owned(), json_entry(agent, spec));
+            let Value::Object(fresh) = json_entry(agent, spec) else {
+                unreachable!("an entry is an object")
+            };
+            // Replacing an entry keeps the settings AgentDeck does not manage,
+            // and the order of the keys.
+            match servers.get_mut(*name).and_then(Value::as_object_mut) {
+                Some(entry) => {
+                    entry.retain(|key, _| {
+                        fresh.contains_key(key) || !known_keys(agent).contains(&key.as_str())
+                    });
+                    entry.extend(fresh);
+                }
+                None => {
+                    servers.insert((*name).to_owned(), Value::Object(fresh));
+                }
+            }
         }
         Edit::Remove { name } => {
             servers.remove(*name);
@@ -384,6 +617,26 @@ fn json_entry(agent: Agent, spec: &ServerSpec) -> Value {
             entry.insert(key.into(), Value::Object(object));
         }
     }
+    let options = &spec.options;
+    if agent == Agent::Gemini {
+        if let Some(cwd) = &options.cwd {
+            entry.insert("cwd".into(), cwd.as_str().into());
+        }
+        if let Some(timeout) = options.timeout_ms {
+            entry.insert("timeout".into(), timeout.into());
+        }
+        if let Some(tools) = &options.include_tools {
+            entry.insert("includeTools".into(), tools.clone().into());
+        }
+        if let Some(tools) = &options.exclude_tools {
+            entry.insert("excludeTools".into(), tools.clone().into());
+        }
+    }
+    if let Some((from, extra)) = &options.extra
+        && *from == agent
+    {
+        entry.extend(extra.clone());
+    }
     Value::Object(entry)
 }
 
@@ -408,7 +661,27 @@ fn edit_toml(path: &Path, content: &str, edit: &Edit) -> Result<String> {
     edit.check(Agent::Codex, servers.contains_key(edit.name()))?;
     match edit {
         Edit::Upsert { name, spec, .. } => {
-            servers.insert(name, toml_edit::Item::Table(toml_entry(spec)?));
+            let fresh = toml_entry(spec)?;
+            // Replacing an entry keeps its place, the order of its keys and
+            // the settings AgentDeck does not manage.
+            match servers
+                .get_mut(name)
+                .and_then(toml_edit::Item::as_table_like_mut)
+            {
+                Some(entry) => {
+                    for key in known_keys(Agent::Codex) {
+                        if !fresh.contains_key(key) {
+                            entry.remove(key);
+                        }
+                    }
+                    for (key, item) in fresh.iter() {
+                        entry.insert(key, item.clone());
+                    }
+                }
+                None => {
+                    servers.insert(name, toml_edit::Item::Table(fresh));
+                }
+            }
         }
         Edit::Remove { name } => {
             servers.remove(name);
@@ -472,7 +745,61 @@ fn toml_entry(spec: &ServerSpec) -> Result<toml_edit::Table> {
             entry.insert(key, toml_edit::value(table));
         }
     }
+    let options = &spec.options;
+    if let Some(cwd) = &options.cwd {
+        entry.insert("cwd", toml_edit::value(cwd.as_str()));
+    }
+    if let Some(timeout) = options.timeout_ms {
+        let seconds = if timeout % 1000 == 0 {
+            toml_edit::Value::from((timeout / 1000) as i64)
+        } else {
+            toml_edit::Value::from(timeout as f64 / 1000.0)
+        };
+        entry.insert("tool_timeout_sec", toml_edit::Item::Value(seconds));
+    }
+    if options.disabled {
+        entry.insert("enabled", toml_edit::value(false));
+    }
+    for (key, tools) in [
+        ("enabled_tools", &options.include_tools),
+        ("disabled_tools", &options.exclude_tools),
+    ] {
+        if let Some(tools) = tools {
+            entry.insert(
+                key,
+                toml_edit::value(tools.iter().collect::<toml_edit::Array>()),
+            );
+        }
+    }
+    if let Some((Agent::Codex, extra)) = &options.extra {
+        for (key, value) in extra {
+            if let Some(value) = toml_value(value) {
+                entry.insert(key, toml_edit::Item::Value(value));
+            }
+        }
+    }
     Ok(entry)
+}
+
+/// The TOML form of a setting read from Codex's config, to write it back.
+fn toml_value(value: &Value) -> Option<toml_edit::Value> {
+    Some(match value {
+        Value::Null => return None,
+        Value::Bool(flag) => (*flag).into(),
+        Value::Number(number) => match number.as_i64() {
+            Some(integer) => integer.into(),
+            None => number.as_f64()?.into(),
+        },
+        Value::String(text) => text.as_str().into(),
+        Value::Array(items) => {
+            toml_edit::Value::Array(items.iter().filter_map(toml_value).collect())
+        }
+        Value::Object(map) => toml_edit::Value::InlineTable(
+            map.iter()
+                .filter_map(|(key, value)| Some((key.as_str(), toml_value(value)?)))
+                .collect(),
+        ),
+    })
 }
 
 #[cfg(test)]
@@ -499,6 +826,7 @@ mod tests {
             },
             env: BTreeMap::from([("TOKEN".into(), "secret".into())]),
             headers: BTreeMap::new(),
+            options: ServerOptions::default(),
         }
     }
 
@@ -611,6 +939,178 @@ mod tests {
     }
 
     #[test]
+    fn listing_tells_equal_values_apart_without_showing_them() {
+        let home = tempfile::tempdir().unwrap();
+        let home = home.path();
+        write(
+            home,
+            ".cursor/mcp.json",
+            r#"{"mcpServers": {
+                "a": {"command": "x", "env": {"TOKEN": "ghp_same", "MODE": "1"}},
+                "b": {"command": "x", "env": {"TOKEN": "ghp_same", "MODE": "2"}}
+            }}"#,
+        );
+        let servers = list_for_agent(Agent::Cursor, home).unwrap();
+        let (a, b) = (&servers[0].env_hashes, &servers[1].env_hashes);
+        assert_eq!(a["TOKEN"], b["TOKEN"]);
+        assert_ne!(a["MODE"], b["MODE"]);
+        let json = serde_json::to_string(&servers).unwrap();
+        assert!(!json.contains("ghp_same"));
+    }
+
+    const CODEX_DOCS: &str = "[mcp_servers.docs]
+command = \"uvx\"
+args = [\"docs-mcp\"]
+cwd = \"/work\"
+tool_timeout_sec = 30
+enabled = false
+enabled_tools = [\"search\"]
+startup_timeout_sec = 20
+
+[mcp_servers.after]
+command = \"x\"
+";
+
+    #[test]
+    fn copy_translates_advanced_settings_and_reports_the_rest() {
+        let home = tempfile::tempdir().unwrap();
+        let home = home.path();
+        write(home, ".codex/config.toml", CODEX_DOCS);
+
+        let lost = copy(home, "docs", Agent::Codex, Agent::Gemini, false).unwrap();
+        assert_eq!(lost, ["turned off (the copy is on)", "startup_timeout_sec"]);
+        let gemini = &read_specs(Agent::Gemini, home).unwrap()["docs"].options;
+        assert_eq!(gemini.cwd.as_deref(), Some("/work"));
+        assert_eq!(gemini.timeout_ms, Some(30_000));
+        assert_eq!(gemini.include_tools, Some(vec!["search".to_owned()]));
+        assert!(read(home, ".gemini/settings.json").contains(r#""timeout": 30000"#));
+
+        let lost = copy(home, "docs", Agent::Codex, Agent::ClaudeCode, false).unwrap();
+        assert_eq!(
+            lost,
+            [
+                "working directory",
+                "timeout",
+                "allowed tools",
+                "turned off (the copy is on)",
+                "startup_timeout_sec"
+            ]
+        );
+
+        // And back: Gemini's settings become Codex's.
+        let lost = copy(home, "docs", Agent::Gemini, Agent::Codex, true).unwrap();
+        assert!(lost.is_empty());
+        let codex = read(home, ".codex/config.toml");
+        assert!(codex.contains("tool_timeout_sec = 30\n"));
+        assert!(codex.contains("enabled_tools = [\"search\"]"));
+    }
+
+    #[test]
+    fn replacing_an_entry_keeps_what_agentdeck_does_not_manage() {
+        let home = tempfile::tempdir().unwrap();
+        let home = home.path();
+        write(home, ".codex/config.toml", CODEX_DOCS);
+        write(
+            home,
+            ".gemini/settings.json",
+            r#"{"mcpServers": {"docs": {"command": "old", "timeout": 5, "trust": true}}}"#,
+        );
+
+        add(Agent::Codex, home, "docs", &stdio("npx"), true).unwrap();
+        let codex = read(home, ".codex/config.toml");
+        assert!(codex.contains("startup_timeout_sec = 20"));
+        assert!(!codex.contains("cwd"));
+        // Keys keep their order.
+        assert!(codex.find("command").unwrap() < codex.find("startup_timeout_sec").unwrap());
+        assert!(
+            codex.find("command = \"npx\"").unwrap() < codex.find("[mcp_servers.after]").unwrap()
+        );
+
+        add(Agent::Gemini, home, "docs", &stdio("npx"), true).unwrap();
+        let gemini = read(home, ".gemini/settings.json");
+        assert!(gemini.contains(r#""trust": true"#));
+        assert!(!gemini.contains("timeout"));
+    }
+
+    #[test]
+    fn a_removed_server_comes_back_whole() {
+        let home = tempfile::tempdir().unwrap();
+        let home = home.path();
+        write(home, ".codex/config.toml", CODEX_DOCS);
+        let before = get(Agent::Codex, home, "docs").unwrap().unwrap();
+        assert!(before.options.disabled);
+
+        remove(Agent::Codex, home, "docs").unwrap();
+        add(Agent::Codex, home, "docs", &before, false).unwrap();
+        assert_eq!(get(Agent::Codex, home, "docs").unwrap().unwrap(), before);
+    }
+
+    #[test]
+    fn an_edit_keeps_unchanged_values_without_knowing_them() {
+        let home = tempfile::tempdir().unwrap();
+        let home = home.path();
+        write(home, ".codex/config.toml", CODEX_DOCS);
+        let path = ".codex/config.toml";
+        fs::write(
+            home.join(path),
+            read(home, path).replace(
+                "cwd = ",
+                "env = { TOKEN = \"secret\", OLD = \"x\" }\ncwd = ",
+            ),
+        )
+        .unwrap();
+
+        let edit = ServerEdit {
+            transport: Transport::Stdio {
+                command: "uvx".into(),
+                args: vec!["docs-mcp@2".into()],
+            },
+            env: BTreeMap::from([("TOKEN".into(), None), ("NEW".into(), Some("y".into()))]),
+            headers: BTreeMap::new(),
+            options: ServerOptions {
+                timeout_ms: Some(60_000),
+                ..ServerOptions::default()
+            },
+        };
+        update(Agent::Codex, home, "docs", &edit).unwrap();
+
+        let spec = get(Agent::Codex, home, "docs").unwrap().unwrap();
+        assert_eq!(
+            spec.env,
+            BTreeMap::from([
+                ("NEW".into(), "y".into()),
+                ("TOKEN".into(), "secret".into())
+            ])
+        );
+        assert_eq!(spec.options.timeout_ms, Some(60_000));
+        assert_eq!(spec.options.cwd, None);
+        assert!(!spec.options.disabled);
+        let codex = read(home, path);
+        assert!(codex.contains("startup_timeout_sec = 20"));
+        // Keys keep their order.
+        assert!(codex.find("command").unwrap() < codex.find("startup_timeout_sec").unwrap());
+
+        let missing = ServerEdit {
+            env: BTreeMap::from([("UNKNOWN".into(), None)]),
+            ..edit
+        };
+        let err = update(Agent::Codex, home, "docs", &missing).unwrap_err();
+        assert!(matches!(err, Error::MissingValue { .. }));
+    }
+
+    #[test]
+    fn a_badly_typed_server_is_reported() {
+        let home = tempfile::tempdir().unwrap();
+        write(
+            home.path(),
+            ".gemini/settings.json",
+            r#"{"mcpServers": {"x": {"command": "a", "args": "not a list"}}}"#,
+        );
+        let err = list_for_agent(Agent::Gemini, home.path()).unwrap_err();
+        assert!(matches!(err, Error::InvalidServer { ref name, .. } if name == "x"));
+    }
+
+    #[test]
     fn copy_carries_secrets_and_translates_formats() {
         let home = tempfile::tempdir().unwrap();
         let home = home.path();
@@ -620,6 +1120,7 @@ mod tests {
             },
             env: BTreeMap::new(),
             headers: BTreeMap::from([("Authorization".into(), "Bearer x".into())]),
+            options: ServerOptions::default(),
         };
         add(Agent::ClaudeCode, home, "remote", &sse, false).unwrap();
         add(Agent::ClaudeCode, home, "local", &stdio("npx"), false).unwrap();

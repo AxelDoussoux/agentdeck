@@ -308,6 +308,7 @@ fn run_mcp(command: McpCommand, home: &std::path::Path, json: bool) -> agentdeck
                 transport,
                 env: BTreeMap::from_iter(env),
                 headers: BTreeMap::from_iter(headers),
+                options: mcp::ServerOptions::default(),
             };
             let agent = Agent::from(agent);
             mcp::add(agent, home, &name, &spec, force)?;
@@ -326,8 +327,11 @@ fn run_mcp(command: McpCommand, home: &std::path::Path, json: bool) -> agentdeck
         } => {
             for target in to {
                 let target = Agent::from(target);
-                mcp::copy(home, &name, from.into(), target, force)?;
+                let lost = mcp::copy(home, &name, from.into(), target, force)?;
                 println!("Copied \"{name}\" to {}", target.display_name());
+                if !lost.is_empty() {
+                    println!("  Not carried over: {}", lost.join(", "));
+                }
             }
         }
     }

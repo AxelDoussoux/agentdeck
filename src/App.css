@@ -1397,3 +1397,65 @@ button.primary kbd {
   color: var(--faint);
   font-style: italic;
 }
+
+.differences {
+  margin: 0 0 12px;
+  padding-left: 18px;
+  color: var(--text);
+  overflow-wrap: anywhere;
+}
+
+.differences li + li {
+  margin-top: 4px;
+}
+
+button.cell-differs:hover {
+  border-color: var(--warn);
+}
+
+.form .advanced {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.form .advanced summary {
+  cursor: pointer;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.form .advanced[open] summary {
+  margin-bottom: 12px;
+}
+
+.form label.check {
+  flex-direction: row;
+  align-items: center;
+  gap: 8px;
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 400;
+}
+
+.form .also {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+  margin: 0;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+}
+
+.form .also legend {
+  padding: 0 4px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.form .also .hint {
+  flex-basis: 100%;
+}

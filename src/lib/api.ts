@@ -5,6 +5,7 @@ import type {
   McpListing,
   Rules,
   SecretListing,
+  ServerEdit,
   ServerSpec,
   SkillListing,
   SkillLocation,
@@ -21,11 +22,19 @@ export const listMcpServers = () => invoke<McpListing>("list_mcp_servers");
 export const addMcpServer = (agent: Agent, name: string, spec: ServerSpec) =>
   invoke<number>("add_mcp_server", { agent, name, spec });
 
+/** Changes a server. A `null` value keeps that variable's current value. */
+export const editMcpServer = (agent: Agent, name: string, edit: ServerEdit) =>
+  invoke<number>("edit_mcp_server", { agent, name, edit });
+
 export const removeMcpServer = (agent: Agent, name: string) =>
   invoke<number>("remove_mcp_server", { agent, name });
 
-export const copyMcpServer = (name: string, from: Agent, to: Agent) =>
-  invoke<number>("copy_mcp_server", { name, from, to });
+/**
+ * With `overwrite`, replaces the server in `to` if it already has one.
+ * Returns the undo id and the settings `to` could not take.
+ */
+export const copyMcpServer = (name: string, from: Agent, to: Agent, overwrite = false) =>
+  invoke<{ undo: number; lost: string[] }>("copy_mcp_server", { name, from, to, overwrite });
 
 export const listRules = () => invoke<Rules[]>("list_rules");
 
