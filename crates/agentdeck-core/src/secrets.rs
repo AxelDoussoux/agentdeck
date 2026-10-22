@@ -451,11 +451,7 @@ fn launcher_exists(command: &str) -> bool {
     if path.components().count() > 1 {
         return path.is_file();
     }
-    let with_suffix = format!("{command}{}", std::env::consts::EXE_SUFFIX);
-    std::env::var_os("PATH").is_some_and(|paths| {
-        std::env::split_paths(&paths)
-            .any(|dir| dir.join(command).is_file() || dir.join(&with_suffix).is_file())
-    })
+    crate::agent::on_path(command)
 }
 
 /// Lists the protected servers whose launcher is missing. Configs that cannot

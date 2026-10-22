@@ -216,8 +216,8 @@ export function OverviewPage({ agents, listing, secrets, onNavigate, onChange }:
                 <AgentMark agent={info.agent} size={36} />
                 <div>
                   <strong>{info.name}</strong>
-                  <span className={`pill ${info.installed ? "pill-ok" : ""}`}>
-                    {info.installed ? "Detected" : "Not found"}
+                  <span className={`pill ${info.hasConfig ? "pill-ok" : ""}`}>
+                    {info.hasConfig ? "Detected" : info.installed ? "No config yet" : "Not found"}
                   </span>
                 </div>
               </header>
@@ -241,10 +241,10 @@ export function OverviewPage({ agents, listing, secrets, onNavigate, onChange }:
               </dl>
               <code title={info.mcpConfigPath}>{info.mcpConfigPath}</code>
               <div className="agent-actions">
-                <button className="small" disabled={!info.installed} onClick={() => open(false)}>
+                <button className="small" disabled={!info.hasConfig} onClick={() => open(false)}>
                   Open config
                 </button>
-                <button className="small" disabled={!info.installed} onClick={() => open(true)}>
+                <button className="small" disabled={!info.hasConfig} onClick={() => open(true)}>
                   Show in folder
                 </button>
               </div>

@@ -7,7 +7,9 @@ export interface AgentInfo {
   name: string;
   mcpConfigPath: string;
   rulesPath: string | null;
+  /** Found on this computer, even without a config file yet. */
   installed: boolean;
+  hasConfig: boolean;
 }
 
 export type Transport =

@@ -360,7 +360,9 @@ interface FormProps {
 
 function ServerForm({ agents, editing, onSubmit, onCancel }: FormProps) {
   const initial = editing?.server;
-  const [agent, setAgent] = useState<Agent>(initial?.agent ?? "claude-code");
+  // New servers go to an agent on this computer, unless none was found.
+  const offered = agents.some((info) => info.installed) ? agents.filter((info) => info.installed) : agents;
+  const [agent, setAgent] = useState<Agent>(initial?.agent ?? offered[0]?.agent ?? "claude-code");
   const [name, setName] = useState(initial?.name ?? "");
   const [kind, setKind] = useState<Transport["kind"]>(initial?.transport.kind ?? "stdio");
   const [target, setTarget] = useState(initial ? describe(initial.transport) : "");
@@ -424,8 +426,11 @@ function ServerForm({ agents, editing, onSubmit, onCancel }: FormProps) {
         <label>
           Agent
           <select value={agent} disabled={!!initial} onChange={(e) => setAgent(e.target.value as Agent)}>
-            {agents.map((info) => (
-              <option key={info.agent} value={info.agent}>{info.name}</option>
+            {(initial ? agents : offered).map((info) => (
+              <option key={info.agent} value={info.agent}>
+                {info.name}
+                {!info.hasConfig && info.installed && " (creates its config)"}
+              </option>
             ))}
           </select>
         </label>

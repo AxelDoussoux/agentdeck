@@ -64,7 +64,7 @@ to get started.
 ## CLI
 
 ```sh
-agentdeck agents
+agentdeck agents   # found, no config yet, or missing
 agentdeck mcp list [--json]
 agentdeck mcp add claude-code github -e GITHUB_TOKEN=ghp_x -- npx -y @modelcontextprotocol/server-github
 agentdeck mcp add cursor linear --url https://mcp.linear.app/mcp
