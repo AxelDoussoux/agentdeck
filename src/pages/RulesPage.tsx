@@ -1,9 +1,11 @@
 import { useEffect, useRef, useState } from "react";
 import type { UnsavedGuard } from "../App";
 import { ConfirmDialog } from "../components/ConfirmDialog";
+import { DiffView } from "../components/DiffView";
 import { AgentMark, Icon, Notice, PageHeader } from "../components/ui";
 import { useToast } from "../components/Toasts";
 import { listRules, saveRules, undoChange } from "../lib/api";
+import { lineCount } from "../lib/diff";
 import type { Agent, AgentInfo, Rules } from "../lib/types";
 
 const SAVE_SHORTCUT = /Mac|iPhone|iPad/.test(navigator.userAgent) ? "⌘S" : "Ctrl+S";
@@ -101,6 +103,33 @@ export function RulesPage({ agents, setGuard }: Props) {
     return () => window.removeEventListener("keydown", onKey);
   });
 
+  function copyDialog(pending: Agent) {
+    const target = agents.find((info) => info.agent === pending)!;
+    const replaced = rules.find((r) => r.agent === target.agent)?.content ?? "";
+    const lines = (text: string) => `${lineCount(text)} line${lineCount(text) === 1 ? "" : "s"}`;
+    return (
+      <ConfirmDialog
+        wide
+        title={`Replace ${target.name} rules?`}
+        onCancel={() => setPendingCopy(null)}
+        choices={[
+          {
+            label: `Replace ${target.name} rules`,
+            tone: "danger",
+            onSelect: () => write(target.agent, saved, `Copied ${current?.name} rules to ${target.name}.`),
+          },
+        ]}
+      >
+        <p>
+          {replaced
+            ? `The ${lines(replaced)} of ${target.name}'s rules are replaced with the ${lines(saved)} of ${current?.name}'s.`
+            : `${target.name} has no rules yet. It gets the ${lines(saved)} of ${current?.name}'s.`}
+        </p>
+        {replaced && <DiffView before={replaced} after={saved} />}
+      </ConfirmDialog>
+    );
+  }
+
   return (
     <>
       <PageHeader
@@ -157,15 +186,7 @@ export function RulesPage({ agents, setGuard }: Props) {
                 </button>
               );
             }
-            return pendingCopy === info.agent ? (
-              <button
-                key={info.agent}
-                className="danger"
-                onClick={() => write(info.agent, saved, `Copied to ${info.name}.`)}
-              >
-                Overwrite {info.name}?
-              </button>
-            ) : (
+            return (
               <button
                 key={info.agent}
                 disabled={dirty}
@@ -177,6 +198,8 @@ export function RulesPage({ agents, setGuard }: Props) {
             );
           })}
       </div>
+
+      {pendingCopy && copyDialog(pendingCopy)}
 
       {pendingSelect && (
         <ConfirmDialog

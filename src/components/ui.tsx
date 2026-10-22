@@ -22,6 +22,8 @@ const ICONS = {
   download: "M12 4v11M7 10l5 5 5-5M5 20h14",
   close: "M6 6l12 12M18 6L6 18",
   undo: "M9 14L4 9l5-5M4 9h10a6 6 0 0 1 0 12h-3",
+  more: "M4.5 12a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0M10.5 12a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0M16.5 12a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0",
+  differs: "M5 9h14M5 15h14M16 5L8 19",
 } as const;
 
 export type IconName = keyof typeof ICONS;

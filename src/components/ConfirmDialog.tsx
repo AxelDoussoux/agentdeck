@@ -12,10 +12,12 @@ interface Props {
   choices: DialogChoice[];
   /** Escape, the Cancel button, or a click outside. */
   onCancel: () => void;
+  /** Room for a preview, such as a diff. */
+  wide?: boolean;
 }
 
 /** A modal question with a Cancel button, focused first, and one or more choices. */
-export function ConfirmDialog({ title, children, choices, onCancel }: Props) {
+export function ConfirmDialog({ title, children, choices, onCancel, wide }: Props) {
   const ref = useRef<HTMLDialogElement>(null);
 
   useEffect(() => {
@@ -27,7 +29,7 @@ export function ConfirmDialog({ title, children, choices, onCancel }: Props) {
   return (
     <dialog
       ref={ref}
-      className="dialog"
+      className={wide ? "dialog dialog-wide" : "dialog"}
       aria-labelledby="dialog-title"
       onCancel={(e) => {
         e.preventDefault();

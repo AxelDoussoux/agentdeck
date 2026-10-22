@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { AgentMark, Empty, Icon, Notice, PageHeader } from "../components/ui";
+import { ConfirmDialog } from "../components/ConfirmDialog";
 import { useToast } from "../components/Toasts";
 import { copySkill, listSkills, readSkill, removeSkill } from "../lib/api";
 import type { Agent, AgentInfo, Skill, SkillListing, SkillLocation } from "../lib/types";
@@ -103,14 +104,14 @@ export function SkillsPage({ agents }: { agents: AgentInfo[] }) {
                     const via = found.find((skill) => skill.readers.includes(agent));
                     return via ? (
                       <td key={agent} className="agent-col" title={`Loaded from ${via.path}`}>
-                        <span className="cell-on static">
+                        <span className="cell cell-on">
                           <Icon name="check" size={14} /> {LOCATION_LABELS[via.location]}
                         </span>
                       </td>
                     ) : (
                       <td key={agent} className="agent-col">
                         <button
-                          className="cell-add"
+                          className="cell cell-add"
                           onClick={() =>
                             run(async () => {
                               await copySkill(name, found[0].location, agent);
@@ -130,7 +131,7 @@ export function SkillsPage({ agents }: { agents: AgentInfo[] }) {
         </div>
       )}
 
-      {selected && (
+      {selected && copies.length > 0 && (
         <section className="card detail">
           <header className="detail-header">
             <h3>{selected}</h3>
@@ -143,27 +144,43 @@ export function SkillsPage({ agents }: { agents: AgentInfo[] }) {
                   <code>{skill.path}</code>
                   <span className="hint">Loaded by {skill.readers.map(nameOf).join(", ")}</span>
                 </div>
-                {pendingRemoval === skill.location ? (
-                  <button
-                    className="danger small"
-                    onClick={() =>
-                      run(async () => {
-                        const trashed = await removeSkill(skill.location, skill.name);
-                        return `Moved to ${trashed}.`;
-                      })
-                    }
-                  >
-                    Move to trash?
-                  </button>
-                ) : (
-                  <button className="small" onClick={() => setPendingRemoval(skill.location)}>Remove</button>
-                )}
+                <button className="small" onClick={() => setPendingRemoval(skill.location)}>Remove</button>
               </li>
             ))}
           </ul>
           <pre className="preview">{preview}</pre>
         </section>
       )}
+
+      {pendingRemoval &&
+        copies
+          .filter((skill) => skill.location === pendingRemoval)
+          .map((skill) => (
+            <ConfirmDialog
+              key={skill.location}
+              title={`Remove ${skill.name}?`}
+              onCancel={() => setPendingRemoval(null)}
+              choices={[
+                {
+                  label: "Move to trash",
+                  tone: "danger",
+                  onSelect: () =>
+                    run(async () => {
+                      const trashed = await removeSkill(skill.location, skill.name);
+                      return `Moved ${skill.name} to ${trashed}.`;
+                    }),
+                },
+              ]}
+            >
+              <p>
+                {skill.readers.length > 0
+                  ? `${skill.readers.map(nameOf).join(", ")} will no longer load it from `
+                  : "Removes "}
+                <code>{skill.path}</code>. The folder moves to <code>~/.agentdeck/trash</code>, so you
+                can put it back by hand.
+              </p>
+            </ConfirmDialog>
+          ))}
     </>
   );
 }

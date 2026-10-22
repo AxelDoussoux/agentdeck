@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { AgentMark, Empty, Icon, Notice, PageHeader } from "../components/ui";
+import { RowMenu, type MenuItem } from "../components/RowMenu";
 import { useToast } from "../components/Toasts";
 import { addMcpServer, copyMcpServer, removeMcpServer, undoChange } from "../lib/api";
 import { joinCommand, splitCommand } from "../lib/command";
@@ -16,6 +17,36 @@ function describe(transport: Transport): string {
   }
 }
 
+/**
+ * The command a server really runs, and the variable names it gets. Servers
+ * whose secrets are in the keychain start through `agentdeck exec --secret
+ * KEY=ID -- command args`.
+ */
+function launch(server: McpServer): { target: string; keys: string[] } {
+  const { transport } = server;
+  const keys = [...server.envKeys, ...server.headerKeys];
+  if (transport.kind !== "stdio") return { target: `${transport.kind} ${transport.url}`, keys };
+  const wrapped = /(^|[\\/])agentdeck(\.exe)?$/i.test(transport.command) && transport.args[0] === "exec";
+  const end = transport.args.indexOf("--");
+  if (!wrapped || end < 0) return { target: describe(transport), keys };
+  const flags = transport.args.slice(1, end);
+  for (let i = 0; i < flags.length - 1; i++) {
+    if (flags[i] === "--secret") keys.push(flags[i + 1].split("=")[0]);
+  }
+  return { target: joinCommand(transport.args.slice(end + 1)), keys };
+}
+
+/** How `copy` differs from `reference`, or `null` when they run the same thing with the same variable names. */
+function difference(copy: McpServer, reference: McpServer, referenceName: string): string | null {
+  const [x, y] = [launch(copy), launch(reference)];
+  if (x.target !== y.target) return `Runs ${x.target} here, ${y.target} in ${referenceName}.`;
+  const keys = (list: string[]) => [...list].sort().join(", ") || "none";
+  if (keys(x.keys) !== keys(y.keys)) {
+    return `Variables here: ${keys(x.keys)}. In ${referenceName}: ${keys(y.keys)}.`;
+  }
+  return null;
+}
+
 interface Props {
   agents: AgentInfo[];
   listing: McpListing;
@@ -24,7 +55,6 @@ interface Props {
 
 export function McpPage({ agents, listing, onChange }: Props) {
   const notify = useToast();
-  const [pendingRemoval, setPendingRemoval] = useState<string | null>(null);
   const [adding, setAdding] = useState(false);
 
   // One row per server name, one column per agent.
@@ -50,9 +80,29 @@ export function McpPage({ agents, listing, onChange }: Props) {
       notify({ tone: "error", text: String(err) });
       ok = false;
     }
-    setPendingRemoval(null);
     await onChange();
     return ok;
+  }
+
+  /** Copies `name` to every agent in `targets`, with one toast and one Undo for all. */
+  async function addEverywhere(name: string, from: Agent, targets: Agent[]) {
+    const ids: number[] = [];
+    try {
+      for (const agent of targets) ids.push(await copyMcpServer(name, from, agent));
+    } catch (err) {
+      notify({ tone: "error", text: String(err) });
+    }
+    if (ids.length > 0) {
+      notify({
+        tone: "success",
+        text: `Added ${name} to ${targets.slice(0, ids.length).map(nameOf).join(", ")}.`,
+        undo: async () => {
+          for (const id of ids.reverse()) await undoChange(id);
+          await onChange();
+        },
+      });
+    }
+    await onChange();
   }
 
   const nameOf = (agent: Agent) => agents.find((a) => a.agent === agent)?.name ?? agent;
@@ -93,19 +143,43 @@ export function McpPage({ agents, listing, onChange }: Props) {
               <tr>
                 <th>Server</th>
                 {agents.map((info) => (
-                  <th key={info.agent} className="agent-col">
+                  <th
+                    key={info.agent}
+                    className={`agent-col ${info.installed ? "" : "agent-off"}`}
+                    title={info.installed ? undefined : `${info.name} was not found on this computer`}
+                  >
                     <span className="th-agent">
                       <AgentMark agent={info.agent} size={20} />
                       {info.name}
                     </span>
                   </th>
                 ))}
+                <th className="menu-col">
+                  <span className="sr-only">Actions</span>
+                </th>
               </tr>
             </thead>
             <tbody>
               {[...rows].map(([name, byAgent]) => {
                 const [source] = byAgent.values();
                 const secretKeys = [...source.envKeys, ...source.headerKeys];
+                const supports = (agent: Agent) => !(agent === "codex" && source.transport.kind === "sse");
+                const missing = agents.filter(({ agent }) => !byAgent.has(agent) && supports(agent));
+                const menu: MenuItem[] = [
+                  ...(missing.length > 1
+                    ? [
+                        {
+                          label: "Add to every agent",
+                          onSelect: () => addEverywhere(name, source.agent, missing.map((info) => info.agent)),
+                        },
+                      ]
+                    : []),
+                  ...[...byAgent.keys()].map((agent) => ({
+                    label: `Remove from ${nameOf(agent)}`,
+                    tone: "danger" as const,
+                    onSelect: () => run(() => removeMcpServer(agent, name), `Removed ${name} from ${nameOf(agent)}.`),
+                  })),
+                ];
                 return (
                   <tr key={name}>
                     <td className="server">
@@ -120,49 +194,54 @@ export function McpPage({ agents, listing, onChange }: Props) {
                         </small>
                       )}
                     </td>
-                    {agents.map(({ agent }) => {
-                      const key = `${agent}/${name}`;
-                      if (byAgent.has(agent)) {
+                    {agents.map(({ agent, installed }) => {
+                      const off = installed ? "" : "agent-off";
+                      const server = byAgent.get(agent);
+                      const differs = server && server !== source && difference(server, source, nameOf(source.agent));
+                      if (differs) {
                         return (
-                          <td key={agent} className="agent-col">
-                            {pendingRemoval === key ? (
-                              <span className="confirm">
-                                <button
-                                  className="danger small"
-                                  onClick={() => run(() => removeMcpServer(agent, name), `Removed ${name} from ${nameOf(agent)}.`)}
-                                >
-                                  Remove
-                                </button>
-                                <button className="small" onClick={() => setPendingRemoval(null)}>
-                                  Keep
-                                </button>
-                              </span>
-                            ) : (
-                              <button
-                                className="cell-on"
-                                title="Installed. Click to remove"
-                                onClick={() => setPendingRemoval(key)}
-                              >
-                                <Icon name="check" size={14} /> Installed
-                              </button>
-                            )}
+                          <td key={agent} className={`agent-col ${off}`}>
+                            <span className="cell cell-differs" title={differs}>
+                              <Icon name="differs" size={14} /> Different
+                            </span>
                           </td>
                         );
                       }
-                      const unsupported = agent === "codex" && source.transport.kind === "sse";
+                      if (server) {
+                        return (
+                          <td key={agent} className={`agent-col ${off}`}>
+                            <span className="cell cell-on">
+                              <Icon name="check" size={14} /> Installed
+                            </span>
+                          </td>
+                        );
+                      }
+                      if (!supports(agent)) {
+                        return (
+                          <td key={agent} className={`agent-col ${off}`}>
+                            <span className="cell cell-none" title="Codex does not support SSE servers">
+                              Not supported
+                            </span>
+                          </td>
+                        );
+                      }
                       return (
-                        <td key={agent} className="agent-col">
+                        <td key={agent} className={`agent-col ${off}`}>
                           <button
-                            className="cell-add"
-                            disabled={unsupported}
-                            title={unsupported ? "Codex does not support SSE servers" : `Copy ${name} to this agent`}
-                            onClick={() => run(() => copyMcpServer(name, source.agent, agent), `Added ${name} to ${nameOf(agent)}.`)}
+                            className="cell cell-add"
+                            title={`Copy ${name} from ${nameOf(source.agent)} to ${nameOf(agent)}`}
+                            onClick={() =>
+                              run(() => copyMcpServer(name, source.agent, agent), `Added ${name} to ${nameOf(agent)}.`)
+                            }
                           >
                             <Icon name="plus" size={14} /> Add
                           </button>
                         </td>
                       );
                     })}
+                    <td className="menu-col">
+                      <RowMenu label={`Actions for ${name}`} items={menu} />
+                    </td>
                   </tr>
                 );
               })}
