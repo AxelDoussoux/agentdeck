@@ -1,6 +1,6 @@
 import { useEffect, useState, type FormEvent } from "react";
 import type { Focus } from "../App";
-import { AgentMark, Empty, Icon, Notice, PageHeader } from "../components/ui";
+import { AgentMark, Empty, Icon, Notice, PageHeader, Segmented } from "../components/ui";
 import { ConfirmDialog } from "../components/ConfirmDialog";
 import { DiffView } from "../components/DiffView";
 import { Drawer } from "../components/Drawer";
@@ -381,14 +381,15 @@ export function SkillsPage({ agents, focus }: { agents: AgentInfo[]; focus?: Foc
               <div className="drawer-section">
                 <header>
                   <strong>SKILL.md</strong>
-                  <div className="segmented" role="group" aria-label={t.skills.howToShow}>
-                    <button aria-pressed={!source} className={source ? undefined : "active"} onClick={() => setSource(false)}>
-                      {t.skills.preview}
-                    </button>
-                    <button aria-pressed={source} className={source ? "active" : undefined} onClick={() => setSource(true)}>
-                      {t.skills.source}
-                    </button>
-                  </div>
+                  <Segmented
+                    label={t.skills.howToShow}
+                    value={source}
+                    onChange={setSource}
+                    options={[
+                      { value: false, label: t.skills.preview },
+                      { value: true, label: t.skills.source },
+                    ]}
+                  />
                 </header>
                 {source ? <pre className="preview">{preview}</pre> : <Markdown text={preview} />}
               </div>
@@ -645,18 +646,12 @@ function SkillDifferences({ copies }: { copies: Skill[] }) {
   return (
     <>
       {others.length > 1 && (
-        <div className="segmented" role="group" aria-label={t.skills.copyToCompare}>
-          {others.map((skill) => (
-            <button
-              key={skill.location}
-              aria-pressed={skill === other}
-              className={skill === other ? "active" : undefined}
-              onClick={() => setCompared(skill.location)}
-            >
-              {LOCATION_LABELS[skill.location]}
-            </button>
-          ))}
-        </div>
+        <Segmented
+          label={t.skills.copyToCompare}
+          value={other.location}
+          onChange={setCompared}
+          options={others.map((skill) => ({ value: skill.location, label: LOCATION_LABELS[skill.location] }))}
+        />
       )}
       <p className="hint">
         {t.skills.diffHint(<code>{LOCATION_LABELS[other.location]}</code>, <code>{LOCATION_LABELS[base.location]}</code>)}

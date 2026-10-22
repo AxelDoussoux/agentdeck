@@ -1,0 +1,23 @@
+.skill-files {
+  max-height: 220px;
+  margin: 0;
+  padding: 0;
+  overflow-y: auto;
+  list-style: none;
+}
+
+.skill-files li {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--space-3);
+  padding: 3px 0;
+  font-size: var(--text-sm);
+}
+
+.skill-files code {
+  overflow-wrap: anywhere;
+}
+
+.skill-files .hint {
+  flex-shrink: 0;
+}

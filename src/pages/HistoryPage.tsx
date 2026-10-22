@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { CostChart } from "../components/CostChart";
 import { Drawer } from "../components/Drawer";
 import { useToast } from "../components/Toasts";
-import { AgentMark, Empty, Notice, PageHeader } from "../components/ui";
+import { AgentMark, Empty, Notice, PageHeader, Segmented } from "../components/ui";
 import { exportSessionsCsv, usageReport } from "../lib/api";
 import { errorText, formatDateTime, formatDay, formatNumber, t } from "../lib/i18n";
 import { dateOf, datesBetween, formatCost, lastDays, localDate, localDays } from "../lib/usage";
@@ -239,25 +239,15 @@ export function HistoryPage({ agents }: { agents: AgentInfo[] }) {
       />
 
       <div className="toolbar toolbar-top">
-        <div className="segmented" role="group" aria-label={t.history.period}>
-          {PERIODS.map((option) => (
-            <button
-              key={option}
-              className={option === period ? "active" : undefined}
-              aria-pressed={option === period}
-              onClick={() => setPeriod(option)}
-            >
-              {t.history.days(option)}
-            </button>
-          ))}
-          <button
-            className={period === "custom" ? "active" : undefined}
-            aria-pressed={period === "custom"}
-            onClick={() => setPeriod("custom")}
-          >
-            {t.history.custom}
-          </button>
-        </div>
+        <Segmented
+          label={t.history.period}
+          value={period}
+          onChange={setPeriod}
+          options={[
+            ...PERIODS.map((option) => ({ value: option, label: t.history.days(option) })),
+            { value: "custom", label: t.history.custom },
+          ]}
+        />
         {period === "custom" && (
           <span className="date-range">
             <input
@@ -394,18 +384,12 @@ export function HistoryPage({ agents }: { agents: AgentInfo[] }) {
           </section>
 
           <div className="toolbar sessions-bar">
-            <div className="segmented" role="group" aria-label={t.history.groupBy}>
-              {VIEWS.map((option) => (
-                <button
-                  key={option}
-                  className={option === view ? "active" : undefined}
-                  aria-pressed={option === view}
-                  onClick={() => setView(option)}
-                >
-                  {t.history.views[option]}
-                </button>
-              ))}
-            </div>
+            <Segmented
+              label={t.history.groupBy}
+              value={view}
+              onChange={setView}
+              options={VIEWS.map((option) => ({ value: option, label: t.history.views[option] }))}
+            />
             <span className="spacer" />
             <input
               type="search"

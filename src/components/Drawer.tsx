@@ -1,6 +1,6 @@
-import { useEffect, useRef, type KeyboardEvent, type ReactNode } from "react";
+import { useEffect, useRef, type ReactNode } from "react";
 import { useToastHost } from "./Toasts";
-import { Icon } from "./ui";
+import { Icon, Tabs } from "./ui";
 import { Tooltip } from "./Tooltip";
 import { t } from "../lib/i18n";
 
@@ -34,18 +34,6 @@ export function Drawer<T extends string>({ title, subtitle, tabs, tab, onTab, on
     return () => dialog?.close();
   }, []);
 
-  /** Arrow keys, Home and End move between tabs, as in any tab list. */
-  function onTabKey(event: KeyboardEvent) {
-    const index = tabs.findIndex((t) => t.id === tab);
-    const last = tabs.length - 1;
-    const target = { ArrowRight: index + 1, ArrowLeft: index - 1, Home: 0, End: last }[event.key];
-    if (target === undefined) return;
-    event.preventDefault();
-    const next = tabs[(target + tabs.length) % tabs.length];
-    onTab(next.id);
-    document.getElementById(`drawer-tab-${next.id}`)?.focus();
-  }
-
   return (
     <dialog
       ref={ref}
@@ -71,23 +59,23 @@ export function Drawer<T extends string>({ title, subtitle, tabs, tab, onTab, on
         </Tooltip>
       </header>
       {tabs.length > 1 && (
-        <div className="tabs drawer-tabs" role="tablist" aria-label={t.drawer.sections} onKeyDown={onTabKey}>
-          {tabs.map((t) => (
-            <button
-              key={t.id}
-              id={`drawer-tab-${t.id}`}
-              role="tab"
-              aria-selected={t.id === tab}
-              aria-controls="drawer-panel"
-              tabIndex={t.id === tab ? 0 : -1}
-              className={t.id === tab ? "active" : undefined}
-              onClick={() => onTab(t.id)}
-            >
-              {t.label}
-              {t.count !== undefined && t.count > 0 && <span className="tab-count">{t.count}</span>}
-            </button>
-          ))}
-        </div>
+        <Tabs
+          className="drawer-tabs"
+          label={t.drawer.sections}
+          idPrefix="drawer-tab"
+          panel="drawer-panel"
+          tab={tab}
+          onTab={onTab}
+          tabs={tabs.map((item) => ({
+            id: item.id,
+            label: (
+              <>
+                {item.label}
+                {item.count !== undefined && item.count > 0 && <span className="tab-count">{item.count}</span>}
+              </>
+            ),
+          }))}
+        />
       )}
       <div
         className="drawer-body"

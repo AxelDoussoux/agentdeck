@@ -3,7 +3,7 @@ import type { Focus, UnsavedGuard } from "../App";
 import { ConfirmDialog } from "../components/ConfirmDialog";
 import { DiffView } from "../components/DiffView";
 import { Markdown } from "../components/Markdown";
-import { AgentMark, Icon, Notice, PageHeader } from "../components/ui";
+import { AgentMark, Icon, Notice, PageHeader, Tabs } from "../components/ui";
 import { useToast } from "../components/Toasts";
 import { Tooltip } from "../components/Tooltip";
 import { listRules, saveRules, undoChange } from "../lib/api";
@@ -100,18 +100,6 @@ export function RulesPage({ agents, setGuard, focus }: Props) {
   useEffect(() => {
     if (focus?.kind === "rules") select(focus.agent);
   }, [focus]);
-
-  /** Arrow keys, Home and End move between tabs, as in any tab list. */
-  function onTabKey(event: React.KeyboardEvent) {
-    const index = withFile.findIndex((info) => info.agent === selected);
-    const last = withFile.length - 1;
-    const target = { ArrowRight: index + 1, ArrowLeft: index - 1, Home: 0, End: last }[event.key];
-    if (target === undefined) return;
-    event.preventDefault();
-    const next = withFile[(target + withFile.length) % withFile.length];
-    select(next.agent);
-    document.getElementById(`rules-tab-${next.agent}`)?.focus();
-  }
 
   function select(agent: Agent, force = false) {
     if (agent === selected) return;
@@ -241,26 +229,25 @@ export function RulesPage({ agents, setGuard, focus }: Props) {
         </Notice>
       )}
 
-      <div className="tabs" role="tablist" aria-label={t.rules.agents} onKeyDown={onTabKey}>
-        {withFile.map((info) => (
-          <button
-            key={info.agent}
-            id={`rules-tab-${info.agent}`}
-            role="tab"
-            aria-selected={info.agent === selected}
-            aria-controls="rules-panel"
-            tabIndex={info.agent === selected ? 0 : -1}
-            className={info.agent === selected ? "active" : undefined}
-            onClick={() => select(info.agent)}
-          >
-            <AgentMark agent={info.agent} size={18} />
-            {info.name}
-            {info.agent !== selected && (
-              <SameBadge theirs={contentOf(info.agent)} ours={saved} base={base} name={current?.name} />
-            )}
-          </button>
-        ))}
-      </div>
+      <Tabs
+        label={t.rules.agents}
+        idPrefix="rules-tab"
+        panel="rules-panel"
+        tab={selected}
+        onTab={(agent) => select(agent)}
+        tabs={withFile.map((info) => ({
+          id: info.agent,
+          label: (
+            <>
+              <AgentMark agent={info.agent} size={18} />
+              {info.name}
+              {info.agent !== selected && (
+                <SameBadge theirs={contentOf(info.agent)} ours={saved} base={base} name={current?.name} />
+              )}
+            </>
+          ),
+        }))}
+      />
 
       <div className="editor-card" id="rules-panel" role="tabpanel" aria-labelledby={`rules-tab-${selected}`}>
         <div className="editor-bar">

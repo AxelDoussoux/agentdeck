@@ -1,0 +1,57 @@
+.test-result {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin-top: var(--space-3);
+}
+
+.test-running {
+  margin: var(--space-3) 0 0;
+}
+
+.test-ok {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-1);
+  margin: 0;
+  color: var(--ok);
+  font-size: var(--text-md);
+}
+
+.tool-list {
+  max-height: 240px;
+  margin: 0;
+  padding: 0;
+  overflow-y: auto;
+  list-style: none;
+  font-size: var(--text-sm);
+}
+
+.tool-list li {
+  display: flex;
+  gap: 10px;
+  padding: 3px 0;
+}
+
+.tool-list code {
+  flex-shrink: 0;
+}
+
+.tool-list .hint {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.test-log summary {
+  cursor: pointer;
+  color: var(--muted);
+  font-size: var(--text-sm);
+  font-weight: 600;
+}
+
+.test-log .preview {
+  margin-top: 6px;
+  max-height: 200px;
+}
