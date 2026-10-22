@@ -166,7 +166,16 @@ function App() {
         <div className="sidebar-footer">
           <ul className="agent-status">
             {agents.map((info) => (
-              <li key={info.agent} title={info.installed ? info.mcpConfigPath : "Not found on this computer"}>
+              <li
+                key={info.agent}
+                title={
+                  info.hasConfig
+                    ? info.mcpConfigPath
+                    : info.installed
+                      ? `Installed, no ${info.mcpConfigPath} yet`
+                      : "Not found on this computer"
+                }
+              >
                 <span className={`dot ${info.installed ? "dot-on" : ""}`} />
                 {info.name}
               </li>

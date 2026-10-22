@@ -238,9 +238,13 @@ fn run(cli: Cli) -> agentdeck_core::Result<()> {
                 println!("{}", serde_json::to_string_pretty(&agents).unwrap());
             } else {
                 for info in agents {
-                    let status = if info.installed { "found" } else { "missing" };
+                    let status = match (info.installed, info.has_config) {
+                        (_, true) => "found",
+                        (true, false) => "no config",
+                        (false, false) => "missing",
+                    };
                     println!(
-                        "{:<12} {:<8} {}",
+                        "{:<12} {:<9} {}",
                         info.name,
                         status,
                         info.mcp_config_path.display()
