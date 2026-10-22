@@ -33,7 +33,7 @@ shows them side by side, and syncs them in one click.
   removed and replaced copies go to a trash you can restore from.
 - **Secrets.** Find API keys stored in plain text in agent configs and move them
   to the system keychain (Windows Credential Manager, macOS Keychain, Secret
-  Service). Values are never displayed.
+  Service), one server at a time or all at once. Values are never displayed.
 - **History & costs.** Token usage and estimated cost per day, per agent,
   per project, per model and per session, from Claude Code and Codex logs,
   with an optional monthly budget.
@@ -91,6 +91,7 @@ agentdeck secrets list
 agentdeck secrets protect claude-code github   # credentials move to the keychain
 agentdeck secrets unprotect claude-code github
 agentdeck secrets repair    # after moving the app
+agentdeck secrets mark SERVICE_ID secret   # or setting, or auto
 agentdeck usage --days 30
 ```
 
@@ -120,7 +121,10 @@ Protecting a local MCP server stores the environment variables that look like
 credentials (by name, such as `GITHUB_TOKEN` or `apiKey`, or by value, such as
 `ghp_…` or a URL with a password) in the system keychain (Credential Manager,
 macOS Keychain or Secret Service). Settings such as `NODE_ENV` stay in the
-config and are not counted as secrets. AgentDeck then rewrites
+config and are not counted as secrets. When AgentDeck judges a name wrong,
+mark it as a secret or a setting from the Secrets page or with
+`agentdeck secrets mark`: it applies to every server, and the marks are kept
+in `~/.agentdeck/secret-names.json`. AgentDeck then rewrites
 its command to `agentdeck exec --secret KEY=ID -- <original command>`, which
 reads them back when the agent starts the server. The app ships the
 `agentdeck` CLI next to its own executable and uses that copy (from an
