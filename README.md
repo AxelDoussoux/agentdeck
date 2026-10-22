@@ -40,7 +40,8 @@ shows them side by side, and syncs them in one click.
   copies go to a trash you can restore from.
 - **Secrets.** Find API keys stored in plain text in agent configs and move them
   to the system keychain (Windows Credential Manager, macOS Keychain, Secret
-  Service), one server at a time or all at once. Values are never displayed.
+  Service), one server at a time or all at once, headers of remote servers
+  included. Values are never displayed.
 - **History & costs.** Token usage and estimated cost per day, per agent,
   per project, per model and per session, from Claude Code and Codex logs,
   over the last days or any period, with an optional monthly budget. Click a
@@ -105,6 +106,7 @@ agentdeck secrets protect claude-code github   # credentials move to the keychai
 agentdeck secrets unprotect claude-code github
 agentdeck secrets repair    # after moving the app
 agentdeck secrets mark SERVICE_ID secret   # or setting, or auto
+agentdeck secrets env       # the variables protected headers read, for eval
 agentdeck usage --days 30
 agentdeck usage --days 30 --csv > sessions.csv
 ```
@@ -147,7 +149,24 @@ goes away when the app quits). If the app is moved or reinstalled elsewhere,
 protected servers can no longer start: AgentDeck flags them on the Overview
 and Secrets pages and repairs them in one click (`agentdeck secrets repair`
 from the command line). Unprotect your servers before uninstalling the app.
-Headers of remote servers are listed but stay in the config.
+
+Agents connect to remote servers themselves, so there is no command to wrap.
+Protecting a remote server stores its credential headers in the keychain and
+makes them read a variable instead: `Authorization: Bearer ${LINEAR_TOKEN}`
+for Claude Code and Gemini CLI, `${env:LINEAR_TOKEN}` for Cursor, and
+`bearer_token_env_var` or `env_http_headers` for Codex (Codex reads a whole
+header or a bearer token from a variable, nothing in between). Your shell sets
+the variables from the keychain when it starts, with this line in its profile:
+
+```sh
+eval "$(agentdeck secrets env)"                                   # bash, zsh
+agentdeck secrets env --shell fish | source                       # fish
+agentdeck secrets env --shell powershell | Out-String | Invoke-Expression  # PowerShell $PROFILE
+```
+
+Agents started from such a shell, or by an editor that loads your shell
+profile, find them. The Test button of the MCP page reads them from the
+keychain itself.
 
 Session history is read from `~/.claude/projects` (Claude Code) and
 `~/.codex/sessions` (Codex). What each log file holds is cached in

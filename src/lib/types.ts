@@ -89,12 +89,23 @@ export interface ProbeReport {
 
 /** How protecting a server changes its command. No secret value is in it. */
 export interface ProtectPreview {
+  /** How the agent starts the server; the same for a remote server. */
   before: Transport;
   after: Transport;
-  /** Variables that move to the keychain. */
+  /** Variables or headers that move to the keychain. */
   moved: string[];
-  /** Variables that stay in the config. */
+  /** Variables or headers that stay in the config. */
   kept: string[];
+  /** For a remote server, the variable each moved header reads. */
+  headers: HeaderChange[];
+}
+
+/** A header that reads a variable once its server is protected. */
+export interface HeaderChange {
+  header: string;
+  variable: string;
+  /** The header as written afterwards, such as `Bearer ${LINEAR_TOKEN}`. */
+  value: string;
 }
 
 export interface Rules {
@@ -200,6 +211,8 @@ export interface SecretRef {
   /** `likely` comes from how the user marked the name. */
   marked: boolean;
   protectable: boolean;
+  /** The variable the value is read from, when the config says `${NAME}`. */
+  envVar: string | null;
 }
 
 /** A protected server whose `agentdeck` launcher is missing, so it no longer starts. */
@@ -214,6 +227,8 @@ export interface SecretListing {
   errors: string[];
   launcher: string | null;
   stranded: Stranded[];
+  /** The shell profile line that sets the variables protected headers read. */
+  shellHook: string | null;
 }
 
 /** Where an agent's files are, and whether a variable moved them. */

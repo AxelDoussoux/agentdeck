@@ -79,6 +79,12 @@ enum SecretsCommand {
     Unprotect { agent: AgentArg, server: String },
     /// Point protected servers whose launcher is missing at this executable
     Repair,
+    /// Print the variables that protected headers read, for a shell profile:
+    /// eval "$(agentdeck secrets env)"
+    Env {
+        #[arg(long, value_enum, default_value_t = default_shell())]
+        shell: ShellArg,
+    },
     /// Say whether a variable name holds a secret, for every server
     Mark {
         /// Variable name, such as SERVICE_ID
@@ -86,6 +92,32 @@ enum SecretsCommand {
         #[arg(value_enum)]
         r#as: MarkArg,
     },
+}
+
+#[derive(Clone, Copy, ValueEnum)]
+enum ShellArg {
+    /// bash, zsh and other POSIX shells
+    Sh,
+    Fish,
+    Powershell,
+}
+
+impl From<ShellArg> for secrets::Shell {
+    fn from(shell: ShellArg) -> Self {
+        match shell {
+            ShellArg::Sh => secrets::Shell::Sh,
+            ShellArg::Fish => secrets::Shell::Fish,
+            ShellArg::Powershell => secrets::Shell::Powershell,
+        }
+    }
+}
+
+fn default_shell() -> ShellArg {
+    if cfg!(windows) {
+        ShellArg::Powershell
+    } else {
+        ShellArg::Sh
+    }
 }
 
 #[derive(Clone, Copy, ValueEnum)]
@@ -380,6 +412,7 @@ fn run_mcp(command: McpCommand, home: &std::path::Path, json: bool) -> agentdeck
                 agent,
                 name: name.clone(),
             })?;
+            let spec = secrets::with_vault_variables(&Keychain, spec)?;
             let report = probe::probe(&spec, probe::TIMEOUT);
             if json {
                 println!("{}", serde_json::to_string_pretty(&report).unwrap());
@@ -635,6 +668,9 @@ fn run_secrets(
                 for secret in &all {
                     let status = match (&secret.vault_id, secret.same_value_elsewhere) {
                         (Some(_), _) => "keychain".to_owned(),
+                        (None, _) if secret.env_var.is_some() => {
+                            format!("read from ${}", secret.env_var.as_deref().unwrap_or(""))
+                        }
                         (None, _) if !secret.likely => "setting, not a secret".to_owned(),
                         (None, 0) => "plain text".to_owned(),
                         (None, n) => format!("plain text, same value in {n} other place(s)"),
@@ -654,11 +690,21 @@ fn run_secrets(
         SecretsCommand::Protect { agent, server } => {
             let launcher = current_exe()?;
             let agent = Agent::from(agent);
+            let preview = secrets::preview_protect(&Keychain, home, agent, &server, &launcher)?;
             secrets::protect(&Keychain, home, agent, &server, &launcher)?;
             println!(
                 "Moved the secrets of \"{server}\" ({}) to the keychain",
                 agent.display_name()
             );
+            if !preview.headers.is_empty() {
+                for change in &preview.headers {
+                    println!("  {} now reads ${}", change.header, change.variable);
+                }
+                println!(
+                    "Agents find these variables once your shell profile has this line:\n  {}",
+                    secrets::shell_hook(&launcher, default_shell().into())
+                );
+            }
         }
         SecretsCommand::Unprotect { agent, server } => {
             let agent = Agent::from(agent);
@@ -683,6 +729,10 @@ fn run_secrets(
                     None => "judged by its name and value",
                 }
             );
+        }
+        SecretsCommand::Env { shell } => {
+            let exports = secrets::env_exports(&Keychain, home)?;
+            print!("{}", secrets::shell_exports(&exports, shell.into()));
         }
         SecretsCommand::Repair => {
             let repaired = secrets::repair(home, &current_exe()?)?;

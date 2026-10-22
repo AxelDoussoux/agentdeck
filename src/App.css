@@ -2532,6 +2532,36 @@ th button.sort {
   overflow-wrap: anywhere;
 }
 
+.shell-hook {
+  margin-bottom: 16px;
+}
+
+.shell-hook p {
+  margin: 0 0 10px;
+}
+
+.hook-line {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.shell-hook .hook-line {
+  margin-top: 0;
+}
+
+.hook-line code {
+  flex: 1;
+  min-width: 0;
+  padding: 6px 8px;
+  overflow-x: auto;
+  border-radius: 6px;
+  background: var(--surface-2);
+  font-size: 12px;
+  white-space: nowrap;
+}
+
 .drawer-footer {
   display: flex;
   justify-content: flex-end;

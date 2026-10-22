@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { Fragment, useEffect, useState } from "react";
 import { ConfirmDialog } from "../components/ConfirmDialog";
 import { Empty, Icon, Notice, PageHeader } from "../components/ui";
 import { LauncherRepair } from "../components/LauncherRepair";
@@ -10,9 +10,11 @@ import { useFilesChanged } from "../lib/watch";
 import type { Agent, AgentInfo, McpListing, ProtectPreview, SecretListing, SecretRef } from "../lib/types";
 
 /** Where protected secrets go on this system. */
+const IS_WINDOWS = /Windows/.test(navigator.userAgent);
+
 const KEYCHAIN = IS_MAC
   ? "macOS Keychain"
-  : /Windows/.test(navigator.userAgent)
+  : IS_WINDOWS
     ? "Windows Credential Manager"
     : "Secret Service";
 
@@ -100,6 +102,15 @@ export function SecretsPage({ agents, servers, onChange }: Props) {
     await refresh();
   }
 
+  async function copyHook() {
+    try {
+      await navigator.clipboard.writeText(listing?.shellHook ?? "");
+      notify({ tone: "success", text: "Copied the line." });
+    } catch (err) {
+      notify({ tone: "error", text: `Could not copy: ${err}` });
+    }
+  }
+
   const nameOf = (agent: Agent) => agents.find((a) => a.agent === agent)?.name ?? agent;
   const commandOf = (agent: Agent, server: string) => {
     const found = servers.servers.find((s) => s.agent === agent && s.name === server);
@@ -108,10 +119,13 @@ export function SecretsPage({ agents, servers, onChange }: Props) {
 
   // One group per server, in the order the core lists them.
   const all = listing?.secrets ?? [];
-  const secrets = groupByServer(all.filter((s) => s.likely || s.vaultId));
-  const others = all.filter((s) => !s.likely && !s.vaultId);
-  const plainCount = all.filter((s) => s.likely && !s.vaultId).length;
-  const vaultCount = all.filter((s) => s.vaultId).length;
+  const isProtected = (s: SecretRef) => s.vaultId !== null || s.envVar !== null;
+  const secrets = groupByServer(all.filter((s) => s.likely || isProtected(s)));
+  const others = all.filter((s) => !s.likely && !isProtected(s));
+  const plainCount = all.filter((s) => s.likely && !isProtected(s)).length;
+  const vaultCount = all.filter(isProtected).length;
+  // Headers of remote servers that read a variable, which the shell sets.
+  const variables = [...new Set(all.filter((s) => s.kind === "header" && s.envVar).map((s) => s.envVar!))];
   // Servers with variables that Protect moves, and those variables.
   const toProtect = [...secrets].filter(([, group]) => group.some((s) => s.protectable));
 
@@ -122,9 +136,9 @@ export function SecretsPage({ agents, servers, onChange }: Props) {
         description={
           <>
             API keys and tokens set in MCP server configs. In plain text, anything that can read
-            these files can read them. AgentDeck moves the environment variables of local servers
-            to your system keychain, and the agent then starts the server through{" "}
-            <code>agentdeck exec</code>, which passes them back. Values are never shown here.
+            these files can read them. AgentDeck moves them to your system keychain: a local server
+            then starts through <code>agentdeck exec</code>, which passes them back, and a remote
+            server's headers read a variable that your shell sets. Values are never shown here.
           </>
         }
         actions={
@@ -165,9 +179,9 @@ export function SecretsPage({ agents, servers, onChange }: Props) {
             </span>
           </div>
           <div className="stat">
-            <span className="label">In the keychain</span>
+            <span className="label">Protected</span>
             <span className="value ok-text">{vaultCount}</span>
-            <span className="hint">{KEYCHAIN}</span>
+            <span className="hint">{variables.length > 0 ? `${KEYCHAIN} and variables` : KEYCHAIN}</span>
           </div>
           <div className="stat">
             <span className="label">Launcher</span>
@@ -179,6 +193,23 @@ export function SecretsPage({ agents, servers, onChange }: Props) {
                 ? `${listing.stranded.length} protected server${listing.stranded.length === 1 ? "" : "s"} to repair`
                 : (listing.launcher ?? "agentdeck was not found")}
             </span>
+          </div>
+        </div>
+      )}
+
+      {variables.length > 0 && listing?.shellHook && (
+        <div className="card shell-hook">
+          <p>
+            Remote servers read {listOf(variables.map((name) => `$${name}`))} from your shell. This line in your shell
+            profile ({IS_WINDOWS ? <code>$PROFILE</code> : <><code>~/.zshrc</code>, <code>~/.bashrc</code> or similar</>})
+            sets {variables.length === 1 ? "it" : "them"} from the {KEYCHAIN} each time a shell starts. Agents started
+            afterwards find {variables.length === 1 ? "it" : "them"}.
+          </p>
+          <div className="hook-line">
+            <code>{listing.shellHook}</code>
+            <button className="small" onClick={copyHook}>
+              Copy
+            </button>
           </div>
         </div>
       )}
@@ -204,7 +235,7 @@ export function SecretsPage({ agents, servers, onChange }: Props) {
               {[...secrets].map(([key, group]) => {
                 const { agent, server } = group[0];
                 const canProtect = group.some((s) => s.protectable);
-                const protectedCount = group.filter((s) => s.vaultId).length;
+                const protectedCount = group.filter(isProtected).length;
                 const stranded = listing?.stranded.some((s) => s.agent === agent && s.server === server);
                 const command = commandOf(agent, server);
                 return group.map((secret, index) => (
@@ -233,16 +264,17 @@ export function SecretsPage({ agents, servers, onChange }: Props) {
                     <td>
                       {secret.vaultId ? (
                         <span className="pill pill-ok"><Icon name="shield" size={12} /> Keychain</span>
+                      ) : secret.envVar ? (
+                        <span className="pill pill-ok" title="The config reads this variable instead of holding the value">
+                          <Icon name="shield" size={12} /> ${secret.envVar}
+                        </span>
                       ) : (
                         <span className="pill pill-danger"><Icon name="alert" size={12} /> Plain text</span>
                       )}
-                      {!secret.vaultId && secret.sameValueElsewhere > 0 && (
+                      {!isProtected(secret) && secret.sameValueElsewhere > 0 && (
                         <small>Same value in {secret.sameValueElsewhere} other place(s)</small>
                       )}
-                      {!secret.vaultId && !secret.protectable && (
-                        <small>Headers of remote servers stay in the config for now</small>
-                      )}
-                      {!secret.vaultId && (
+                      {!isProtected(secret) && (
                         <MarkButton secret={secret} onMark={mark} />
                       )}
                     </td>
@@ -329,19 +361,53 @@ export function SecretsPage({ agents, servers, onChange }: Props) {
             {listOf(pending.preview.moved)} {pending.preview.moved.length === 1 ? "moves" : "move"} to the {KEYCHAIN}
             {pending.preview.kept.length > 0 &&
               `, and ${listOf(pending.preview.kept)} ${pending.preview.kept.length === 1 ? "stays" : "stay"} in the config`}
-            . {nameOf(pending.agent)} then starts {pending.server} through <code>agentdeck exec</code>, which reads
-            them back. It can be undone.
+            .{" "}
+            {pending.preview.headers.length > 0 ? (
+              <>
+                {nameOf(pending.agent)} then reads {pending.preview.headers.length === 1 ? "it" : "them"} from{" "}
+                {listOf(pending.preview.headers.map((change) => `$${change.variable}`))}, which your shell sets from the
+                keychain with the line below in your shell profile. It can be undone.
+              </>
+            ) : (
+              <>
+                {nameOf(pending.agent)} then starts {pending.server} through <code>agentdeck exec</code>, which reads
+                them back. It can be undone.
+              </>
+            )}
           </p>
-          <dl className="facts command-change">
-            <dt>Now</dt>
-            <dd>
-              <code>{describe(pending.preview.before)}</code>
-            </dd>
-            <dt>After</dt>
-            <dd>
-              <code>{describe(pending.preview.after)}</code>
-            </dd>
-          </dl>
+          {pending.preview.headers.length > 0 ? (
+            <>
+              <dl className="facts command-change">
+                {pending.preview.headers.map((change) => (
+                  <Fragment key={change.header}>
+                    <dt>{change.header}</dt>
+                    <dd>
+                      <code>{change.value}</code>
+                    </dd>
+                  </Fragment>
+                ))}
+              </dl>
+              {listing?.shellHook && (
+                <div className="hook-line">
+                  <code>{listing.shellHook}</code>
+                  <button className="small" onClick={copyHook}>
+                    Copy
+                  </button>
+                </div>
+              )}
+            </>
+          ) : (
+            <dl className="facts command-change">
+              <dt>Now</dt>
+              <dd>
+                <code>{describe(pending.preview.before)}</code>
+              </dd>
+              <dt>After</dt>
+              <dd>
+                <code>{describe(pending.preview.after)}</code>
+              </dd>
+            </dl>
+          )}
         </ConfirmDialog>
       )}
 
@@ -379,8 +445,8 @@ export function SecretsPage({ agents, servers, onChange }: Props) {
           <p>
             Before: {plainCount} secret{plainCount === 1 ? "" : "s"} in plain text. After:{" "}
             {plainCount - countProtectable(toProtect)} in plain text, {vaultCount + countProtectable(toProtect)} in the{" "}
-            {KEYCHAIN}. Each server then starts through <code>agentdeck exec</code>, which reads them back. It can be
-            undone.
+            {KEYCHAIN}. Local servers then start through <code>agentdeck exec</code>, which reads them back, and remote
+            servers read their headers from variables that your shell sets. It can be undone.
           </p>
         </ConfirmDialog>
       )}

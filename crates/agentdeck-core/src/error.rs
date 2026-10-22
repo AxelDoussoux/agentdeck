@@ -48,8 +48,6 @@ pub enum Error {
     NoRulesFile { agent: Agent },
     #[error("system keychain: {0}")]
     Keychain(String),
-    #[error("{} \"{name}\" is not a local command, so its secrets cannot be moved to the keychain", agent.display_name())]
-    NotStdio { agent: Agent, name: String },
     #[error("the {} rules have no shared base: put it between {} and {}", agent.display_name(), crate::rules::SHARED_START, crate::rules::SHARED_END)]
     NoSharedRules { agent: Agent },
     #[error("\"{name}\" is not a valid skill name")]
