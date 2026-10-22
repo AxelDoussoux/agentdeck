@@ -55,6 +55,14 @@ export const copySkill = (name: string, from: SkillLocation, to: Agent) =>
 export const removeSkill = (location: SkillLocation, name: string) =>
   invoke<string>("remove_skill", { location, name });
 
+/** Replaces the copy in `to` with the one in `from`; the old one goes to the trash. */
+export const replaceSkill = (name: string, from: SkillLocation, to: SkillLocation) =>
+  invoke<void>("replace_skill", { name, from, to });
+
+/** Puts a skill back from the trash, and returns where. */
+export const restoreSkill = (id: string, overwrite = false) =>
+  invoke<SkillLocation>("restore_skill", { id, overwrite });
+
 /** Opens an agent's MCP config in the default editor, or shows it in its folder. */
 export const openConfig = (agent: Agent, reveal = false) => invoke<void>("open_config", { agent, reveal });
 
