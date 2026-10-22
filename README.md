@@ -26,7 +26,8 @@ shows them side by side, and syncs them in one click.
   secrets stay hidden while you edit, and each write keeps a backup and
   preserves comments in Codex's TOML. Click a server to open its details:
   what differs between agents, and its earlier versions, which you can put
-  back one server at a time.
+  back one server at a time. Test a server to start it and list its tools,
+  or see why it fails.
 - **Rules.** Edit `CLAUDE.md`, `AGENTS.md` and `GEMINI.md` side by side and
   copy them from one agent to the others.
 - **Skills.** See which agents load each Agent Skill, read its `SKILL.md`
@@ -83,6 +84,7 @@ agentdeck mcp list [--json]
 agentdeck mcp add claude-code github -e GITHUB_TOKEN=ghp_x -- npx -y @modelcontextprotocol/server-github
 agentdeck mcp add cursor linear --url https://mcp.linear.app/mcp
 agentdeck mcp copy github --from claude-code --to codex gemini
+agentdeck mcp test claude-code github   # starts it and lists its tools
 agentdeck mcp remove codex github
 agentdeck rules list
 agentdeck rules show claude-code
