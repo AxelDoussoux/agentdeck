@@ -16,6 +16,16 @@ export function lastDays(days: number): string[] {
   );
 }
 
+/** Local dates from `from` to `to`, both `YYYY-MM-DD` and included. */
+export function datesBetween(from: string, to: string): string[] {
+  const [y, m, d] = from.split("-").map(Number);
+  const dates: string[] = [];
+  for (let day = new Date(y, m - 1, d); localDate(day) <= to; day.setDate(day.getDate() + 1)) {
+    dates.push(localDate(day));
+  }
+  return dates;
+}
+
 /** Local date of a UTC timestamp from the logs. */
 export const dateOf = (timestamp: string) => localDate(new Date(timestamp));
 
