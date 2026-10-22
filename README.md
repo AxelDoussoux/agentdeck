@@ -20,8 +20,9 @@ shows them side by side, and syncs them in one click.
 
 - **MCP servers.** See every server across every agent in one grid. Copy a
   server to another agent in one click, with its settings and secrets
-  translated to that agent's format. Add or remove servers, or edit one without seeing its secrets: each write
-  keeps a backup and preserves comments in Codex's TOML.
+  translated to that agent's format. Add, edit or remove servers safely:
+  secrets stay hidden while you edit, and each write keeps a backup and
+  preserves comments in Codex's TOML.
 - **Rules.** Edit `CLAUDE.md`, `AGENTS.md` and `GEMINI.md` side by side and
   copy them from one agent to the others.
 - **Skills.** See which agents load each Agent Skill, and share a skill with
