@@ -8,6 +8,7 @@ pub mod config_file;
 pub mod error;
 pub mod mcp;
 pub mod pricing;
+pub mod probe;
 pub mod rules;
 pub mod secrets;
 pub mod skills;
