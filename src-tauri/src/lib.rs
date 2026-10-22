@@ -431,6 +431,8 @@ struct SecretListing {
     launcher: Option<String>,
     /// Protected servers whose launcher is missing, so they no longer start.
     stranded: Vec<secrets::Stranded>,
+    /// The shell profile line that sets the variables protected headers read.
+    shell_hook: Option<String>,
 }
 
 /// The `agentdeck` CLI that protected servers start through, normally the one
@@ -458,10 +460,19 @@ fn launcher() -> Option<PathBuf> {
 #[tauri::command]
 fn list_secrets() -> Result<SecretListing, String> {
     let (secrets, errors) = secrets::inventory(&home()?);
+    let launcher = launcher();
+    let shell = if cfg!(windows) {
+        secrets::Shell::Powershell
+    } else {
+        secrets::Shell::Sh
+    };
     Ok(SecretListing {
         secrets,
         errors,
-        launcher: launcher().map(|path| path.display().to_string()),
+        shell_hook: launcher
+            .as_deref()
+            .map(|path| secrets::shell_hook(path, shell)),
+        launcher: launcher.map(|path| path.display().to_string()),
         stranded: secrets::stranded(&home()?),
     })
 }
@@ -485,7 +496,8 @@ fn protect_server(undo: State<UndoStore>, agent: Agent, server: String) -> Resul
 #[tauri::command]
 fn preview_protect(agent: Agent, server: String) -> Result<secrets::ProtectPreview, String> {
     let launcher = launcher().ok_or(LAUNCHER_MISSING)?;
-    secrets::preview_protect(&home()?, agent, &server, &launcher).map_err(|err| err.to_string())
+    secrets::preview_protect(&Keychain, &home()?, agent, &server, &launcher)
+        .map_err(|err| err.to_string())
 }
 
 /// Marks a variable name as a secret (`true`), a setting (`false`), or lets
@@ -524,6 +536,8 @@ async fn test_mcp_server(agent: Agent, name: String) -> Result<probe::ProbeRepor
         let spec = mcp::get(agent, &home, &name)
             .map_err(|err| err.to_string())?
             .ok_or_else(|| Error::NotFound { agent, name }.to_string())?;
+        // The app does not run in the shell that sets protected headers' variables.
+        let spec = secrets::with_vault_variables(&Keychain, spec).map_err(|err| err.to_string())?;
         Ok(probe::probe(&spec, probe::TIMEOUT))
     })
     .await

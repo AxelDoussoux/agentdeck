@@ -133,6 +133,8 @@ fn known_keys(agent: Agent) -> &'static [&'static str] {
             "env",
             "url",
             "http_headers",
+            "bearer_token_env_var",
+            "env_http_headers",
             "headers",
             "cwd",
             "tool_timeout_sec",
@@ -166,7 +168,86 @@ pub fn untranslated(spec: &ServerSpec, agent: Agent) -> Vec<String> {
     {
         lost.extend(extra.keys().cloned());
     }
+    if agent == Agent::Codex && matches!(spec.transport, Transport::Http { .. }) {
+        for (key, value) in &spec.headers {
+            if value.contains("${") && codex_env_header(key, value).is_none() {
+                lost.push(format!("{key} header from a variable (written as is)"));
+            }
+        }
+    }
     lost
+}
+
+/// The variable name of `text` when it is exactly `${NAME}`.
+pub fn env_reference(text: &str) -> Option<&str> {
+    let name = text.strip_prefix("${")?.strip_suffix('}')?;
+    is_variable_name(name).then_some(name)
+}
+
+/// The names of the `${NAME}` references in `text`.
+pub fn env_references(text: &str) -> Vec<&str> {
+    let mut names = Vec::new();
+    let mut rest = text;
+    while let Some(start) = rest.find("${") {
+        rest = &rest[start + 2..];
+        let Some(end) = rest.find('}') else { break };
+        if is_variable_name(&rest[..end]) {
+            names.push(&rest[..end]);
+        }
+        rest = &rest[end + 1..];
+    }
+    names
+}
+
+fn is_variable_name(name: &str) -> bool {
+    let mut chars = name.chars();
+    chars
+        .next()
+        .is_some_and(|first| first.is_ascii_alphabetic() || first == '_')
+        && chars.all(|c| c.is_ascii_alphanumeric() || c == '_')
+}
+
+/// Variables Cursor fills in itself, written `${userHome}` and not
+/// `${env:userHome}`.
+const CURSOR_VARIABLES: &[&str] = &[
+    "userHome",
+    "workspaceFolder",
+    "workspaceFolderBasename",
+    "pathSeparator",
+];
+
+/// Header values read from the environment are written `${NAME}` in a
+/// [`ServerSpec`], as Claude Code and Gemini CLI write them. Cursor writes
+/// `${env:NAME}`: these turn one form into the other.
+fn from_cursor(value: &str) -> String {
+    value.replace("${env:", "${")
+}
+
+fn to_cursor(value: &str) -> String {
+    let mut out = value.to_owned();
+    for name in env_references(value) {
+        if !CURSOR_VARIABLES.contains(&name) {
+            out = out.replace(&format!("${{{name}}}"), &format!("${{env:{name}}}"));
+        }
+    }
+    out
+}
+
+/// How Codex reads a header from the environment: `bearer_token_env_var` for
+/// `Authorization: Bearer ${NAME}`, `env_http_headers` for `${NAME}` alone.
+/// Codex has no way to read a variable inside any other value.
+enum CodexEnvHeader<'a> {
+    Bearer(&'a str),
+    Whole(&'a str),
+}
+
+fn codex_env_header<'a>(key: &str, value: &'a str) -> Option<CodexEnvHeader<'a>> {
+    if key.eq_ignore_ascii_case("authorization")
+        && let Some(name) = value.strip_prefix("Bearer ").and_then(env_reference)
+    {
+        return Some(CodexEnvHeader::Bearer(name));
+    }
+    env_reference(value).map(CodexEnvHeader::Whole)
 }
 
 /// The shape shared by the JSON configs of Claude Code, Cursor and Gemini,
@@ -188,6 +269,12 @@ struct RawServer {
     headers: BTreeMap<String, Value>,
     #[serde(default, rename = "http_headers")]
     codex_headers: BTreeMap<String, Value>,
+    /// Codex: the variable holding the bearer token.
+    #[serde(rename = "bearer_token_env_var")]
+    bearer_token_env_var: Option<String>,
+    /// Codex: headers whose value is in a variable, header to variable name.
+    #[serde(default, rename = "env_http_headers")]
+    env_http_headers: BTreeMap<String, String>,
     cwd: Option<String>,
     /// Gemini, in milliseconds.
     timeout: Option<u64>,
@@ -242,8 +329,20 @@ impl RawServer {
             }
         };
 
-        let mut headers = self.headers;
-        headers.extend(self.codex_headers);
+        let mut headers = into_strings(self.headers);
+        headers.extend(into_strings(self.codex_headers));
+        for (key, name) in self.env_http_headers {
+            headers.insert(key, format!("${{{name}}}"));
+        }
+        if let Some(name) = self.bearer_token_env_var {
+            headers.insert("Authorization".to_owned(), format!("Bearer ${{{name}}}"));
+        }
+        if agent == Agent::Cursor {
+            headers = headers
+                .into_iter()
+                .map(|(key, value)| (key, from_cursor(&value)))
+                .collect();
+        }
         let options = ServerOptions {
             cwd: self.cwd,
             timeout_ms: self
@@ -257,7 +356,7 @@ impl RawServer {
         Some(ServerSpec {
             transport,
             env: into_strings(self.env),
-            headers: into_strings(headers),
+            headers,
             options,
         })
     }
@@ -695,7 +794,15 @@ fn json_entry(agent: Agent, spec: &ServerSpec) -> Value {
             entry.insert(key.into(), url.as_str().into());
         }
     }
-    for (key, map) in [("env", &spec.env), ("headers", &spec.headers)] {
+    let headers = match agent {
+        Agent::Cursor => spec
+            .headers
+            .iter()
+            .map(|(key, value)| (key.clone(), to_cursor(value)))
+            .collect(),
+        _ => spec.headers.clone(),
+    };
+    for (key, map) in [("env", &spec.env), ("headers", &headers)] {
         if !map.is_empty() {
             let object = map
                 .iter()
@@ -825,7 +932,26 @@ fn toml_entry(spec: &ServerSpec) -> Result<toml_edit::Table> {
             });
         }
     };
-    for (key, map) in [("env", &spec.env), (headers_key, &spec.headers)] {
+    let mut headers = BTreeMap::new();
+    let mut env_headers = BTreeMap::new();
+    for (key, value) in &spec.headers {
+        match codex_env_header(key, value).filter(|_| headers_key == "http_headers") {
+            Some(CodexEnvHeader::Bearer(name)) => {
+                entry.insert("bearer_token_env_var", toml_edit::value(name));
+            }
+            Some(CodexEnvHeader::Whole(name)) => {
+                env_headers.insert(key.clone(), name.to_owned());
+            }
+            None => {
+                headers.insert(key.clone(), value.clone());
+            }
+        }
+    }
+    for (key, map) in [
+        ("env", &spec.env),
+        (headers_key, &headers),
+        ("env_http_headers", &env_headers),
+    ] {
         if !map.is_empty() {
             let table: toml_edit::InlineTable =
                 map.iter().map(|(k, v)| (k.as_str(), v.as_str())).collect();
@@ -1223,6 +1349,65 @@ command = \"x\"
 
         let err = copy(home, "remote", Agent::ClaudeCode, Agent::Codex, false).unwrap_err();
         assert!(matches!(err, Error::Unsupported { .. }));
+    }
+
+    #[test]
+    fn headers_read_from_variables_are_translated_for_each_agent() {
+        let home = tempfile::tempdir().unwrap();
+        let home = home.path();
+        let remote = ServerSpec {
+            transport: Transport::Http {
+                url: "https://example.com/mcp".into(),
+            },
+            env: BTreeMap::new(),
+            headers: BTreeMap::from([
+                ("Authorization".into(), "Bearer ${GH_TOKEN}".into()),
+                ("X-Api-Key".into(), "${API_KEY}".into()),
+                ("X-Home".into(), "${userHome}/x".into()),
+            ]),
+            options: ServerOptions::default(),
+        };
+        add(Agent::ClaudeCode, home, "remote", &remote, false).unwrap();
+
+        copy(home, "remote", Agent::ClaudeCode, Agent::Cursor, false).unwrap();
+        let cursor = read(home, ".cursor/mcp.json");
+        assert!(cursor.contains(r#""Bearer ${env:GH_TOKEN}""#), "{cursor}");
+        assert!(cursor.contains(r#""${env:API_KEY}""#), "{cursor}");
+        assert!(cursor.contains(r#""${userHome}/x""#), "{cursor}");
+        assert_eq!(read_specs(Agent::Cursor, home).unwrap()["remote"], remote);
+
+        let lost = copy(home, "remote", Agent::Cursor, Agent::Codex, false).unwrap();
+        assert_eq!(lost, ["X-Home header from a variable (written as is)"]);
+        let codex = read(home, ".codex/config.toml");
+        assert!(
+            codex.contains(r#"bearer_token_env_var = "GH_TOKEN""#),
+            "{codex}"
+        );
+        assert!(
+            codex.contains(r#"env_http_headers = { X-Api-Key = "API_KEY" }"#),
+            "{codex}"
+        );
+        assert!(
+            codex.contains(r#"http_headers = { X-Home = "${userHome}/x" }"#),
+            "{codex}"
+        );
+        assert_eq!(read_specs(Agent::Codex, home).unwrap()["remote"], remote);
+
+        // Without the header, the variable goes too.
+        let mut plain = remote.clone();
+        plain.headers.clear();
+        add(Agent::Codex, home, "remote", &plain, true).unwrap();
+        let codex = read(home, ".codex/config.toml");
+        assert!(!codex.contains("bearer_token_env_var"), "{codex}");
+        assert!(!codex.contains("env_http_headers"), "{codex}");
+    }
+
+    #[test]
+    fn finds_variable_references() {
+        assert_eq!(env_reference("${A_1}"), Some("A_1"));
+        assert_eq!(env_reference("Bearer ${A}"), None);
+        assert_eq!(env_reference("${1A}"), None);
+        assert_eq!(env_references("a ${X} b ${Y_2}${bad name}"), ["X", "Y_2"]);
     }
 
     #[test]

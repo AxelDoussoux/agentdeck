@@ -96,7 +96,7 @@ export function OverviewPage({ agents, listing, secrets, onNavigate, onChange }:
     });
   }
 
-  const plain = secrets?.secrets.filter((s) => s.likely && !s.vaultId) ?? [];
+  const plain = secrets?.secrets.filter((s) => s.likely && !s.vaultId && !s.envVar) ?? [];
   if (plain.length > 0) {
     checks.push({
       severity: "danger",

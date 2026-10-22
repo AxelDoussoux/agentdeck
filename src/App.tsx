@@ -127,7 +127,7 @@ function App() {
   }, [theme]);
 
   const serverCount = new Set(listing.servers.map((s) => s.name)).size;
-  const plainSecrets = secrets?.secrets.filter((s) => s.likely && !s.vaultId).length ?? 0;
+  const plainSecrets = secrets?.secrets.filter((s) => s.likely && !s.vaultId && !s.envVar).length ?? 0;
   const badges: Partial<Record<PageId, { value: number; danger?: boolean }>> = {
     mcp: serverCount ? { value: serverCount } : undefined,
     secrets: plainSecrets ? { value: plainSecrets, danger: true } : undefined,

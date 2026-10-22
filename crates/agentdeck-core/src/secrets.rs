@@ -8,6 +8,11 @@
 //! ```text
 //! agentdeck exec --secret GITHUB_TOKEN=claude-code/github/GITHUB_TOKEN -- npx -y server-github
 //! ```
+//!
+//! Agents connect to remote servers themselves, so there is no command to
+//! wrap. Their headers read a variable instead, `Bearer ${LINEAR_TOKEN}`,
+//! whose value is kept in the keychain as `env/LINEAR_TOKEN`; the shell sets
+//! it before the agent starts with `eval "$(agentdeck secrets env)"`.
 
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::fs;
@@ -89,9 +94,12 @@ pub struct SecretRef {
     /// Whether `likely` comes from how the user marked the name, rather than
     /// from [`looks_secret`].
     pub marked: bool,
-    /// Whether the secret can be moved to the keychain: only environment
-    /// variables of local servers that look like credentials can.
+    /// Whether the secret can be moved to the keychain: environment
+    /// variables of local servers and headers of remote servers that look
+    /// like credentials and are in plain text.
     pub protectable: bool,
+    /// The variable the value is read from, when it is written `${NAME}`.
+    pub env_var: Option<String>,
 }
 
 /// Name parts that mark a credential, matched on whole words of the name.
@@ -353,6 +361,7 @@ pub fn inventory(home: &Path) -> (Vec<SecretRef>, Vec<String>) {
                     likely: true,
                     marked: false,
                     protectable: false,
+                    env_var: None,
                 });
             }
             let plain = spec
@@ -367,6 +376,13 @@ pub fn inventory(home: &Path) -> (Vec<SecretRef>, Vec<String>) {
             for (kind, (key, value)) in plain {
                 let likely = marks.is_secret(&key, &value);
                 let marked = marks.marked(&key).is_some();
+                let env_var = mcp::env_references(&value)
+                    .first()
+                    .map(|name| name.to_string());
+                let movable = match kind {
+                    SecretKind::Env => stdio,
+                    SecretKind::Header => !stdio,
+                };
                 *values.entry(value.clone()).or_default() += 1;
                 plain_values.push(value);
                 secrets.push(SecretRef {
@@ -378,7 +394,8 @@ pub fn inventory(home: &Path) -> (Vec<SecretRef>, Vec<String>) {
                     same_value_elsewhere: 0,
                     likely,
                     marked,
-                    protectable: stdio && kind == SecretKind::Env && likely,
+                    protectable: movable && likely && env_var.is_none(),
+                    env_var,
                 });
             }
         }
@@ -392,9 +409,12 @@ pub fn inventory(home: &Path) -> (Vec<SecretRef>, Vec<String>) {
     (secrets, errors)
 }
 
-/// Moves the environment variables of a local server that look like
-/// credentials, or whose name was marked as one, to the vault and makes the agent start it through
-/// `launcher exec`. Its other variables and settings are kept.
+/// Moves the credentials of a server to the vault. A local server's
+/// environment variables that look like credentials, or whose name was
+/// marked as one, move, and the agent then starts it through
+/// `launcher exec`. A remote server's credential headers move, and then read
+/// a variable that `agentdeck secrets env` sets. Other variables, headers and
+/// settings are kept.
 pub fn protect(
     vault: &dyn Vault,
     home: &Path,
@@ -402,48 +422,92 @@ pub fn protect(
     server: &str,
     launcher: &Path,
 ) -> Result<()> {
-    let plan = plan_protect(home, agent, server, launcher)?;
-    if plan.credentials.is_empty() {
-        return Ok(());
+    match plan_protect(vault, home, agent, server, launcher)? {
+        ProtectPlan::Local {
+            after,
+            credentials,
+            settings,
+            ..
+        } => {
+            if credentials.is_empty() {
+                return Ok(());
+            }
+            for (key, value) in &credentials {
+                vault.set(&vault_id(agent, server, key), value)?;
+            }
+            let Transport::Stdio { command, args } = &after else {
+                unreachable!("protected servers are local");
+            };
+            mcp::set_launch(agent, home, server, command, args, &settings)
+        }
+        ProtectPlan::Remote {
+            spec, variables, ..
+        } => {
+            if variables.is_empty() {
+                return Ok(());
+            }
+            for (name, value) in &variables {
+                vault.set(&env_vault_id(name), value)?;
+            }
+            mcp::add(agent, home, server, &spec, true)
+        }
     }
-    for (key, value) in &plan.credentials {
-        vault.set(&vault_id(agent, server, key), value)?;
-    }
-    let Transport::Stdio { command, args } = &plan.after else {
-        unreachable!("protected servers are local");
-    };
-    mcp::set_launch(agent, home, server, command, args, &plan.settings)
 }
 
 /// What protecting a server changes, before anything is written.
-struct ProtectPlan {
-    before: Transport,
-    /// How the agent starts the server once protected.
-    after: Transport,
-    /// The variables that move to the vault, with their values.
-    credentials: BTreeMap<String, String>,
-    /// The variables that stay in the config.
-    settings: BTreeMap<String, String>,
+enum ProtectPlan {
+    Local {
+        before: Transport,
+        /// How the agent starts the server once protected.
+        after: Transport,
+        /// The variables that move to the vault, with their values.
+        credentials: BTreeMap<String, String>,
+        /// The variables that stay in the config.
+        settings: BTreeMap<String, String>,
+    },
+    Remote {
+        /// The server once protected.
+        spec: ServerSpec,
+        headers: Vec<HeaderChange>,
+        /// Variable name to value, for the vault.
+        variables: BTreeMap<String, String>,
+        /// The headers that stay as they are.
+        kept: Vec<String>,
+    },
 }
 
-fn plan_protect(home: &Path, agent: Agent, server: &str, launcher: &Path) -> Result<ProtectPlan> {
+/// A header that reads a variable once its server is protected.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct HeaderChange {
+    pub header: String,
+    pub variable: String,
+    /// The header as written in the config afterwards, which holds no secret.
+    pub value: String,
+}
+
+fn plan_protect(
+    vault: &dyn Vault,
+    home: &Path,
+    agent: Agent,
+    server: &str,
+    launcher: &Path,
+) -> Result<ProtectPlan> {
     let spec = server_spec(agent, home, server)?;
+    let marks = name_marks(home)?;
     let Transport::Stdio { command, args } = &spec.transport else {
-        return Err(Error::NotStdio {
-            agent,
-            name: server.to_owned(),
-        });
+        return plan_remote(vault, home, server, spec, &marks);
     };
     // Protecting twice adds the new plain-text variables to the existing wrapper.
     let (mut secrets, command, args) = match unwrap(command, args) {
         Some(wrapped) => (wrapped.secrets, wrapped.command, wrapped.args),
         None => (BTreeMap::new(), command.clone(), args.clone()),
     };
-    let marks = name_marks(home)?;
-    let (credentials, settings): (BTreeMap<_, _>, BTreeMap<_, _>) = spec
-        .env
-        .into_iter()
-        .partition(|(key, value)| marks.is_secret(key, value));
+    // A value that reads a variable is not the secret itself: it stays.
+    let (credentials, settings): (BTreeMap<_, _>, BTreeMap<_, _>) =
+        spec.env.into_iter().partition(|(key, value)| {
+            marks.is_secret(key, value) && mcp::env_references(value).is_empty()
+        });
     for key in credentials.keys() {
         secrets.insert(key.clone(), vault_id(agent, server, key));
     }
@@ -451,7 +515,7 @@ fn plan_protect(home: &Path, agent: Agent, server: &str, launcher: &Path) -> Res
         command: launcher.to_string_lossy().into_owned(),
         args: exec_args(&secrets, &command, &args),
     };
-    Ok(ProtectPlan {
+    Ok(ProtectPlan::Local {
         before: spec.transport,
         after,
         credentials,
@@ -459,31 +523,249 @@ fn plan_protect(home: &Path, agent: Agent, server: &str, launcher: &Path) -> Res
     })
 }
 
-/// How protecting a server would change the way its agent starts it, for
-/// the user to check first. No secret value is in it.
+fn plan_remote(
+    vault: &dyn Vault,
+    home: &Path,
+    server: &str,
+    spec: ServerSpec,
+    marks: &NameMarks,
+) -> Result<ProtectPlan> {
+    let taken = variables_in_use(home).unwrap_or_default();
+    let mut protected = spec.clone();
+    let mut variables = BTreeMap::new();
+    let mut headers = Vec::new();
+    let mut kept = Vec::new();
+    for (key, value) in &spec.headers {
+        if !marks.is_secret(key, value) || !mcp::env_references(value).is_empty() {
+            kept.push(key.clone());
+            continue;
+        }
+        // A bearer token goes alone in its variable, as Codex reads it.
+        let (prefix, secret) = match value.strip_prefix("Bearer ") {
+            Some(token) if !token.trim().is_empty() => ("Bearer ", token),
+            _ => ("", value.as_str()),
+        };
+        let base = variable_name(server, key, !prefix.is_empty());
+        let mut name = base.clone();
+        for n in 2.. {
+            let free = match variables.get(&name) {
+                Some(planned) => planned == secret,
+                None => match vault.get(&env_vault_id(&name))? {
+                    Some(stored) => stored == secret,
+                    None => !taken.contains(&name),
+                },
+            };
+            if free {
+                break;
+            }
+            name = format!("{base}_{n}");
+        }
+        let after = format!("{prefix}${{{name}}}");
+        protected.headers.insert(key.clone(), after.clone());
+        variables.insert(name.clone(), secret.to_owned());
+        headers.push(HeaderChange {
+            header: key.clone(),
+            variable: name,
+            value: after,
+        });
+    }
+    Ok(ProtectPlan::Remote {
+        spec: protected,
+        headers,
+        variables,
+        kept,
+    })
+}
+
+/// `LINEAR_TOKEN` for the bearer token of `linear`, `ACME_X_API_KEY` for its
+/// `X-Api-Key` header.
+fn variable_name(server: &str, header: &str, bearer: bool) -> String {
+    let part = |text: &str| {
+        let upper: String = text
+            .chars()
+            .map(|c| {
+                if c.is_ascii_alphanumeric() {
+                    c.to_ascii_uppercase()
+                } else {
+                    '_'
+                }
+            })
+            .collect();
+        upper
+            .split('_')
+            .filter(|word| !word.is_empty())
+            .collect::<Vec<_>>()
+            .join("_")
+    };
+    let suffix = if bearer || header.eq_ignore_ascii_case("authorization") {
+        "TOKEN".to_owned()
+    } else {
+        part(header)
+    };
+    let name = [part(server), suffix]
+        .into_iter()
+        .filter(|word| !word.is_empty())
+        .collect::<Vec<_>>()
+        .join("_");
+    if name.starts_with(|c: char| c.is_ascii_digit()) {
+        format!("MCP_{name}")
+    } else {
+        name
+    }
+}
+
+/// The keychain id of a variable that headers read.
+fn env_vault_id(name: &str) -> String {
+    format!("env/{name}")
+}
+
+/// The variables that some header of some agent reads, or `None` when a
+/// config cannot be read and the answer is unknown.
+fn variables_in_use(home: &Path) -> Option<HashSet<String>> {
+    let mut names = HashSet::new();
+    for agent in Agent::ALL {
+        for spec in mcp::read_specs(agent, home).ok()?.into_values() {
+            for value in spec.headers.values() {
+                names.extend(mcp::env_references(value).into_iter().map(str::to_owned));
+            }
+        }
+    }
+    Some(names)
+}
+
+/// The variables that headers read and whose value is in the vault, with
+/// their values, for `agentdeck secrets env` to set in the shell.
+pub fn env_exports(vault: &dyn Vault, home: &Path) -> Result<Vec<(String, String)>> {
+    let mut names: Vec<_> = variables_in_use(home)
+        .unwrap_or_default()
+        .into_iter()
+        .collect();
+    names.sort();
+    let mut exports = Vec::new();
+    for name in names {
+        if let Some(value) = vault.get(&env_vault_id(&name))? {
+            exports.push((name, value));
+        }
+    }
+    Ok(exports)
+}
+
+/// `spec` with the variables its headers read filled in from the vault, so
+/// that testing it reaches the server as the agent does once the shell has
+/// set them. Variables the vault does not have are left for the environment.
+pub fn with_vault_variables(vault: &dyn Vault, mut spec: ServerSpec) -> Result<ServerSpec> {
+    for value in spec.headers.values_mut() {
+        let names: Vec<String> = mcp::env_references(value)
+            .into_iter()
+            .map(str::to_owned)
+            .collect();
+        for name in names {
+            if let Some(secret) = vault.get(&env_vault_id(&name))? {
+                *value = value.replace(&format!("${{{name}}}"), &secret);
+            }
+        }
+    }
+    Ok(spec)
+}
+
+/// A shell that `agentdeck secrets env` writes for.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Shell {
+    /// bash, zsh and other POSIX shells.
+    Sh,
+    Fish,
+    Powershell,
+}
+
+impl Shell {
+    /// `text` as one word of this shell, whatever it holds.
+    fn quote(self, text: &str) -> String {
+        match self {
+            Shell::Sh => format!("'{}'", text.replace('\'', r"'\''")),
+            Shell::Fish => format!("'{}'", text.replace('\\', r"\\").replace('\'', r"\'")),
+            Shell::Powershell => format!("'{}'", text.replace('\'', "''")),
+        }
+    }
+}
+
+/// The script that sets `exports` in `shell`.
+pub fn shell_exports(exports: &[(String, String)], shell: Shell) -> String {
+    exports
+        .iter()
+        .map(|(name, value)| {
+            let value = shell.quote(value);
+            match shell {
+                Shell::Sh => format!("export {name}={value}\n"),
+                Shell::Fish => format!("set -gx {name} {value}\n"),
+                Shell::Powershell => format!("$env:{name} = {value}\n"),
+            }
+        })
+        .collect()
+}
+
+/// The line of a shell profile that sets the variables headers read, each
+/// time a shell starts, through `launcher`.
+pub fn shell_hook(launcher: &Path, shell: Shell) -> String {
+    let launcher = shell.quote(&launcher.to_string_lossy());
+    match shell {
+        Shell::Sh => format!("eval \"$({launcher} secrets env)\""),
+        Shell::Fish => format!("{launcher} secrets env --shell fish | source"),
+        Shell::Powershell => {
+            format!("& {launcher} secrets env --shell powershell | Out-String | Invoke-Expression")
+        }
+    }
+}
+
+/// How protecting a server would change it, for the user to check first.
+/// No secret value is in it.
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ProtectPreview {
+    /// How the agent starts the server, now and once protected. The same
+    /// for a remote server.
     pub before: Transport,
     pub after: Transport,
-    /// The variables that move to the keychain.
+    /// The variables or headers that move to the keychain.
     pub moved: Vec<String>,
-    /// The variables that stay in the config.
+    /// The variables or headers that stay in the config.
     pub kept: Vec<String>,
+    /// For a remote server, the variable each moved header reads.
+    pub headers: Vec<HeaderChange>,
 }
 
 pub fn preview_protect(
+    vault: &dyn Vault,
     home: &Path,
     agent: Agent,
     server: &str,
     launcher: &Path,
 ) -> Result<ProtectPreview> {
-    let plan = plan_protect(home, agent, server, launcher)?;
-    Ok(ProtectPreview {
-        before: plan.before,
-        after: plan.after,
-        moved: plan.credentials.into_keys().collect(),
-        kept: plan.settings.into_keys().collect(),
+    Ok(match plan_protect(vault, home, agent, server, launcher)? {
+        ProtectPlan::Local {
+            before,
+            after,
+            credentials,
+            settings,
+        } => ProtectPreview {
+            before,
+            after,
+            moved: credentials.into_keys().collect(),
+            kept: settings.into_keys().collect(),
+            headers: Vec::new(),
+        },
+        ProtectPlan::Remote {
+            spec,
+            headers,
+            kept,
+            ..
+        } => ProtectPreview {
+            before: spec.transport.clone(),
+            after: spec.transport,
+            moved: headers.iter().map(|change| change.header.clone()).collect(),
+            kept,
+            headers,
+        },
     })
 }
 
@@ -493,7 +775,7 @@ pub fn unprotect(vault: &dyn Vault, home: &Path, agent: Agent, server: &str) -> 
     let spec = server_spec(agent, home, server)?;
     let wrapped = match &spec.transport {
         Transport::Stdio { command, args } => unwrap(command, args),
-        _ => None,
+        _ => return unprotect_headers(vault, home, agent, server, spec),
     };
     let Some(wrapped) = wrapped else {
         return Ok(());
@@ -514,6 +796,44 @@ pub fn unprotect(vault: &dyn Vault, home: &Path, agent: Agent, server: &str) -> 
     for id in wrapped.secrets.values() {
         if !in_use.contains(id) {
             vault.delete(id)?;
+        }
+    }
+    Ok(())
+}
+
+/// Puts back the values of the variables a remote server's headers read,
+/// when they are in the vault. Variables set some other way stay as they are.
+fn unprotect_headers(
+    vault: &dyn Vault,
+    home: &Path,
+    agent: Agent,
+    server: &str,
+    mut spec: ServerSpec,
+) -> Result<()> {
+    let mut restored = BTreeSet::new();
+    for value in spec.headers.values_mut() {
+        let names: Vec<String> = mcp::env_references(value)
+            .into_iter()
+            .map(str::to_owned)
+            .collect();
+        for name in names {
+            if let Some(secret) = vault.get(&env_vault_id(&name))? {
+                *value = value.replace(&format!("${{{name}}}"), &secret);
+                restored.insert(name);
+            }
+        }
+    }
+    if restored.is_empty() {
+        return Ok(());
+    }
+    mcp::add(agent, home, server, &spec, true)?;
+    // Another server may read the same variable.
+    let Some(in_use) = variables_in_use(home) else {
+        return Ok(());
+    };
+    for name in restored {
+        if !in_use.contains(&name) {
+            vault.delete(&env_vault_id(&name))?;
         }
     }
     Ok(())
@@ -697,7 +1017,7 @@ mod tests {
             .iter()
             .find(|s| s.kind == SecretKind::Header)
             .unwrap();
-        assert!(!header.protectable);
+        assert!(header.protectable);
         assert_eq!(header.same_value_elsewhere, 0);
     }
 
@@ -869,7 +1189,14 @@ mod tests {
         )
         .unwrap();
         let launcher = Path::new("/opt/agentdeck");
-        let preview = preview_protect(home, Agent::ClaudeCode, "pg", launcher).unwrap();
+        let preview = preview_protect(
+            &MemoryVault::default(),
+            home,
+            Agent::ClaudeCode,
+            "pg",
+            launcher,
+        )
+        .unwrap();
         assert_eq!(preview.moved, ["DATABASE_URL"]);
         assert_eq!(preview.kept, ["NODE_ENV"]);
         assert_eq!(
@@ -937,18 +1264,111 @@ mod tests {
     }
 
     #[test]
-    fn http_servers_cannot_be_protected() {
+    fn headers_of_remote_servers_move_to_variables() {
         let home = setup();
+        let home = home.path();
+        fs::write(
+            home.join(".cursor/mcp.json"),
+            r#"{"mcpServers": {"linear": {"url": "https://mcp.linear.app/mcp", "headers": {"Authorization": "Bearer x"}},
+                "acme": {"url": "https://acme.dev/mcp", "headers": {"X-Api-Key": "other", "Accept": "text/plain"}}}}"#,
+        )
+        .unwrap();
         let vault = MemoryVault::default();
-        let err = protect(
+        let launcher = Path::new("agentdeck");
+
+        let preview = preview_protect(&vault, home, Agent::ClaudeCode, "linear", launcher).unwrap();
+        assert_eq!(preview.moved, ["Authorization"]);
+        assert_eq!(preview.headers[0].variable, "LINEAR_TOKEN");
+        assert_eq!(preview.headers[0].value, "Bearer ${LINEAR_TOKEN}");
+        assert_eq!(preview.before, preview.after);
+
+        protect(&vault, home, Agent::ClaudeCode, "linear", launcher).unwrap();
+        let claude = &mcp::read_specs(Agent::ClaudeCode, home).unwrap()["linear"];
+        assert_eq!(claude.headers["Authorization"], "Bearer ${LINEAR_TOKEN}");
+        assert_eq!(vault.get("env/LINEAR_TOKEN").unwrap().as_deref(), Some("x"));
+        let listed = inventory(home).0;
+        let header = listed
+            .iter()
+            .find(|s| s.agent == Agent::ClaudeCode && s.server == "linear")
+            .unwrap();
+        assert_eq!(header.env_var.as_deref(), Some("LINEAR_TOKEN"));
+        assert!(!header.protectable);
+
+        // The same token elsewhere reads the same variable.
+        protect(&vault, home, Agent::Cursor, "linear", launcher).unwrap();
+        let cursor = fs::read_to_string(home.join(".cursor/mcp.json")).unwrap();
+        assert!(cursor.contains("Bearer ${env:LINEAR_TOKEN}"), "{cursor}");
+        // A header that is not a credential stays.
+        protect(&vault, home, Agent::Cursor, "acme", launcher).unwrap();
+        let acme = &mcp::read_specs(Agent::Cursor, home).unwrap()["acme"];
+        assert_eq!(acme.headers["X-Api-Key"], "${ACME_X_API_KEY}");
+        assert_eq!(acme.headers["Accept"], "text/plain");
+
+        let exports = env_exports(&vault, home).unwrap();
+        assert_eq!(
+            exports,
+            [
+                ("ACME_X_API_KEY".to_owned(), "other".to_owned()),
+                ("LINEAR_TOKEN".to_owned(), "x".to_owned())
+            ]
+        );
+
+        // Restoring one copy keeps the variable the other still reads.
+        unprotect(&vault, home, Agent::ClaudeCode, "linear").unwrap();
+        let claude = &mcp::read_specs(Agent::ClaudeCode, home).unwrap()["linear"];
+        assert_eq!(claude.headers["Authorization"], "Bearer x");
+        assert!(vault.get("env/LINEAR_TOKEN").unwrap().is_some());
+        let filled = with_vault_variables(
             &vault,
-            home.path(),
+            mcp::read_specs(Agent::Cursor, home).unwrap()["linear"].clone(),
+        )
+        .unwrap();
+        assert_eq!(filled.headers["Authorization"], "Bearer x");
+        unprotect(&vault, home, Agent::Cursor, "linear").unwrap();
+        assert!(vault.get("env/LINEAR_TOKEN").unwrap().is_none());
+    }
+
+    #[test]
+    fn a_variable_holding_another_value_is_not_reused() {
+        let home = setup();
+        let home = home.path();
+        let vault = MemoryVault::default();
+        vault.set("env/LINEAR_TOKEN", "someone else's").unwrap();
+        protect(
+            &vault,
+            home,
             Agent::ClaudeCode,
             "linear",
             Path::new("agentdeck"),
         )
-        .unwrap_err();
-        assert!(matches!(err, Error::NotStdio { .. }));
+        .unwrap();
+        let claude = &mcp::read_specs(Agent::ClaudeCode, home).unwrap()["linear"];
+        assert_eq!(claude.headers["Authorization"], "Bearer ${LINEAR_TOKEN_2}");
+        assert_eq!(
+            variable_name("1password", "X-Key", false),
+            "MCP_1PASSWORD_X_KEY"
+        );
+    }
+
+    #[test]
+    fn shell_scripts_quote_every_value() {
+        let exports = [("A".to_owned(), r"it's \ $x".to_owned())];
+        assert_eq!(
+            shell_exports(&exports, Shell::Sh),
+            "export A='it'\\''s \\ $x'\n"
+        );
+        assert_eq!(
+            shell_exports(&exports, Shell::Fish),
+            "set -gx A 'it\\'s \\\\ $x'\n"
+        );
+        assert_eq!(
+            shell_exports(&exports, Shell::Powershell),
+            "$env:A = 'it''s \\ $x'\n"
+        );
+        assert_eq!(
+            shell_hook(Path::new("/Apps/Agent Deck/agentdeck"), Shell::Sh),
+            r#"eval "$('/Apps/Agent Deck/agentdeck' secrets env)""#
+        );
     }
 
     #[test]
