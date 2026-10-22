@@ -1,15 +1,33 @@
 import { useEffect, useState } from "react";
+import { ConfirmDialog } from "../components/ConfirmDialog";
 import { Empty, Icon, Notice, PageHeader } from "../components/ui";
 import { LauncherRepair } from "../components/LauncherRepair";
 import { useToast } from "../components/Toasts";
-import { listSecrets, protectServer, undoChange, unprotectServer } from "../lib/api";
+import { listSecrets, markSecretName, protectServer, undoChange, unprotectServer } from "../lib/api";
+import { IS_MAC } from "../lib/keys";
+import { describe } from "../lib/servers";
 import { useFilesChanged } from "../lib/watch";
-import type { Agent, AgentInfo, SecretListing, SecretRef } from "../lib/types";
+import type { Agent, AgentInfo, McpListing, SecretListing, SecretRef } from "../lib/types";
 
-export function SecretsPage({ agents, onChange }: { agents: AgentInfo[]; onChange: () => void }) {
+/** Where protected secrets go on this system. */
+const KEYCHAIN = IS_MAC
+  ? "macOS Keychain"
+  : /Windows/.test(navigator.userAgent)
+    ? "Windows Credential Manager"
+    : "Secret Service";
+
+interface Props {
+  agents: AgentInfo[];
+  /** The MCP servers, to show what each agent runs. */
+  servers: McpListing;
+  onChange: () => void;
+}
+
+export function SecretsPage({ agents, servers, onChange }: Props) {
   const [listing, setListing] = useState<SecretListing | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
+  const [confirmAll, setConfirmAll] = useState(false);
   const notify = useToast();
 
   async function load() {
@@ -26,37 +44,66 @@ export function SecretsPage({ agents, onChange }: { agents: AgentInfo[]; onChang
   }, []);
   useFilesChanged("mcp", load);
 
-  async function run(key: string, action: () => Promise<number>, done: string) {
-    setBusy(key);
-    try {
-      const id = await action();
-      notify({
-        tone: "success",
-        text: done,
-        undo: async () => {
-          await undoChange(id);
-          await load();
-          onChange();
-        },
-      });
-    } catch (err) {
-      notify({ tone: "error", text: String(err) });
-    }
-    setBusy(null);
+  async function refresh() {
     await load();
     onChange();
   }
 
+  /** Runs `steps` in order and shows one toast whose Undo reverts all that ran. */
+  async function run(key: string, steps: (() => Promise<number>)[], done: (count: number) => string) {
+    setBusy(key);
+    const ids: number[] = [];
+    try {
+      for (const step of steps) ids.push(await step());
+    } catch (err) {
+      notify({ tone: "error", text: String(err) });
+    }
+    if (ids.length > 0) {
+      notify({
+        tone: "success",
+        text: done(ids.length),
+        undo: async () => {
+          for (const id of [...ids].reverse()) await undoChange(id);
+          await refresh();
+        },
+      });
+    }
+    setBusy(null);
+    await refresh();
+  }
+
+  async function mark(name: string, secret: boolean | null) {
+    try {
+      await markSecretName(name, secret);
+      notify({
+        tone: "success",
+        text:
+          secret === null
+            ? `${name} is judged by its name and value again.`
+            : secret
+              ? `${name} is now treated as a secret on every server.`
+              : `${name} is now treated as a setting on every server.`,
+      });
+    } catch (err) {
+      notify({ tone: "error", text: String(err) });
+    }
+    await refresh();
+  }
+
   const nameOf = (agent: Agent) => agents.find((a) => a.agent === agent)?.name ?? agent;
+  const commandOf = (agent: Agent, server: string) => {
+    const found = servers.servers.find((s) => s.agent === agent && s.name === server);
+    return found ? describe(found.transport) : null;
+  };
 
   // One group per server, in the order the core lists them.
-  const groups = new Map<string, SecretRef[]>();
-  for (const secret of listing?.secrets ?? []) {
-    const key = `${secret.agent}/${secret.server}`;
-    groups.set(key, [...(groups.get(key) ?? []), secret]);
-  }
-  const plainCount = listing?.secrets.filter((s) => s.likely && !s.vaultId).length ?? 0;
-  const vaultCount = listing?.secrets.filter((s) => s.vaultId).length ?? 0;
+  const all = listing?.secrets ?? [];
+  const secrets = groupByServer(all.filter((s) => s.likely || s.vaultId));
+  const others = all.filter((s) => !s.likely && !s.vaultId);
+  const plainCount = all.filter((s) => s.likely && !s.vaultId).length;
+  const vaultCount = all.filter((s) => s.vaultId).length;
+  // Servers with variables that Protect moves, and those variables.
+  const toProtect = [...secrets].filter(([, group]) => group.some((s) => s.protectable));
 
   return (
     <>
@@ -70,6 +117,17 @@ export function SecretsPage({ agents, onChange }: { agents: AgentInfo[]; onChang
             <code>agentdeck exec</code>, which passes them back. Values are never shown here.
           </>
         }
+        actions={
+          toProtect.length > 0 && (
+            <button
+              className="primary"
+              disabled={!listing?.launcher || busy !== null}
+              onClick={() => setConfirmAll(true)}
+            >
+              <Icon name="shield" /> Protect all
+            </button>
+          )
+        }
       />
 
       {listing && !listing.launcher && (
@@ -79,16 +137,7 @@ export function SecretsPage({ agents, onChange }: { agents: AgentInfo[]; onChang
           install the tool with <code>cargo install --path crates/agentdeck-cli</code>.
         </Notice>
       )}
-      {listing && (
-        <LauncherRepair
-          agents={agents}
-          listing={listing}
-          onRepaired={() => {
-            load();
-            onChange();
-          }}
-        />
-      )}
+      {listing && <LauncherRepair agents={agents} listing={listing} onRepaired={refresh} />}
       {listing?.errors.map((text) => (
         <Notice key={text} tone="error">{text}</Notice>
       ))}
@@ -99,21 +148,38 @@ export function SecretsPage({ agents, onChange }: { agents: AgentInfo[]; onChang
           <div className="stat">
             <span className="label">In plain text</span>
             <span className={`value ${plainCount > 0 ? "danger-text" : ""}`}>{plainCount}</span>
+            <span className="hint">
+              {toProtect.length > 0
+                ? `${toProtect.length} server${toProtect.length === 1 ? "" : "s"} can be protected`
+                : "Nothing left to protect"}
+            </span>
           </div>
           <div className="stat">
             <span className="label">In the keychain</span>
             <span className="value ok-text">{vaultCount}</span>
+            <span className="hint">{KEYCHAIN}</span>
+          </div>
+          <div className="stat">
+            <span className="label">Launcher</span>
+            <span className={`value ${listing.launcher ? "ok-text" : "danger-text"}`}>
+              {listing.launcher ? "Ready" : "Missing"}
+            </span>
+            <span className="hint clamp" title={listing.launcher ?? undefined}>
+              {listing.stranded.length > 0
+                ? `${listing.stranded.length} protected server${listing.stranded.length === 1 ? "" : "s"} to repair`
+                : (listing.launcher ?? "agentdeck was not found")}
+            </span>
           </div>
         </div>
       )}
 
-      {listing && groups.size === 0 && (
+      {listing && all.length === 0 && (
         <Empty icon="shield" title="No MCP server uses secrets">
           Servers with API keys or tokens in their config show up here.
         </Empty>
       )}
 
-      {groups.size > 0 && (
+      {secrets.size > 0 && (
         <div className="table-card">
           <table className="secrets">
             <thead>
@@ -125,21 +191,28 @@ export function SecretsPage({ agents, onChange }: { agents: AgentInfo[]; onChang
               </tr>
             </thead>
             <tbody>
-              {[...groups].map(([key, secrets]) => {
-                const { agent, server } = secrets[0];
-                const canProtect = secrets.some((s) => s.protectable);
-                const protectedCount = secrets.filter((s) => s.vaultId).length;
+              {[...secrets].map(([key, group]) => {
+                const { agent, server } = group[0];
+                const canProtect = group.some((s) => s.protectable);
+                const protectedCount = group.filter((s) => s.vaultId).length;
                 const stranded = listing?.stranded.some((s) => s.agent === agent && s.server === server);
-                return secrets.map((secret, index) => (
+                const command = commandOf(agent, server);
+                return group.map((secret, index) => (
                   <tr key={`${key}/${secret.kind}/${secret.key}`}>
                     {index === 0 && (
-                      <td rowSpan={secrets.length}>
+                      <td rowSpan={group.length}>
                         <strong>{server}</strong>
                         <small>{nameOf(agent)}</small>
                         {stranded && (
                           <span className="pill pill-danger" title="The agentdeck launcher this server starts through is missing">
                             <Icon name="alert" size={12} /> Won't start
                           </span>
+                        )}
+                        {command && (
+                          <details className="runs">
+                            <summary>What {nameOf(agent)} runs</summary>
+                            <code>{command}</code>
+                          </details>
                         )}
                       </td>
                     )}
@@ -150,26 +223,27 @@ export function SecretsPage({ agents, onChange }: { agents: AgentInfo[]; onChang
                     <td>
                       {secret.vaultId ? (
                         <span className="pill pill-ok"><Icon name="shield" size={12} /> Keychain</span>
-                      ) : secret.likely ? (
-                        <span className="pill pill-danger"><Icon name="alert" size={12} /> Plain text</span>
                       ) : (
-                        <span className="pill" title="Does not look like a credential, so it stays in the config">Setting</span>
+                        <span className="pill pill-danger"><Icon name="alert" size={12} /> Plain text</span>
                       )}
-                      {secret.likely && secret.sameValueElsewhere > 0 && (
+                      {!secret.vaultId && secret.sameValueElsewhere > 0 && (
                         <small>Same value in {secret.sameValueElsewhere} other place(s)</small>
                       )}
-                      {!secret.vaultId && secret.likely && !secret.protectable && (
+                      {!secret.vaultId && !secret.protectable && (
                         <small>Headers of remote servers stay in the config for now</small>
+                      )}
+                      {!secret.vaultId && (
+                        <MarkButton secret={secret} onMark={mark} />
                       )}
                     </td>
                     {index === 0 && (
-                      <td rowSpan={secrets.length} className="actions">
+                      <td rowSpan={group.length} className="actions">
                         {canProtect && (
                           <button
                             className="primary small"
                             disabled={!listing?.launcher || busy !== null}
                             onClick={() =>
-                              run(key, () => protectServer(agent, server), `Moved the secrets of ${server} to the keychain.`)
+                              run(key, [() => protectServer(agent, server)], () => `Moved the secrets of ${server} to the keychain.`)
                             }
                           >
                             {busy === key ? "Moving…" : "Move to keychain"}
@@ -180,7 +254,7 @@ export function SecretsPage({ agents, onChange }: { agents: AgentInfo[]; onChang
                             className="small"
                             disabled={busy !== null}
                             onClick={() =>
-                              run(key, () => unprotectServer(agent, server), `Put the secrets of ${server} back in its config.`)
+                              run(key, [() => unprotectServer(agent, server)], () => `Put the secrets of ${server} back in its config.`)
                             }
                           >
                             Restore to config
@@ -195,6 +269,105 @@ export function SecretsPage({ agents, onChange }: { agents: AgentInfo[]; onChang
           </table>
         </div>
       )}
+
+      {others.length > 0 && (
+        <details className="card other-variables">
+          <summary>
+            <strong>Other variables</strong>
+            <span className="hint">
+              {others.length} setting{others.length === 1 ? "" : "s"} such as <code>{others[0].key}</code>, kept in the
+              config
+            </span>
+          </summary>
+          <ul className="copies">
+            {others.map((secret) => (
+              <li key={`${secret.agent}/${secret.server}/${secret.kind}/${secret.key}`}>
+                <div>
+                  <code>{secret.key}</code>
+                  <span className="hint">
+                    {secret.server} · {nameOf(secret.agent)} ·{" "}
+                    {secret.kind === "env" ? "environment variable" : "HTTP header"}
+                  </span>
+                </div>
+                <MarkButton secret={secret} onMark={mark} />
+              </li>
+            ))}
+          </ul>
+        </details>
+      )}
+
+      {confirmAll && (
+        <ConfirmDialog
+          wide
+          title={`Move the secrets of ${toProtect.length} server${toProtect.length === 1 ? "" : "s"} to the keychain?`}
+          onCancel={() => setConfirmAll(false)}
+          choices={[
+            {
+              label: "Protect all",
+              tone: "primary",
+              onSelect: () => {
+                setConfirmAll(false);
+                run(
+                  "all",
+                  toProtect.map(([, group]) => () => protectServer(group[0].agent, group[0].server)),
+                  (count) => `Moved the secrets of ${count} server${count === 1 ? "" : "s"} to the keychain.`,
+                );
+              },
+            },
+          ]}
+        >
+          <ul className="differences">
+            {toProtect.map(([key, group]) => (
+              <li key={key}>
+                <strong>{group[0].server}</strong> ({nameOf(group[0].agent)}):{" "}
+                {group
+                  .filter((s) => s.protectable)
+                  .map((s) => s.key)
+                  .join(", ")}
+              </li>
+            ))}
+          </ul>
+          <p>
+            Before: {plainCount} secret{plainCount === 1 ? "" : "s"} in plain text. After:{" "}
+            {plainCount - countProtectable(toProtect)} in plain text, {vaultCount + countProtectable(toProtect)} in the{" "}
+            {KEYCHAIN}. Each server then starts through <code>agentdeck exec</code>, which reads them back. It can be
+            undone.
+          </p>
+        </ConfirmDialog>
+      )}
     </>
+  );
+}
+
+function groupByServer(secrets: SecretRef[]): Map<string, SecretRef[]> {
+  const groups = new Map<string, SecretRef[]>();
+  for (const secret of secrets) {
+    const key = `${secret.agent}/${secret.server}`;
+    groups.set(key, [...(groups.get(key) ?? []), secret]);
+  }
+  return groups;
+}
+
+const countProtectable = (groups: [string, SecretRef[]][]) =>
+  groups.reduce((sum, [, group]) => sum + group.filter((s) => s.protectable).length, 0);
+
+/** Lets the user say whether a variable name holds a secret, or undo that. */
+function MarkButton({ secret, onMark }: { secret: SecretRef; onMark: (name: string, secret: boolean | null) => void }) {
+  if (secret.marked) {
+    return (
+      <small>
+        Marked as {secret.likely ? "a secret" : "a setting"} by you ·{" "}
+        <button className="link" onClick={() => onMark(secret.key, null)}>
+          Reset
+        </button>
+      </small>
+    );
+  }
+  return (
+    <small>
+      <button className="link" onClick={() => onMark(secret.key, !secret.likely)}>
+        {secret.likely ? "Not a secret" : "Treat as a secret"}
+      </button>
+    </small>
   );
 }
