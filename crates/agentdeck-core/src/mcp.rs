@@ -493,10 +493,13 @@ fn edit_json(agent: Agent, path: &Path, content: &str, edit: &Edit) -> Result<St
             let Value::Object(fresh) = json_entry(agent, spec) else {
                 unreachable!("an entry is an object")
             };
-            // Replacing an entry keeps the settings AgentDeck does not manage.
+            // Replacing an entry keeps the settings AgentDeck does not manage,
+            // and the order of the keys.
             match servers.get_mut(*name).and_then(Value::as_object_mut) {
                 Some(entry) => {
-                    entry.retain(|key, _| !known_keys(agent).contains(&key.as_str()));
+                    entry.retain(|key, _| {
+                        fresh.contains_key(key) || !known_keys(agent).contains(&key.as_str())
+                    });
                     entry.extend(fresh);
                 }
                 None => {
@@ -612,15 +615,17 @@ fn edit_toml(path: &Path, content: &str, edit: &Edit) -> Result<String> {
     match edit {
         Edit::Upsert { name, spec, .. } => {
             let fresh = toml_entry(spec)?;
-            // Replacing an entry keeps its place and the settings AgentDeck
-            // does not manage.
+            // Replacing an entry keeps its place, the order of its keys and
+            // the settings AgentDeck does not manage.
             match servers
                 .get_mut(name)
                 .and_then(toml_edit::Item::as_table_like_mut)
             {
                 Some(entry) => {
                     for key in known_keys(Agent::Codex) {
-                        entry.remove(key);
+                        if !fresh.contains_key(key) {
+                            entry.remove(key);
+                        }
                     }
                     for (key, item) in fresh.iter() {
                         entry.insert(key, item.clone());
@@ -968,6 +973,8 @@ command = \"x\"
         let codex = read(home, ".codex/config.toml");
         assert!(codex.contains("startup_timeout_sec = 20"));
         assert!(!codex.contains("cwd"));
+        // Keys keep their order.
+        assert!(codex.find("command").unwrap() < codex.find("startup_timeout_sec").unwrap());
         assert!(
             codex.find("command = \"npx\"").unwrap() < codex.find("[mcp_servers.after]").unwrap()
         );
