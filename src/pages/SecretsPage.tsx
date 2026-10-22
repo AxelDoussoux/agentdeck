@@ -3,11 +3,11 @@ import { ConfirmDialog } from "../components/ConfirmDialog";
 import { Empty, Icon, Notice, PageHeader } from "../components/ui";
 import { LauncherRepair } from "../components/LauncherRepair";
 import { useToast } from "../components/Toasts";
-import { listSecrets, markSecretName, protectServer, undoChange, unprotectServer } from "../lib/api";
+import { listSecrets, markSecretName, previewProtect, protectServer, undoChange, unprotectServer } from "../lib/api";
 import { IS_MAC } from "../lib/keys";
 import { describe } from "../lib/servers";
 import { useFilesChanged } from "../lib/watch";
-import type { Agent, AgentInfo, McpListing, SecretListing, SecretRef } from "../lib/types";
+import type { Agent, AgentInfo, McpListing, ProtectPreview, SecretListing, SecretRef } from "../lib/types";
 
 /** Where protected secrets go on this system. */
 const KEYCHAIN = IS_MAC
@@ -28,6 +28,8 @@ export function SecretsPage({ agents, servers, onChange }: Props) {
   const [busy, setBusy] = useState<string | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [confirmAll, setConfirmAll] = useState(false);
+  // The server about to be protected, and how its command changes.
+  const [pending, setPending] = useState<{ agent: Agent; server: string; preview: ProtectPreview } | null>(null);
   const notify = useToast();
 
   async function load() {
@@ -70,6 +72,14 @@ export function SecretsPage({ agents, servers, onChange }: Props) {
     }
     setBusy(null);
     await refresh();
+  }
+
+  async function askToProtect(agent: Agent, server: string) {
+    try {
+      setPending({ agent, server, preview: await previewProtect(agent, server) });
+    } catch (err) {
+      notify({ tone: "error", text: String(err) });
+    }
   }
 
   async function mark(name: string, secret: boolean | null) {
@@ -242,9 +252,7 @@ export function SecretsPage({ agents, servers, onChange }: Props) {
                           <button
                             className="primary small"
                             disabled={!listing?.launcher || busy !== null}
-                            onClick={() =>
-                              run(key, [() => protectServer(agent, server)], () => `Moved the secrets of ${server} to the keychain.`)
-                            }
+                            onClick={() => askToProtect(agent, server)}
                           >
                             {busy === key ? "Moving…" : "Move to keychain"}
                           </button>
@@ -294,6 +302,47 @@ export function SecretsPage({ agents, servers, onChange }: Props) {
             ))}
           </ul>
         </details>
+      )}
+
+      {pending && (
+        <ConfirmDialog
+          wide
+          title={`Move the secrets of ${pending.server} to the keychain?`}
+          onCancel={() => setPending(null)}
+          choices={[
+            {
+              label: "Move to keychain",
+              tone: "primary",
+              onSelect: () => {
+                const { agent, server } = pending;
+                setPending(null);
+                run(
+                  `${agent}/${server}`,
+                  [() => protectServer(agent, server)],
+                  () => `Moved the secrets of ${server} to the keychain.`,
+                );
+              },
+            },
+          ]}
+        >
+          <p>
+            {listOf(pending.preview.moved)} {pending.preview.moved.length === 1 ? "moves" : "move"} to the {KEYCHAIN}
+            {pending.preview.kept.length > 0 &&
+              `, and ${listOf(pending.preview.kept)} ${pending.preview.kept.length === 1 ? "stays" : "stay"} in the config`}
+            . {nameOf(pending.agent)} then starts {pending.server} through <code>agentdeck exec</code>, which reads
+            them back. It can be undone.
+          </p>
+          <dl className="facts command-change">
+            <dt>Now</dt>
+            <dd>
+              <code>{describe(pending.preview.before)}</code>
+            </dd>
+            <dt>After</dt>
+            <dd>
+              <code>{describe(pending.preview.after)}</code>
+            </dd>
+          </dl>
+        </ConfirmDialog>
       )}
 
       {confirmAll && (
@@ -346,6 +395,11 @@ function groupByServer(secrets: SecretRef[]): Map<string, SecretRef[]> {
     groups.set(key, [...(groups.get(key) ?? []), secret]);
   }
   return groups;
+}
+
+/** "A", "A and B", "A, B and C". */
+function listOf(items: string[]): string {
+  return items.length < 2 ? items.join("") : `${items.slice(0, -1).join(", ")} and ${items[items.length - 1]}`;
 }
 
 const countProtectable = (groups: [string, SecretRef[]][]) =>

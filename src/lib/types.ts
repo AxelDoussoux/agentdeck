@@ -87,6 +87,16 @@ export interface ProbeReport {
   elapsedMs: number;
 }
 
+/** How protecting a server changes its command. No secret value is in it. */
+export interface ProtectPreview {
+  before: Transport;
+  after: Transport;
+  /** Variables that move to the keychain. */
+  moved: string[];
+  /** Variables that stay in the config. */
+  kept: string[];
+}
+
 export interface Rules {
   agent: Agent;
   content: string | null;

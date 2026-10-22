@@ -2422,6 +2422,15 @@ th button.sort {
   max-height: 200px;
 }
 
+.command-change {
+  margin-top: 12px;
+}
+
+.command-change code {
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+
 .drawer-footer {
   display: flex;
   justify-content: flex-end;
