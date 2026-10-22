@@ -56,19 +56,39 @@ function describeOptions(options: ServerOptions): Map<string, string> {
  * compared, nor settings one of the two agents does not have.
  */
 export function differences(copy: McpServer, reference: McpServer, referenceName: string): string[] {
+  return compare(copy, reference, "here", `in ${referenceName}`);
+}
+
+/** What differs between an earlier version of a server and the server now. */
+export function changes(earlier: McpServer, now: McpServer): string[] {
+  const found = compare(earlier, now, "then", "now");
+  // The comparison sees through `agentdeck exec`, so name that change itself.
+  const [before, after] = [inKeychain(earlier), inKeychain(now)];
+  if (before && !after) found.push("Its secrets were in the keychain then.");
+  if (after && !before) found.push("Its secrets were in the config file then.");
+  return found;
+}
+
+/** Whether the server starts through `agentdeck exec`, with secrets from the keychain. */
+function inKeychain(server: McpServer): boolean {
+  return [...launch(server).values.values()].some((hash) => hash === null);
+}
+
+/** `here` and `there` place each side in the sentences, such as "then" and "now". */
+function compare(copy: McpServer, reference: McpServer, here: string, there: string): string[] {
   const [x, y] = [launch(copy), launch(reference)];
   const found: string[] = [];
-  if (x.target !== y.target) found.push(`Runs ${x.target} here, ${y.target} in ${referenceName}.`);
+  if (x.target !== y.target) found.push(`Runs ${x.target} ${here}, ${y.target} ${there}.`);
   for (const key of [...new Set([...x.values.keys(), ...y.values.keys()])].sort()) {
-    const [here, there] = [x.values.get(key), y.values.get(key)];
-    if (!y.values.has(key)) found.push(`${key} is set here, not in ${referenceName}.`);
-    else if (!x.values.has(key)) found.push(`${key} is set in ${referenceName}, not here.`);
-    else if (here && there && here !== there) found.push(`${key} has another value than in ${referenceName}.`);
+    const [mine, theirs] = [x.values.get(key), y.values.get(key)];
+    if (!y.values.has(key)) found.push(`${key} is set ${here}, not ${there}.`);
+    else if (!x.values.has(key)) found.push(`${key} is set ${there}, not ${here}.`);
+    else if (mine && theirs && mine !== theirs) found.push(`${key} has another value than ${there}.`);
   }
   if (WITH_OPTIONS.includes(copy.agent) && WITH_OPTIONS.includes(reference.agent)) {
     const theirs = describeOptions(reference.options);
     for (const [label, value] of describeOptions(copy.options)) {
-      if (value !== theirs.get(label)) found.push(`${label}: ${value} here, ${theirs.get(label)} in ${referenceName}.`);
+      if (value !== theirs.get(label)) found.push(`${label}: ${value} ${here}, ${theirs.get(label)} ${there}.`);
     }
   }
   return found;

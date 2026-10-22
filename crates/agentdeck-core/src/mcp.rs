@@ -275,12 +275,17 @@ fn into_strings(map: BTreeMap<String, Value>) -> BTreeMap<String, String> {
 /// Reads every MCP server of `agent`, secrets included.
 pub(crate) fn read_specs(agent: Agent, home: &Path) -> Result<BTreeMap<String, ServerSpec>> {
     let path = agent.mcp_config_path(home);
-    let Some(content) = config_file::read_optional(&path)? else {
-        return Ok(BTreeMap::new());
-    };
+    match config_file::read_optional(&path)? {
+        Some(content) => parse_specs(agent, &path, &content),
+        None => Ok(BTreeMap::new()),
+    }
+}
 
+/// Every MCP server in `content`, the config of `agent` read from `path`.
+fn parse_specs(agent: Agent, path: &Path, content: &str) -> Result<BTreeMap<String, ServerSpec>> {
+    let path = path.to_path_buf();
     let entries: BTreeMap<String, Map<String, Value>> = match agent {
-        Agent::Codex => toml::from_str::<CodexConfig>(&content)
+        Agent::Codex => toml::from_str::<CodexConfig>(content)
             .map_err(|source| Error::Toml {
                 path: path.clone(),
                 source: Box::new(source),
@@ -296,7 +301,7 @@ pub(crate) fn read_specs(agent: Agent, home: &Path) -> Result<BTreeMap<String, S
             })
             .collect(),
         _ => {
-            serde_json::from_str::<JsonConfig>(&content)
+            serde_json::from_str::<JsonConfig>(content)
                 .map_err(|source| Error::Json {
                     path: path.clone(),
                     source,
@@ -330,25 +335,107 @@ pub fn get(agent: Agent, home: &Path, name: &str) -> Result<Option<ServerSpec>> 
     Ok(read_specs(agent, home)?.remove(name))
 }
 
+/// What the UI may see of `spec`: no secret values.
+fn summary(agent: Agent, name: String, spec: ServerSpec) -> McpServer {
+    McpServer {
+        agent,
+        name,
+        env_hashes: hashes(&spec.env),
+        header_hashes: hashes(&spec.headers),
+        options: ServerOptions {
+            extra: None,
+            ..spec.options
+        },
+        transport: spec.transport,
+        env_keys: spec.env.into_keys().collect(),
+        header_keys: spec.headers.into_keys().collect(),
+    }
+}
+
 /// Reads the user-level MCP servers of `agent`. A missing config file is not
 /// an error: the agent is simply not installed.
 pub fn list_for_agent(agent: Agent, home: &Path) -> Result<Vec<McpServer>> {
     Ok(read_specs(agent, home)?
         .into_iter()
-        .map(|(name, spec)| McpServer {
-            agent,
-            name,
-            env_hashes: hashes(&spec.env),
-            header_hashes: hashes(&spec.headers),
-            options: ServerOptions {
-                extra: None,
-                ..spec.options
-            },
-            transport: spec.transport,
-            env_keys: spec.env.into_keys().collect(),
-            header_keys: spec.headers.into_keys().collect(),
-        })
+        .map(|(name, spec)| summary(agent, name, spec))
         .collect())
+}
+
+/// An earlier version of one server, found in the timestamped backups of its
+/// agent's config.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ServerVersion {
+    /// The backup it comes from, for [`restore_version`].
+    pub id: String,
+    /// When AgentDeck replaced it, in milliseconds since the Unix epoch.
+    pub replaced_ms: u64,
+    /// The server as it was, or `None` when the agent did not have it then.
+    pub server: Option<McpServer>,
+    /// It is the same as the server now: the change was undone since.
+    pub current: bool,
+}
+
+/// The earlier versions of the server `name` of `agent`, most recent first.
+/// Backups where it was the same as in the next one are left out, and so are
+/// backups that cannot be read.
+pub fn versions(agent: Agent, home: &Path, name: &str) -> Result<Vec<ServerVersion>> {
+    let path = agent.mcp_config_path(home);
+    let now = get(agent, home, name)?;
+    let mut newer = now.clone();
+    let mut found = Vec::new();
+    for backup in config_file::list_backups(home, &path)? {
+        let Some(id) = backup.file_name().and_then(|id| id.to_str()) else {
+            continue;
+        };
+        let Ok(content) = std::fs::read_to_string(&backup) else {
+            continue;
+        };
+        let Ok(mut specs) = parse_specs(agent, &backup, &content) else {
+            continue;
+        };
+        let spec = specs.remove(name);
+        if spec == newer {
+            continue;
+        }
+        // Backup names start with the time they were taken.
+        let digits = id.find(|c: char| !c.is_ascii_digit()).unwrap_or(id.len());
+        found.push(ServerVersion {
+            id: id.to_owned(),
+            replaced_ms: id[..digits].parse().unwrap_or_default(),
+            server: spec
+                .clone()
+                .map(|spec| summary(agent, name.to_owned(), spec)),
+            current: spec == now,
+        });
+        newer = spec;
+    }
+    Ok(found)
+}
+
+/// Puts back the server `name` of `agent` as it was in the backup `id`, from
+/// [`versions`], or removes it if the agent did not have it then. The rest of
+/// the config is left as it is now.
+pub fn restore_version(agent: Agent, home: &Path, name: &str, id: &str) -> Result<()> {
+    let path = agent.mcp_config_path(home);
+    let backup = config_file::backups_dir(home, &path).join(id);
+    if Path::new(id).file_name() != Some(std::ffi::OsStr::new(id)) {
+        return Err(Error::Invalid {
+            path: backup,
+            reason: "not a backup of this file",
+        });
+    }
+    let content = config_file::read_optional(&backup)?.ok_or_else(|| Error::Invalid {
+        path: backup.clone(),
+        reason: "this backup no longer exists",
+    })?;
+    match parse_specs(agent, &backup, &content)?.remove(name) {
+        Some(spec) => add(agent, home, name, &spec, true),
+        None => match remove(agent, home, name) {
+            Err(Error::NotFound { .. }) => Ok(()),
+            other => other,
+        },
+    }
 }
 
 /// Reads the MCP servers of every supported agent. Agents whose config cannot
@@ -1136,5 +1223,49 @@ command = \"x\"
 
         let err = copy(home, "remote", Agent::ClaudeCode, Agent::Codex, false).unwrap_err();
         assert!(matches!(err, Error::Unsupported { .. }));
+    }
+
+    #[test]
+    fn earlier_versions_of_a_server_can_be_put_back() {
+        let home = tempfile::tempdir().unwrap();
+        let home = home.path();
+        add(Agent::Codex, home, "github", &stdio("npx"), false).unwrap();
+        add(Agent::Codex, home, "github", &stdio("uvx"), true).unwrap();
+        remove(Agent::Codex, home, "github").unwrap();
+        // Changes to other servers are not versions of this one.
+        add(Agent::Codex, home, "docs", &stdio("docs"), false).unwrap();
+
+        let found = versions(Agent::Codex, home, "github").unwrap();
+        let commands: Vec<_> = found
+            .iter()
+            .map(
+                |version| match &version.server.as_ref().unwrap().transport {
+                    Transport::Stdio { command, .. } => command.as_str(),
+                    _ => unreachable!(),
+                },
+            )
+            .collect();
+        assert_eq!(commands, ["uvx", "npx"]);
+        assert!(found[0].replaced_ms >= found[1].replaced_ms);
+        assert_eq!(found[0].server.as_ref().unwrap().env_keys, ["TOKEN"]);
+
+        restore_version(Agent::Codex, home, "github", &found[1].id).unwrap();
+        assert_eq!(
+            get(Agent::Codex, home, "github").unwrap(),
+            Some(stdio("npx"))
+        );
+        assert!(get(Agent::Codex, home, "docs").unwrap().is_some());
+
+        // The version from before it was put back has no server: restoring it removes it.
+        let found = versions(Agent::Codex, home, "github").unwrap();
+        let removed = &found[0];
+        assert_eq!(removed.server, None);
+        // The version it was put back from is now the current one.
+        assert!(found[2].current && !found[1].current);
+        restore_version(Agent::Codex, home, "github", &removed.id).unwrap();
+        assert_eq!(get(Agent::Codex, home, "github").unwrap(), None);
+
+        let err = restore_version(Agent::Codex, home, "github", "../config.toml").unwrap_err();
+        assert!(matches!(err, Error::Invalid { .. }));
     }
 }

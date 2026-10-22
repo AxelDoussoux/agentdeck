@@ -306,6 +306,24 @@ fn copy_mcp_server(
     Ok(CopyResult { undo, lost })
 }
 
+#[tauri::command]
+fn server_versions(agent: Agent, name: String) -> Result<Vec<mcp::ServerVersion>, String> {
+    mcp::versions(agent, &home()?, &name).map_err(|err| err.to_string())
+}
+
+#[tauri::command]
+fn restore_server_version(
+    undo: State<UndoStore>,
+    agent: Agent,
+    name: String,
+    id: String,
+) -> Result<u64, String> {
+    undoable_mcp(&undo, agent, &name, |home| {
+        mcp::restore_version(agent, home, &name, &id)
+    })
+    .map(|(id, ())| id)
+}
+
 /// What `copy_mcp_server` did: the id that undoes it, and the settings the
 /// target agent could not take.
 #[derive(serde::Serialize)]
@@ -504,6 +522,8 @@ pub fn run() {
             remove_mcp_server,
             copy_mcp_server,
             edit_mcp_server,
+            server_versions,
+            restore_server_version,
             list_rules,
             save_rules,
             list_skills,

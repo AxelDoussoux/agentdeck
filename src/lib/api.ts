@@ -8,6 +8,7 @@ import type {
   SecretListing,
   ServerEdit,
   ServerSpec,
+  ServerVersion,
   SkillListing,
   SkillLocation,
   UsageReport,
@@ -36,6 +37,14 @@ export const removeMcpServer = (agent: Agent, name: string) =>
  */
 export const copyMcpServer = (name: string, from: Agent, to: Agent, overwrite = false) =>
   invoke<{ undo: number; lost: string[] }>("copy_mcp_server", { name, from, to, overwrite });
+
+/** Earlier versions of a server in `agent`, most recent first. */
+export const serverVersions = (agent: Agent, name: string) =>
+  invoke<ServerVersion[]>("server_versions", { agent, name });
+
+/** Puts a server back as it was in a version from `serverVersions`. */
+export const restoreServerVersion = (agent: Agent, name: string, id: string) =>
+  invoke<number>("restore_server_version", { agent, name, id });
 
 export const listRules = () => invoke<Rules[]>("list_rules");
 

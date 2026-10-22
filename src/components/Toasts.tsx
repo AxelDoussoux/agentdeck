@@ -1,4 +1,5 @@
 import { createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode } from "react";
+import { createPortal } from "react-dom";
 import { Icon } from "./ui";
 
 interface Toast {
@@ -23,8 +24,23 @@ const ToastContext = createContext<(toast: Toast) => void>(() => {});
 /** Shows a toast at the bottom of the window. Errors stay until closed. */
 export const useToast = () => useContext(ToastContext);
 
+const HostContext = createContext<(host: HTMLElement | null) => void>(() => {});
+
+/**
+ * Shows the toasts inside `host`, an open modal dialog, while it is set: the
+ * rest of the page is out of reach under a modal, Undo included.
+ */
+export function useToastHost(host: React.RefObject<HTMLElement | null>) {
+  const setHost = useContext(HostContext);
+  useEffect(() => {
+    setHost(host.current);
+    return () => setHost(null);
+  }, []);
+}
+
 export function ToastProvider({ children }: { children: ReactNode }) {
   const [toasts, setToasts] = useState<ShownToast[]>([]);
+  const [host, setHost] = useState<HTMLElement | null>(null);
   const nextId = useRef(0);
 
   const notify = useCallback((toast: Toast) => {
@@ -50,14 +66,20 @@ export function ToastProvider({ children }: { children: ReactNode }) {
     }
   }
 
+  const region = (
+    <div className="toasts" role="region" aria-label="Notifications" aria-live="polite">
+      {toasts.map((toast) => (
+        <ToastItem key={toast.id} toast={toast} onUndo={() => undo(toast)} onClose={() => dismiss(toast.id)} />
+      ))}
+    </div>
+  );
+
   return (
     <ToastContext.Provider value={notify}>
-      {children}
-      <div className="toasts" role="region" aria-label="Notifications" aria-live="polite">
-        {toasts.map((toast) => (
-          <ToastItem key={toast.id} toast={toast} onUndo={() => undo(toast)} onClose={() => dismiss(toast.id)} />
-        ))}
-      </div>
+      <HostContext.Provider value={setHost}>
+        {children}
+        {host ? createPortal(region, host) : region}
+      </HostContext.Provider>
     </ToastContext.Provider>
   );
 }

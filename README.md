@@ -22,13 +22,15 @@ shows them side by side, and syncs them in one click.
   server to another agent in one click, with its settings and secrets
   translated to that agent's format. Add, edit or remove servers safely:
   secrets stay hidden while you edit, and each write keeps a backup and
-  preserves comments in Codex's TOML.
+  preserves comments in Codex's TOML. Click a server to open its details:
+  what differs between agents, and its earlier versions, which you can put
+  back one server at a time.
 - **Rules.** Edit `CLAUDE.md`, `AGENTS.md` and `GEMINI.md` side by side and
   copy them from one agent to the others.
 - **Skills.** See which agents load each Agent Skill, and share a skill with
   another agent without duplicating folders needlessly. When copies of a skill
-  differ, see which one was edited last and use it everywhere; removed and
-  replaced copies go to a trash you can restore from.
+  differ, compare their `SKILL.md` and use the one you want everywhere;
+  removed and replaced copies go to a trash you can restore from.
 - **Secrets.** Find API keys stored in plain text in agent configs and move them
   to the system keychain (Windows Credential Manager, macOS Keychain, Secret
   Service). Values are never displayed.
