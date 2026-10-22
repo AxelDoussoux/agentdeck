@@ -9,10 +9,12 @@
 //! agentdeck exec --secret GITHUB_TOKEN=claude-code/github/GITHUB_TOKEN -- npx -y server-github
 //! ```
 
-use std::collections::{BTreeMap, HashMap, HashSet};
-use std::path::Path;
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
+use std::fs;
+use std::io::ErrorKind;
+use std::path::{Path, PathBuf};
 
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 use crate::mcp::{self, ServerSpec, Transport};
 use crate::{Agent, Error, Result};
@@ -80,9 +82,13 @@ pub struct SecretRef {
     /// How many other plain-text secrets have the same value, a hint that one
     /// key is copied in several places.
     pub same_value_elsewhere: usize,
-    /// Whether the name or value looks like a credential. The others are
-    /// settings such as `NODE_ENV`, listed but not counted as secrets.
+    /// Whether the name or value looks like a credential, or the name was
+    /// marked as one. The others are settings such as `NODE_ENV`, listed but
+    /// not counted as secrets.
     pub likely: bool,
+    /// Whether `likely` comes from how the user marked the name, rather than
+    /// from [`looks_secret`].
+    pub marked: bool,
     /// Whether the secret can be moved to the keychain: only environment
     /// variables of local servers that look like credentials can.
     pub protectable: bool,
@@ -177,6 +183,73 @@ pub fn looks_secret(key: &str, value: &str) -> bool {
     })
 }
 
+/// Variable names the user marked as secrets or as settings, overriding
+/// [`looks_secret`] for every server. Kept in `~/.agentdeck/secret-names.json`.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct NameMarks {
+    #[serde(default)]
+    pub secrets: BTreeSet<String>,
+    #[serde(default)]
+    pub settings: BTreeSet<String>,
+}
+
+impl NameMarks {
+    /// Whether `key` holds a credential: as marked, or else as it looks.
+    pub fn is_secret(&self, key: &str, value: &str) -> bool {
+        self.marked(key).unwrap_or_else(|| looks_secret(key, value))
+    }
+
+    /// How `key` was marked, if it was.
+    pub fn marked(&self, key: &str) -> Option<bool> {
+        if self.secrets.contains(key) {
+            Some(true)
+        } else if self.settings.contains(key) {
+            Some(false)
+        } else {
+            None
+        }
+    }
+}
+
+fn marks_path(home: &Path) -> PathBuf {
+    home.join(".agentdeck").join("secret-names.json")
+}
+
+/// The names the user marked. A missing file means none.
+pub fn name_marks(home: &Path) -> Result<NameMarks> {
+    let path = marks_path(home);
+    match fs::read_to_string(&path) {
+        Ok(content) => {
+            serde_json::from_str(&content).map_err(|source| Error::Json { path, source })
+        }
+        Err(err) if err.kind() == ErrorKind::NotFound => Ok(NameMarks::default()),
+        Err(source) => Err(Error::Io { path, source }),
+    }
+}
+
+/// Marks `key` as a secret (`Some(true)`), as a setting (`Some(false)`), or
+/// lets AgentDeck judge it again (`None`). It applies to every server, and
+/// to servers protected from then on.
+pub fn mark_name(home: &Path, key: &str, secret: Option<bool>) -> Result<()> {
+    let mut marks = name_marks(home)?;
+    marks.secrets.remove(key);
+    marks.settings.remove(key);
+    match secret {
+        Some(true) => marks.secrets.insert(key.to_owned()),
+        Some(false) => marks.settings.insert(key.to_owned()),
+        None => false,
+    };
+    let path = marks_path(home);
+    if let Some(dir) = path.parent() {
+        fs::create_dir_all(dir).map_err(|source| Error::Io {
+            path: dir.to_path_buf(),
+            source,
+        })?;
+    }
+    let content = serde_json::to_string_pretty(&marks).unwrap_or_default();
+    fs::write(&path, content).map_err(|source| Error::Io { path, source })
+}
+
 /// A server started through `agentdeck exec`.
 struct Wrapped {
     /// Environment variable name to keychain id.
@@ -248,6 +321,10 @@ fn vault_id(agent: Agent, server: &str, key: &str) -> String {
 pub fn inventory(home: &Path) -> (Vec<SecretRef>, Vec<String>) {
     let mut secrets = Vec::new();
     let mut errors = Vec::new();
+    let marks = name_marks(home).unwrap_or_else(|err| {
+        errors.push(err.to_string());
+        NameMarks::default()
+    });
     let mut values: HashMap<String, usize> = HashMap::new();
     let mut plain_values = Vec::new();
 
@@ -274,6 +351,7 @@ pub fn inventory(home: &Path) -> (Vec<SecretRef>, Vec<String>) {
                     vault_id: Some(id),
                     same_value_elsewhere: 0,
                     likely: true,
+                    marked: false,
                     protectable: false,
                 });
             }
@@ -287,7 +365,8 @@ pub fn inventory(home: &Path) -> (Vec<SecretRef>, Vec<String>) {
                         .map(|entry| (SecretKind::Header, entry)),
                 );
             for (kind, (key, value)) in plain {
-                let likely = looks_secret(&key, &value);
+                let likely = marks.is_secret(&key, &value);
+                let marked = marks.marked(&key).is_some();
                 *values.entry(value.clone()).or_default() += 1;
                 plain_values.push(value);
                 secrets.push(SecretRef {
@@ -298,6 +377,7 @@ pub fn inventory(home: &Path) -> (Vec<SecretRef>, Vec<String>) {
                     vault_id: None,
                     same_value_elsewhere: 0,
                     likely,
+                    marked,
                     protectable: stdio && kind == SecretKind::Env && likely,
                 });
             }
@@ -313,7 +393,7 @@ pub fn inventory(home: &Path) -> (Vec<SecretRef>, Vec<String>) {
 }
 
 /// Moves the environment variables of a local server that look like
-/// credentials to the vault and makes the agent start it through
+/// credentials, or whose name was marked as one, to the vault and makes the agent start it through
 /// `launcher exec`. Its other variables and settings are kept.
 pub fn protect(
     vault: &dyn Vault,
@@ -334,10 +414,11 @@ pub fn protect(
         Some(wrapped) => (wrapped.secrets, wrapped.command, wrapped.args),
         None => (BTreeMap::new(), command.clone(), args.clone()),
     };
+    let marks = name_marks(home)?;
     let (credentials, settings): (BTreeMap<_, _>, BTreeMap<_, _>) = spec
         .env
         .into_iter()
-        .partition(|(key, value)| looks_secret(key, value));
+        .partition(|(key, value)| marks.is_secret(key, value));
     if credentials.is_empty() {
         return Ok(());
     }
@@ -765,5 +846,46 @@ mod tests {
         )
         .unwrap_err();
         assert!(matches!(err, Error::NotStdio { .. }));
+    }
+
+    #[test]
+    fn marked_names_override_how_they_look() {
+        let home = tempfile::tempdir().unwrap();
+        let home = home.path();
+        fs::write(
+            home.join(".claude.json"),
+            r#"{"mcpServers": {"svc": {"command": "svc", "env": {"SERVICE_ID": "abc123", "AUTH_MODE": "oauth"}}}}"#,
+        )
+        .unwrap();
+        let likely = |key: &str| {
+            let (secrets, errors) = inventory(home);
+            assert!(errors.is_empty());
+            let found = secrets.into_iter().find(|s| s.key == key).unwrap();
+            (found.likely, found.marked)
+        };
+        assert_eq!(likely("SERVICE_ID"), (false, false));
+        assert_eq!(likely("AUTH_MODE"), (true, false));
+
+        mark_name(home, "SERVICE_ID", Some(true)).unwrap();
+        mark_name(home, "AUTH_MODE", Some(false)).unwrap();
+        assert_eq!(likely("SERVICE_ID"), (true, true));
+        assert_eq!(likely("AUTH_MODE"), (false, true));
+
+        let vault = MemoryVault::default();
+        protect(
+            &vault,
+            home,
+            Agent::ClaudeCode,
+            "svc",
+            Path::new("agentdeck"),
+        )
+        .unwrap();
+        let spec = &mcp::read_specs(Agent::ClaudeCode, home).unwrap()["svc"];
+        assert_eq!(spec.env.keys().collect::<Vec<_>>(), ["AUTH_MODE"]);
+        assert_eq!(vault.0.borrow()["claude-code/svc/SERVICE_ID"], "abc123");
+
+        mark_name(home, "AUTH_MODE", None).unwrap();
+        assert_eq!(likely("AUTH_MODE"), (true, false));
+        assert!(name_marks(home).unwrap().settings.is_empty());
     }
 }

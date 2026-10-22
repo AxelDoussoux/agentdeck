@@ -348,7 +348,7 @@ function App() {
             <RulesPage agents={agents} setGuard={(unsaved) => (guard.current = unsaved)} focus={focus} />
           )}
           {page === "skills" && <SkillsPage agents={agents} focus={focus} />}
-          {page === "secrets" && <SecretsPage agents={agents} onChange={refresh} />}
+          {page === "secrets" && <SecretsPage agents={agents} servers={listing} onChange={refresh} />}
           {page === "history" && <HistoryPage agents={agents} />}
           {page === "settings" && (
             <SettingsPage

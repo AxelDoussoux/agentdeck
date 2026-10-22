@@ -2088,6 +2088,40 @@ th button.sort {
   }
 }
 
+/* Secrets */
+.runs {
+  margin-top: 6px;
+  font-size: 12px;
+}
+
+.runs summary {
+  color: var(--muted);
+  cursor: pointer;
+}
+
+.runs code {
+  display: block;
+  max-width: 240px;
+  margin-top: 4px;
+  overflow-wrap: anywhere;
+}
+
+.other-variables summary {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 10px;
+  cursor: pointer;
+}
+
+.other-variables[open] summary {
+  margin-bottom: 12px;
+}
+
+.other-variables .copies {
+  margin: 0;
+}
+
 /* Session detail */
 .date-range {
   display: inline-flex;

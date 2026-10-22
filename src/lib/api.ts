@@ -85,6 +85,10 @@ export const unprotectServer = (agent: Agent, server: string) =>
   invoke<number>("unprotect_server", { agent, server });
 
 /** Points protected servers whose launcher is missing at the current one. Returns how many. */
+/** Marks a variable name as a secret, a setting, or (`null`) lets AgentDeck judge it. */
+export const markSecretName = (name: string, secret: boolean | null) =>
+  invoke<void>("mark_secret_name", { name, secret });
+
 export const repairLaunchers = () => invoke<number>("repair_launchers");
 
 /** Reverts the change that returned `id`. Each change can be undone once. */

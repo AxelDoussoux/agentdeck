@@ -464,6 +464,13 @@ fn protect_server(undo: State<UndoStore>, agent: Agent, server: String) -> Resul
 
 /// Points protected servers whose launcher is missing at the current one.
 /// Returns how many were repaired.
+/// Marks a variable name as a secret (`true`), a setting (`false`), or lets
+/// AgentDeck judge it again (`null`).
+#[tauri::command]
+fn mark_secret_name(name: String, secret: Option<bool>) -> Result<(), String> {
+    secrets::mark_name(&home()?, &name, secret).map_err(|err| err.to_string())
+}
+
 #[tauri::command]
 fn repair_launchers() -> Result<usize, String> {
     let launcher = launcher().ok_or(LAUNCHER_MISSING)?;
@@ -536,6 +543,7 @@ pub fn run() {
             protect_server,
             unprotect_server,
             repair_launchers,
+            mark_secret_name,
             usage_report,
             undo_change,
             app_settings,

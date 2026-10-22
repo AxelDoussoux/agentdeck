@@ -76,6 +76,23 @@ enum SecretsCommand {
     Unprotect { agent: AgentArg, server: String },
     /// Point protected servers whose launcher is missing at this executable
     Repair,
+    /// Say whether a variable name holds a secret, for every server
+    Mark {
+        /// Variable name, such as SERVICE_ID
+        name: String,
+        #[arg(value_enum)]
+        r#as: MarkArg,
+    },
+}
+
+#[derive(Clone, Copy, ValueEnum)]
+enum MarkArg {
+    /// Moved to the keychain when its server is protected
+    Secret,
+    /// Stays in the config
+    Setting,
+    /// Judged by its name and value again
+    Auto,
 }
 
 #[derive(Subcommand)]
@@ -562,6 +579,22 @@ fn run_secrets(
             println!(
                 "Put the secrets of \"{server}\" ({}) back in its config",
                 agent.display_name()
+            );
+        }
+        SecretsCommand::Mark { name, r#as } => {
+            let secret = match r#as {
+                MarkArg::Secret => Some(true),
+                MarkArg::Setting => Some(false),
+                MarkArg::Auto => None,
+            };
+            secrets::mark_name(home, &name, secret)?;
+            println!(
+                "{name} is now {}",
+                match secret {
+                    Some(true) => "treated as a secret",
+                    Some(false) => "treated as a setting",
+                    None => "judged by its name and value",
+                }
             );
         }
         SecretsCommand::Repair => {
