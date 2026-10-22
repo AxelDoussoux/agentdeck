@@ -55,6 +55,9 @@ export const copySkill = (name: string, from: SkillLocation, to: Agent) =>
 export const removeSkill = (location: SkillLocation, name: string) =>
   invoke<string>("remove_skill", { location, name });
 
+/** Opens an agent's MCP config in the default editor, or shows it in its folder. */
+export const openConfig = (agent: Agent, reveal = false) => invoke<void>("open_config", { agent, reveal });
+
 export const listSecrets = () => invoke<SecretListing>("list_secrets");
 
 export const protectServer = (agent: Agent, server: string) =>

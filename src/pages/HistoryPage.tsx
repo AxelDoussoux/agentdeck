@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { AgentMark, Empty, Notice, PageHeader } from "../components/ui";
 import { usageReport } from "../lib/api";
+import { dateOf, formatCost, lastDays, localDays } from "../lib/usage";
 import type { Agent, AgentInfo, Tokens, UsageReport } from "../lib/types";
 
 const PERIODS = [7, 30, 90] as const;
@@ -13,25 +14,6 @@ function formatTokens(count: number): string {
   if (count >= 1e3) return `${(count / 1e3).toFixed(1)}k`;
   return String(count);
 }
-
-const formatCost = (usd: number) => `$${usd.toFixed(usd < 10 ? 2 : 0)}`;
-
-/** `YYYY-MM-DD` of a moment in the local time zone. */
-function localDate(moment: Date): string {
-  const pad = (n: number) => String(n).padStart(2, "0");
-  return `${moment.getFullYear()}-${pad(moment.getMonth() + 1)}-${pad(moment.getDate())}`;
-}
-
-/** Local dates from `days - 1` days ago to today. */
-function lastDays(days: number): string[] {
-  const now = new Date();
-  return Array.from({ length: days }, (_, i) =>
-    localDate(new Date(now.getFullYear(), now.getMonth(), now.getDate() - (days - 1 - i))),
-  );
-}
-
-/** Local date of a UTC timestamp from the logs. */
-const dateOf = (timestamp: string) => localDate(new Date(timestamp));
 
 const basename = (path: string | null) => path?.split(/[\\/]/).filter(Boolean).pop() ?? "";
 
@@ -60,11 +42,7 @@ export function HistoryPage({ agents }: { agents: AgentInfo[] }) {
   const since = dates[0];
   const matches = (agent: Agent) => filter === "all" || agent === filter;
 
-  // The core counts per UTC hour; days start at local midnight here.
-  const daily =
-    report?.hourly
-      .map((h) => ({ ...h, date: dateOf(`${h.hour}:00:00Z`) }))
-      .filter((d) => d.date >= since && matches(d.agent)) ?? [];
+  const daily = report ? localDays(report).filter((d) => d.date >= since && matches(d.agent)) : [];
   const sessions =
     report?.sessions.filter((s) => s.endedAt && dateOf(s.endedAt) >= since && matches(s.agent)) ?? [];
   const costByDate = new Map<string, number>();
