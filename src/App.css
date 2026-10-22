@@ -1475,3 +1475,18 @@ button.cell-differs:hover {
 .form .also .hint {
   flex-basis: 100%;
 }
+
+.repair > span {
+  color: var(--text);
+}
+
+.repair strong {
+  display: block;
+  color: var(--danger);
+}
+
+.repair small {
+  display: block;
+  margin-top: 4px;
+  color: var(--muted);
+}

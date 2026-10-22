@@ -74,6 +74,8 @@ enum SecretsCommand {
     Protect { agent: AgentArg, server: String },
     /// Put the secrets of a protected MCP server back in its config file
     Unprotect { agent: AgentArg, server: String },
+    /// Point protected servers whose launcher is missing at this executable
+    Repair,
 }
 
 #[derive(Subcommand)]
@@ -518,10 +520,7 @@ fn run_secrets(
             }
         }
         SecretsCommand::Protect { agent, server } => {
-            let launcher = std::env::current_exe().map_err(|source| agentdeck_core::Error::Io {
-                path: "agentdeck".into(),
-                source,
-            })?;
+            let launcher = current_exe()?;
             let agent = Agent::from(agent);
             secrets::protect(&Keychain, home, agent, &server, &launcher)?;
             println!(
@@ -537,8 +536,29 @@ fn run_secrets(
                 agent.display_name()
             );
         }
+        SecretsCommand::Repair => {
+            let repaired = secrets::repair(home, &current_exe()?)?;
+            if repaired.is_empty() {
+                println!("Every protected server has its launcher");
+            }
+            for server in &repaired {
+                println!(
+                    "Repaired \"{}\" ({}), which started through {}",
+                    server.server,
+                    server.agent.display_name(),
+                    server.launcher
+                );
+            }
+        }
     }
     Ok(())
+}
+
+fn current_exe() -> agentdeck_core::Result<std::path::PathBuf> {
+    std::env::current_exe().map_err(|source| agentdeck_core::Error::Io {
+        path: "agentdeck".into(),
+        source,
+    })
 }
 
 /// Runs `command` with secrets from the keychain, passing stdio through so

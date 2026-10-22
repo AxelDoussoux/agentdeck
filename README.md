@@ -77,6 +77,7 @@ agentdeck skills remove pdf --from shared   # moved to ~/.agentdeck/trash
 agentdeck secrets list
 agentdeck secrets protect claude-code github   # credentials move to the keychain
 agentdeck secrets unprotect claude-code github
+agentdeck secrets repair    # after moving the app
 agentdeck usage --days 30
 ```
 
@@ -103,9 +104,11 @@ its command to `agentdeck exec --secret KEY=ID -- <original command>`, which
 reads them back when the agent starts the server. The app ships the
 `agentdeck` CLI next to its own executable and uses that copy (from an
 AppImage, it is copied to `~/.agentdeck/bin` first, since the AppImage mount
-goes away when the app quits). If you move or uninstall the app, unprotect your
-servers first or they will no longer start. Headers of remote servers are
-listed but stay in the config.
+goes away when the app quits). If the app is moved or reinstalled elsewhere,
+protected servers can no longer start: AgentDeck flags them on the Overview
+and Secrets pages and repairs them in one click (`agentdeck secrets repair`
+from the command line). Unprotect your servers before uninstalling the app.
+Headers of remote servers are listed but stay in the config.
 
 Session history is read from `~/.claude/projects` (Claude Code) and
 `~/.codex/sessions` (Codex). Costs are estimates at API list prices
