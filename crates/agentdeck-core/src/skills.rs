@@ -193,8 +193,20 @@ pub fn remove(home: &Path, location: Location, name: &str) -> Result<PathBuf> {
     move_to_trash(home, &dir)
 }
 
-fn trash_dir(home: &Path) -> PathBuf {
+/// Where removed and replaced skills go: `~/.agentdeck/trash`.
+pub fn trash_dir(home: &Path) -> PathBuf {
     home.join(".agentdeck").join("trash")
+}
+
+/// Deletes the trash for good. Returns how many skills it held.
+pub fn empty_trash(home: &Path) -> Result<usize> {
+    let count = trashed(home).len();
+    let dir = trash_dir(home);
+    match fs::remove_dir_all(&dir) {
+        Ok(()) => Ok(count),
+        Err(source) if source.kind() == std::io::ErrorKind::NotFound => Ok(0),
+        Err(source) => Err(io_error(&dir, source)),
+    }
 }
 
 /// Skills in the trash, most recently removed first.
@@ -457,6 +469,20 @@ mod tests {
         assert!(!copied.exists());
         assert!(trashed.join("SKILL.md").is_file());
         assert!(trashed.starts_with(home.join(".agentdeck/trash")));
+    }
+
+    #[test]
+    fn emptying_the_trash_deletes_removed_skills() {
+        let home = tempfile::tempdir().unwrap();
+        let home = home.path();
+        assert_eq!(empty_trash(home).unwrap(), 0);
+        make_skill(home, Location::ClaudeCode, "pdf");
+        make_skill(home, Location::Shared, "pdf");
+        remove(home, Location::ClaudeCode, "pdf").unwrap();
+        remove(home, Location::Shared, "pdf").unwrap();
+        assert_eq!(empty_trash(home).unwrap(), 2);
+        assert!(trashed(home).is_empty());
+        assert!(!trash_dir(home).exists());
     }
 
     #[test]

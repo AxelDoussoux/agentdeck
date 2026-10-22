@@ -1723,3 +1723,91 @@ tr.highlight td {
   background: var(--accent-soft);
   transition: background 0.3s;
 }
+
+/* Settings */
+.settings-section {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-bottom: 16px;
+}
+
+.settings-section h2 {
+  margin: 0 0 6px;
+  font-size: 15px;
+}
+
+.settings-section > .hint {
+  margin: 0 0 6px;
+}
+
+.setting-row {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 10px 0;
+  border-top: 1px solid var(--border);
+}
+
+.settings-section h2 + .setting-row,
+.settings-section .hint + .setting-row {
+  border-top: 0;
+}
+
+.setting-label {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+
+.setting-label code {
+  overflow-wrap: anywhere;
+  font-size: 12px;
+}
+
+.setting-label small {
+  color: var(--muted);
+}
+
+.setting-agent {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 600;
+}
+
+.setting-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.segmented {
+  display: inline-flex;
+  padding: 3px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+}
+
+.segmented button {
+  padding: 5px 12px;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  box-shadow: none;
+  color: var(--muted);
+}
+
+.segmented button.active {
+  background: var(--surface);
+  color: var(--text);
+  box-shadow: var(--shadow);
+}
+
+.icon-button.active {
+  background: var(--accent-soft);
+  color: var(--accent);
+}

@@ -15,6 +15,7 @@ import { McpPage } from "./pages/McpPage";
 import { OverviewPage } from "./pages/OverviewPage";
 import { RulesPage } from "./pages/RulesPage";
 import { SecretsPage } from "./pages/SecretsPage";
+import { SettingsPage } from "./pages/SettingsPage";
 import { SkillsPage } from "./pages/SkillsPage";
 import { UpdateBanner } from "./UpdateBanner";
 import "./App.css";
@@ -36,7 +37,7 @@ const SECTIONS = [
   pages: readonly { id: string; label: string; icon: IconName }[];
 }[];
 
-export type PageId = (typeof SECTIONS)[number]["pages"][number]["id"];
+export type PageId = (typeof SECTIONS)[number]["pages"][number]["id"] | "settings";
 
 const PAGES: readonly { id: PageId; label: string; icon: IconName }[] = SECTIONS.flatMap(
   (section): readonly { id: PageId; label: string; icon: IconName }[] => section.pages,
@@ -58,7 +59,7 @@ export interface UnsavedGuard {
   save: () => Promise<boolean>;
 }
 
-type Theme = "system" | "light" | "dark";
+export type Theme = "system" | "light" | "dark";
 const THEMES: Theme[] = ["system", "light", "dark"];
 const THEME_ICONS: Record<Theme, IconName> = { system: "monitor", light: "sun", dark: "moon" };
 
@@ -204,6 +205,7 @@ function App() {
     }));
     list.push(
       { label: "Add an MCP server", icon: "plus", keywords: "new", run: () => navigate("mcp", { kind: "add-server" }) },
+      { label: "Settings", icon: "settings", keywords: "preferences theme updates backups trash folders", run: () => navigate("settings") },
       { label: "Reload configs", icon: "refresh", hint: shortcut("R"), keywords: "refresh", run: refresh },
       { label: `Switch to the ${nextTheme} theme`, icon: THEME_ICONS[nextTheme], keywords: "theme dark light", run: () => setTheme(nextTheme) },
     );
@@ -322,12 +324,13 @@ function App() {
               <Icon name="refresh" />
             </button>
             <button
-              className="icon-button"
-              onClick={() => setTheme(nextTheme)}
-              title={`Theme: ${theme} (switch to ${nextTheme})`}
-              aria-label={`Theme: ${theme}. Switch to ${nextTheme}`}
+              className={`icon-button ${page === "settings" ? "active" : ""}`}
+              aria-current={page === "settings" ? "page" : undefined}
+              onClick={() => navigate("settings")}
+              title="Settings"
+              aria-label="Settings"
             >
-              <Icon name={THEME_ICONS[theme]} />
+              <Icon name="settings" />
             </button>
           </div>
         </div>
@@ -347,6 +350,16 @@ function App() {
           {page === "skills" && <SkillsPage agents={agents} focus={focus} />}
           {page === "secrets" && <SecretsPage agents={agents} onChange={refresh} />}
           {page === "history" && <HistoryPage agents={agents} />}
+          {page === "settings" && (
+            <SettingsPage
+              agents={agents}
+              secrets={secrets}
+              version={version}
+              theme={theme}
+              setTheme={setTheme}
+              onChange={refresh}
+            />
+          )}
         </div>
       </main>
 

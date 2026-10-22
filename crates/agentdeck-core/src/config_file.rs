@@ -28,11 +28,33 @@ pub fn backup_path(path: &Path) -> PathBuf {
     with_suffix(path, ".agentdeck.bak")
 }
 
+/// Folder holding every timestamped backup: `~/.agentdeck/backups`.
+pub fn backups_root(home: &Path) -> PathBuf {
+    home.join(".agentdeck").join("backups")
+}
+
+/// How many timestamped backups there are, of all files.
+pub fn backup_count(home: &Path) -> usize {
+    fn count(dir: &Path) -> usize {
+        fs::read_dir(dir).map_or(0, |entries| {
+            entries
+                .flatten()
+                .map(|entry| match entry.file_type() {
+                    Ok(kind) if kind.is_dir() => count(&entry.path()),
+                    Ok(_) => 1,
+                    Err(_) => 0,
+                })
+                .sum()
+        })
+    }
+    count(&backups_root(home))
+}
+
 /// Folder holding the timestamped backups of `path`, which mirrors where
 /// `path` sits under `home`: `~/.agentdeck/backups/.codex/config.toml/`.
 pub fn backups_dir(home: &Path, path: &Path) -> PathBuf {
     let relative = path.strip_prefix(home).unwrap_or(path);
-    let mut dir = home.join(".agentdeck").join("backups");
+    let mut dir = backups_root(home);
     for component in relative.components() {
         if let Component::Normal(part) = component {
             dir.push(part);
@@ -144,7 +166,7 @@ fn keep_backup(home: &Path, path: &Path, previous: &str) -> Result<()> {
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;
-        let root = home.join(".agentdeck").join("backups");
+        let root = backups_root(home);
         fs::set_permissions(&root, fs::Permissions::from_mode(0o700))
             .map_err(|source| io_error(&root, source))?;
     }
