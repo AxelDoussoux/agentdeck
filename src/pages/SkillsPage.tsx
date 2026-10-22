@@ -1,13 +1,24 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, type FormEvent } from "react";
 import type { Focus } from "../App";
 import { AgentMark, Empty, Icon, Notice, PageHeader } from "../components/ui";
 import { ConfirmDialog } from "../components/ConfirmDialog";
 import { DiffView } from "../components/DiffView";
 import { Drawer } from "../components/Drawer";
+import { Markdown } from "../components/Markdown";
 import { useToast } from "../components/Toasts";
-import { copySkill, listSkills, readSkill, removeSkill, replaceSkill, restoreSkill } from "../lib/api";
+import {
+  copySkill,
+  createSkill,
+  listSkills,
+  openFolder,
+  readSkill,
+  removeSkill,
+  replaceSkill,
+  restoreSkill,
+  skillFiles,
+} from "../lib/api";
 import { useFilesChanged } from "../lib/watch";
-import type { Agent, AgentInfo, Skill, SkillListing, SkillLocation, TrashedSkill } from "../lib/types";
+import type { Agent, AgentInfo, Skill, SkillFile, SkillListing, SkillLocation, TrashedSkill } from "../lib/types";
 
 const LOCATION_LABELS: Record<SkillLocation, string> = {
   "claude-code": "~/.claude/skills",
@@ -16,6 +27,27 @@ const LOCATION_LABELS: Record<SkillLocation, string> = {
   gemini: "~/.gemini/skills",
   cursor: "~/.cursor/skills",
 };
+
+/** Short names for the grid, where the full path is the cell's tooltip. */
+const SHORT_LABELS: Record<SkillLocation, string> = {
+  "claude-code": "Claude",
+  shared: "shared",
+  codex: "Codex",
+  gemini: "Gemini",
+  cursor: "Cursor",
+};
+
+/** The agents that load each folder, as the core lists them. */
+const FOLDER_READERS: Record<SkillLocation, string> = {
+  "claude-code": "Claude Code and Cursor",
+  shared: "Codex, Gemini CLI and Cursor",
+  codex: "Codex and Cursor",
+  gemini: "Gemini CLI",
+  cursor: "Cursor",
+};
+
+const formatSize = (bytes: number) =>
+  bytes < 1024 ? `${bytes} B` : bytes < 1024 * 1024 ? `${(bytes / 1024).toFixed(1)} KB` : `${(bytes / 1024 / 1024).toFixed(1)} MB`;
 
 const formatDate = (ms: number) =>
   new Date(ms).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" });
@@ -32,6 +64,10 @@ export function SkillsPage({ agents, focus }: { agents: AgentInfo[]; focus?: Foc
   const [tab, setTab] = useState<SkillTab>("details");
   const [previewed, setPreviewed] = useState<SkillLocation | null>(null);
   const [preview, setPreview] = useState<string>("");
+  const [files, setFiles] = useState<SkillFile[] | null>(null);
+  const [source, setSource] = useState(false);
+  const [creating, setCreating] = useState(false);
+  const [created, setCreated] = useState<string | null>(null);
   const [pendingRemoval, setPendingRemoval] = useState<SkillLocation | null>(null);
   const [pendingSpread, setPendingSpread] = useState<SkillLocation | null>(null);
   const [pendingRestore, setPendingRestore] = useState<TrashedSkill | null>(null);
@@ -72,7 +108,9 @@ export function SkillsPage({ agents, focus }: { agents: AgentInfo[]; focus?: Foc
 
   async function show(name: string, location: SkillLocation) {
     setPreviewed(location);
+    setFiles(null);
     setPreview(await readSkill(location, name).catch(String));
+    setFiles(await skillFiles(location, name).catch(() => []));
   }
 
   async function open(name: string, opening: SkillTab = "details") {
@@ -83,10 +121,29 @@ export function SkillsPage({ agents, focus }: { agents: AgentInfo[]; focus?: Foc
     if (found) await show(name, newest(found).location);
   }
 
+  // Opens a skill created here once the listing has it.
+  useEffect(() => {
+    if (created && byName.has(created)) {
+      setCreated(null);
+      open(created);
+    }
+  }, [created, listing]);
+
   useFilesChanged("skills", async () => {
     await load();
-    if (selected && previewed) setPreview(await readSkill(previewed, selected).catch(() => ""));
+    if (selected && previewed) {
+      setPreview(await readSkill(previewed, selected).catch(() => ""));
+      setFiles(await skillFiles(previewed, selected).catch(() => []));
+    }
   });
+
+  async function create(location: SkillLocation, name: string, description: string) {
+    await createSkill(location, name, description);
+    notify({ tone: "success", text: `Created ${name} in ${LOCATION_LABELS[location]}. Fill in its SKILL.md.` });
+    setCreating(false);
+    setCreated(name);
+    await load();
+  }
 
   async function run(action: () => Promise<string>) {
     try {
@@ -125,11 +182,23 @@ export function SkillsPage({ agents, focus }: { agents: AgentInfo[]; focus?: Foc
         title="Skills"
         description="Folders with a SKILL.md that agents load on demand. Codex, Gemini CLI and Cursor share ~/.agents/skills, and Cursor also reads the Claude Code and Codex folders, so one copy can reach several agents."
         actions={
-          <button aria-pressed={showTrash} onClick={() => setShowTrash(!showTrash)}>
-            Trash{listing.trash.length > 0 && ` (${listing.trash.length})`}
-          </button>
+          <>
+            <button aria-pressed={showTrash} onClick={() => setShowTrash(!showTrash)}>
+              Trash{listing.trash.length > 0 && ` (${listing.trash.length})`}
+            </button>
+            <button className="primary" onClick={() => setCreating(!creating)}>
+              <Icon name="plus" /> New skill
+            </button>
+          </>
         }
       />
+      {creating && (
+        <NewSkillForm
+          taken={(location, name) => listing.skills.some((s) => s.location === location && s.name === name)}
+          onSubmit={create}
+          onCancel={() => setCreating(false)}
+        />
+      )}
       {listing.errors.map((text) => (
         <Notice key={text} tone="error">{text}</Notice>
       ))}
@@ -204,7 +273,8 @@ export function SkillsPage({ agents, focus }: { agents: AgentInfo[]; focus?: Foc
                       return via ? (
                         <td key={agent} className="agent-col" title={`Loaded from ${via.path}`}>
                           <span className="cell cell-on">
-                            <Icon name="check" size={14} /> {LOCATION_LABELS[via.location]}
+                            <Icon name={via.location === "shared" ? "share" : "folder"} size={14} />{" "}
+                            {SHORT_LABELS[via.location]}
                           </span>
                         </td>
                       ) : (
@@ -282,7 +352,52 @@ export function SkillsPage({ agents, focus }: { agents: AgentInfo[]; focus?: Foc
                   );
                 })}
               </ul>
-              <pre className="preview">{preview}</pre>
+              <div className="drawer-section">
+                <header>
+                  <strong>SKILL.md</strong>
+                  <div className="segmented" role="group" aria-label="How to show SKILL.md">
+                    <button aria-pressed={!source} className={source ? undefined : "active"} onClick={() => setSource(false)}>
+                      Preview
+                    </button>
+                    <button aria-pressed={source} className={source ? "active" : undefined} onClick={() => setSource(true)}>
+                      Source
+                    </button>
+                  </div>
+                </header>
+                {source ? <pre className="preview">{preview}</pre> : <Markdown text={preview} />}
+              </div>
+              {previewed && (
+                <div className="drawer-section">
+                  <header>
+                    <strong>
+                      Files{files && files.length > 0 && <span className="tab-count">{files.length}</span>}
+                    </strong>
+                    <button
+                      className="small"
+                      onClick={() =>
+                        openFolder({ skill: { location: previewed, name: selected } }).catch((err) =>
+                          notify({ tone: "error", text: String(err) }),
+                        )
+                      }
+                    >
+                      <Icon name="folder" size={14} /> Show in folder
+                    </button>
+                  </header>
+                  {files === null ? (
+                    <p className="hint">Reading the folder…</p>
+                  ) : (
+                    <ul className="skill-files">
+                      {files.map((file) => (
+                        <li key={file.path}>
+                          <code>{file.path}</code>
+                          <span className="hint">{formatSize(file.size)}</span>
+                        </li>
+                      ))}
+                      {files.length >= 500 && <li className="hint">Only the first 500 files are listed.</li>}
+                    </ul>
+                  )}
+                </div>
+              )}
             </>
           )}
 
@@ -398,6 +513,84 @@ export function SkillsPage({ agents, focus }: { agents: AgentInfo[]; focus?: Foc
             </ConfirmDialog>
           ))}
     </>
+  );
+}
+
+interface NewSkillProps {
+  taken: (location: SkillLocation, name: string) => boolean;
+  onSubmit: (location: SkillLocation, name: string, description: string) => Promise<void>;
+  onCancel: () => void;
+}
+
+/** Names a new skill and the folder it goes in; the core writes a SKILL.md to fill in. */
+function NewSkillForm({ taken, onSubmit, onCancel }: NewSkillProps) {
+  const [name, setName] = useState("");
+  const [location, setLocation] = useState<SkillLocation>("shared");
+  const [description, setDescription] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const valid = /^[a-z0-9]+(-[a-z0-9]+)*$/.test(name) && name.length <= 64;
+  const exists = name !== "" && taken(location, name);
+
+  async function submit(event: FormEvent) {
+    event.preventDefault();
+    try {
+      await onSubmit(location, name, description);
+    } catch (err) {
+      setError(String(err));
+    }
+  }
+
+  return (
+    <form className="card form" onSubmit={submit}>
+      <h3>New skill</h3>
+      {error && <Notice tone="error">{error}</Notice>}
+      <div className="fields">
+        <label>
+          Name
+          <input
+            required
+            autoFocus
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            placeholder="pdf-tools"
+            aria-invalid={(name !== "" && !valid) || exists}
+            aria-describedby="new-skill-name"
+          />
+          <small id="new-skill-name" className={(name !== "" && !valid) || exists ? "danger-text" : "hint"}>
+            {exists
+              ? `${LOCATION_LABELS[location]} already has a skill named ${name}.`
+              : "Lowercase letters, digits and single hyphens. It names the folder."}
+          </small>
+        </label>
+        <label>
+          Folder
+          <select value={location} onChange={(e) => setLocation(e.target.value as SkillLocation)}>
+            {(Object.keys(LOCATION_LABELS) as SkillLocation[]).map((option) => (
+              <option key={option} value={option}>
+                {LOCATION_LABELS[option]}
+              </option>
+            ))}
+          </select>
+          <small className="hint">Loaded by {FOLDER_READERS[location]}</small>
+        </label>
+      </div>
+      <label>
+        Description
+        <input
+          value={description}
+          onChange={(e) => setDescription(e.target.value)}
+          placeholder="What the skill does, and when the agent should use it"
+        />
+      </label>
+      <div className="form-actions">
+        <button type="submit" className="primary" disabled={!valid || exists}>
+          Create
+        </button>
+        <button type="button" onClick={onCancel}>
+          Cancel
+        </button>
+      </div>
+    </form>
   );
 }
 

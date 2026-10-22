@@ -105,6 +105,15 @@ enum SkillsCommand {
         #[arg(long, value_enum, default_value = "claude-code")]
         from: LocationArg,
     },
+    /// Create a skill from a template
+    New {
+        name: String,
+        #[arg(long, value_enum, default_value = "shared")]
+        to: LocationArg,
+        /// What the skill does and when to use it
+        #[arg(long, default_value = "")]
+        description: String,
+    },
     /// Copy a skill folder so that other agents load it
     Copy {
         name: String,
@@ -542,6 +551,14 @@ fn run_skills(
             }
         }
         SkillsCommand::Show { name, from } => print!("{}", skills::read(home, from.into(), &name)?),
+        SkillsCommand::New {
+            name,
+            to,
+            description,
+        } => {
+            let path = skills::create(home, to.into(), &name, &description)?;
+            println!("Created {}", path.display());
+        }
         SkillsCommand::Copy {
             name,
             from,

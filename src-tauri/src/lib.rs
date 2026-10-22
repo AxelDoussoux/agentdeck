@@ -227,6 +227,7 @@ enum AppFolder {
     Backups,
     Trash,
     Agent(Agent),
+    Skill { location: Location, name: String },
 }
 
 #[tauri::command]
@@ -237,6 +238,9 @@ fn open_folder(app: tauri::AppHandle, folder: AppFolder) -> Result<(), String> {
         AppFolder::Backups => config_file::backups_root(&home),
         AppFolder::Trash => skills::trash_dir(&home),
         AppFolder::Agent(agent) => agent.folder(&home),
+        AppFolder::Skill { location, name } => {
+            skills::skill_dir(&home, location, &name).map_err(|err| err.to_string())?
+        }
     };
     if !path.is_dir() {
         return Err(format!("{} does not exist yet.", path.display()));
@@ -379,6 +383,19 @@ fn list_skills() -> Result<SkillListing, String> {
 #[tauri::command]
 fn read_skill(location: Location, name: String) -> Result<String, String> {
     skills::read(&home()?, location, &name).map_err(|err| err.to_string())
+}
+
+#[tauri::command]
+fn skill_files(location: Location, name: String) -> Result<Vec<skills::SkillFile>, String> {
+    skills::files(&home()?, location, &name).map_err(|err| err.to_string())
+}
+
+/// Creates a skill from the template and returns its folder.
+#[tauri::command]
+fn create_skill(location: Location, name: String, description: String) -> Result<String, String> {
+    skills::create(&home()?, location, &name, &description)
+        .map(|path| path.display().to_string())
+        .map_err(|err| err.to_string())
 }
 
 #[tauri::command]
@@ -553,6 +570,8 @@ pub fn run() {
             save_rules,
             list_skills,
             read_skill,
+            skill_files,
+            create_skill,
             copy_skill,
             remove_skill,
             replace_skill,

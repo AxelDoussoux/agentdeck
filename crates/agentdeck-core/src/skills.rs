@@ -152,6 +152,96 @@ pub fn read(home: &Path, location: Location, name: &str) -> Result<String> {
     fs::read_to_string(&path).map_err(|_| Error::SkillNotFound { path })
 }
 
+/// One file of a skill folder.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SkillFile {
+    /// Path inside the skill folder, with `/` between folders.
+    pub path: String,
+    pub size: u64,
+}
+
+/// At most this many files are listed, for skills that bundle a whole project.
+const FILES_LISTED: usize = 500;
+
+/// The files of a skill folder, sorted by path.
+pub fn files(home: &Path, location: Location, name: &str) -> Result<Vec<SkillFile>> {
+    fn walk(dir: &Path, prefix: &str, found: &mut Vec<SkillFile>) -> Result<()> {
+        let entries = fs::read_dir(dir).map_err(|source| io_error(dir, source))?;
+        for entry in entries.flatten() {
+            if found.len() >= FILES_LISTED {
+                break;
+            }
+            let path = format!("{prefix}{}", entry.file_name().to_string_lossy());
+            match entry.file_type() {
+                Ok(kind) if kind.is_dir() => walk(&entry.path(), &format!("{path}/"), found)?,
+                Ok(_) => found.push(SkillFile {
+                    path,
+                    size: entry.metadata().map_or(0, |metadata| metadata.len()),
+                }),
+                Err(_) => {}
+            }
+        }
+        Ok(())
+    }
+    let dir = skill_dir(home, location, name)?;
+    if !dir.is_dir() {
+        return Err(Error::SkillNotFound { path: dir });
+    }
+    let mut found = Vec::new();
+    walk(&dir, "", &mut found)?;
+    found.sort_by(|a, b| a.path.cmp(&b.path));
+    Ok(found)
+}
+
+/// Creates a skill with a `SKILL.md` to fill in, and returns its folder.
+/// The name follows the Agent Skills standard: lower-case letters, digits and
+/// single hyphens, at most 64 characters.
+pub fn create(home: &Path, location: Location, name: &str, description: &str) -> Result<PathBuf> {
+    let valid = !name.is_empty()
+        && name.len() <= 64
+        && !name.starts_with('-')
+        && !name.ends_with('-')
+        && !name.contains("--")
+        && name
+            .bytes()
+            .all(|byte| byte.is_ascii_lowercase() || byte.is_ascii_digit() || byte == b'-');
+    if !valid {
+        return Err(Error::NewSkillName {
+            name: name.to_owned(),
+        });
+    }
+    let dir = skill_dir(home, location, name)?;
+    if dir.exists() {
+        return Err(Error::SkillExists { path: dir });
+    }
+    let description = description.split_whitespace().collect::<Vec<_>>().join(" ");
+    let title = name
+        .split('-')
+        .filter(|word| !word.is_empty())
+        .map(|word| {
+            let mut chars = word.chars();
+            chars.next().map_or_else(String::new, |first| {
+                first.to_ascii_uppercase().to_string() + chars.as_str()
+            })
+        })
+        .collect::<Vec<_>>()
+        .join(" ");
+    let content = format!(
+        "---\nname: {name}\ndescription: {}\n---\n\n# {title}\n\n\
+         ## When to use\n\n\
+         Say when the agent should load this skill.\n\n\
+         ## Instructions\n\n\
+         1. The first step.\n\
+         2. The next one.\n",
+        serde_json::to_string(&description).unwrap_or_default()
+    );
+    fs::create_dir_all(&dir).map_err(|source| io_error(&dir, source))?;
+    let file = dir.join("SKILL.md");
+    fs::write(&file, content).map_err(|source| io_error(&file, source))?;
+    Ok(dir)
+}
+
 /// Copies a skill folder with all its files so that `to` loads it.
 pub fn copy(home: &Path, name: &str, from: Location, to: Agent, overwrite: bool) -> Result<()> {
     copy_to(home, name, from, Location::for_agent(to), overwrite)
@@ -330,7 +420,7 @@ fn fingerprint(dir: &Path) -> (u64, u64) {
 }
 
 /// Rejects names that would escape the skills folder.
-fn skill_dir(home: &Path, location: Location, name: &str) -> Result<PathBuf> {
+pub fn skill_dir(home: &Path, location: Location, name: &str) -> Result<PathBuf> {
     let valid = !name.is_empty()
         && name != "."
         && name != ".."
@@ -539,5 +629,56 @@ mod tests {
             let err = remove(home.path(), Location::Cursor, name).unwrap_err();
             assert!(matches!(err, Error::InvalidSkillName { .. }), "{name}");
         }
+    }
+
+    #[test]
+    fn a_new_skill_starts_from_a_template() {
+        let home = tempfile::tempdir().unwrap();
+        let home = home.path();
+        let dir = create(
+            home,
+            Location::Shared,
+            "pdf-tools",
+            "Split and merge PDF files: fast.",
+        )
+        .unwrap();
+        assert_eq!(dir, home.join(".agents/skills/pdf-tools"));
+        let content = read(home, Location::Shared, "pdf-tools").unwrap();
+        assert!(content.starts_with("---\nname: pdf-tools\n"));
+        assert!(content.contains("# Pdf Tools"));
+        assert_eq!(
+            frontmatter_field(&content, "description").as_deref(),
+            Some("Split and merge PDF files: fast.")
+        );
+
+        let (skills, _) = list(home);
+        assert_eq!(skills[0].name, "pdf-tools");
+        assert_eq!(
+            files(home, Location::Shared, "pdf-tools").unwrap(),
+            [SkillFile {
+                path: "SKILL.md".into(),
+                size: content.len() as u64
+            }]
+        );
+
+        let err = create(home, Location::Shared, "pdf-tools", "Again").unwrap_err();
+        assert!(matches!(err, Error::SkillExists { .. }));
+        for bad in ["PDF", "pdf tools", "-pdf", "pdf--tools", "../pdf", ""] {
+            assert!(create(home, Location::Shared, bad, "x").is_err(), "{bad}");
+        }
+    }
+
+    #[test]
+    fn files_lists_nested_resources() {
+        let home = tempfile::tempdir().unwrap();
+        let home = home.path();
+        make_skill(home, Location::ClaudeCode, "pdf");
+        fs::write(home.join(".claude/skills/pdf/scripts/split.py"), "print()").unwrap();
+        let paths: Vec<_> = files(home, Location::ClaudeCode, "pdf")
+            .unwrap()
+            .into_iter()
+            .map(|file| file.path)
+            .collect();
+        assert_eq!(paths, ["SKILL.md", "scripts/run.sh", "scripts/split.py"]);
     }
 }
