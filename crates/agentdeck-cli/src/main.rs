@@ -105,6 +105,16 @@ enum SkillsCommand {
         #[arg(long, value_enum)]
         from: LocationArg,
     },
+    /// List the skills in ~/.agentdeck/trash, most recent first
+    Trash,
+    /// Put a skill from the trash back where it was removed from
+    Restore {
+        /// The id shown by `skills trash`
+        id: String,
+        /// Replace the skill there now (it goes to the trash in turn)
+        #[arg(long)]
+        force: bool,
+    },
 }
 
 /// A skills folder: an agent's own, or `shared` for ~/.agents/skills.
@@ -488,6 +498,20 @@ fn run_skills(
         SkillsCommand::Remove { name, from } => {
             let trashed = skills::remove(home, from.into(), &name)?;
             println!("Moved \"{name}\" to {}", trashed.display());
+        }
+        SkillsCommand::Trash => {
+            let all = skills::trashed(home);
+            if json {
+                println!("{}", serde_json::to_string_pretty(&all).unwrap());
+            } else {
+                for skill in &all {
+                    println!("{:<40} {}", skill.id, skill.location.path(home).display());
+                }
+            }
+        }
+        SkillsCommand::Restore { id, force } => {
+            let location = skills::restore(home, &id, force)?;
+            println!("Restored {id} to {}", location.path(home).display());
         }
     }
     Ok(())

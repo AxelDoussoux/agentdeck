@@ -115,11 +115,25 @@ export interface Skill {
   location: SkillLocation;
   path: string;
   readers: Agent[];
+  /** Latest change of any file in the folder. */
+  modifiedMs: number;
+  /** Copies with the same hash are identical. */
+  hash: string;
+}
+
+/** A skill folder in `~/.agentdeck/trash`. */
+export interface TrashedSkill {
+  id: string;
+  name: string;
+  description: string | null;
+  location: SkillLocation;
+  removedMs: number;
 }
 
 export interface SkillListing {
   skills: Skill[];
   errors: string[];
+  trash: TrashedSkill[];
 }
 
 export interface SecretRef {

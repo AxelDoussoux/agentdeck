@@ -260,12 +260,18 @@ fn save_rules(undo: State<UndoStore>, agent: Agent, content: String) -> Result<u
 struct SkillListing {
     skills: Vec<Skill>,
     errors: Vec<String>,
+    trash: Vec<skills::TrashedSkill>,
 }
 
 #[tauri::command]
 fn list_skills() -> Result<SkillListing, String> {
-    let (skills, errors) = skills::list(&home()?);
-    Ok(SkillListing { skills, errors })
+    let home = home()?;
+    let (skills, errors) = skills::list(&home);
+    Ok(SkillListing {
+        skills,
+        errors,
+        trash: skills::trashed(&home),
+    })
 }
 
 #[tauri::command]
@@ -276,6 +282,18 @@ fn read_skill(location: Location, name: String) -> Result<String, String> {
 #[tauri::command]
 fn copy_skill(name: String, from: Location, to: Agent) -> Result<(), String> {
     skills::copy(&home()?, &name, from, to, false).map_err(|err| err.to_string())
+}
+
+/// Replaces the copy of a skill in `to` with the one in `from`; the old copy
+/// goes to the trash.
+#[tauri::command]
+fn replace_skill(name: String, from: Location, to: Location) -> Result<(), String> {
+    skills::copy_to(&home()?, &name, from, to, true).map_err(|err| err.to_string())
+}
+
+#[tauri::command]
+fn restore_skill(id: String, overwrite: bool) -> Result<Location, String> {
+    skills::restore(&home()?, &id, overwrite).map_err(|err| err.to_string())
 }
 
 #[tauri::command]
@@ -410,6 +428,8 @@ pub fn run() {
             read_skill,
             copy_skill,
             remove_skill,
+            replace_skill,
+            restore_skill,
             list_secrets,
             protect_server,
             unprotect_server,

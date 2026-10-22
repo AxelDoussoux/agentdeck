@@ -6,6 +6,9 @@ import type { Agent, AgentInfo, Tokens, UsageReport } from "../lib/types";
 
 const PERIODS = [7, 30, 90] as const;
 
+/** Sessions shown at first, and added by each "Show more". */
+const PAGE = 100;
+
 const totalTokens = (t: Tokens) =>
   t.input + t.output + t.cacheRead + t.cacheWrite5m + t.cacheWrite1h;
 
@@ -22,6 +25,8 @@ export function HistoryPage({ agents }: { agents: AgentInfo[] }) {
   const [error, setError] = useState<string | null>(null);
   const [days, setDays] = useState<(typeof PERIODS)[number]>(30);
   const [filter, setFilter] = useState<Agent | "all">("all");
+  const [query, setQuery] = useState("");
+  const [shown, setShown] = useState(PAGE);
 
   async function load() {
     setReport(null);
@@ -45,6 +50,14 @@ export function HistoryPage({ agents }: { agents: AgentInfo[] }) {
   const daily = report ? localDays(report).filter((d) => d.date >= since && matches(d.agent)) : [];
   const sessions =
     report?.sessions.filter((s) => s.endedAt && dateOf(s.endedAt) >= since && matches(s.agent)) ?? [];
+  const words = query.toLowerCase().split(/\s+/).filter(Boolean);
+  const found = sessions.filter((s) => {
+    const text = [s.title, s.project, s.id, ...s.models].join(" ").toLowerCase();
+    return words.every((word) => text.includes(word));
+  });
+
+  // A new search or period starts from the most recent sessions again.
+  useEffect(() => setShown(PAGE), [query, days, filter]);
   const costByDate = new Map<string, number>();
   for (const day of daily) costByDate.set(day.date, (costByDate.get(day.date) ?? 0) + day.costUsd);
   const maxCost = Math.max(0.01, ...costByDate.values());
@@ -145,8 +158,19 @@ export function HistoryPage({ agents }: { agents: AgentInfo[] }) {
             </div>
           </section>
 
-          {sessions.length === 0 ? (
-            <Empty icon="chart" title="No session in this period" />
+          <div className="toolbar sessions-bar">
+            <h2 className="section-title">Sessions</h2>
+            <span className="spacer" />
+            <input
+              type="search"
+              placeholder="Search titles, projects, models"
+              aria-label="Search sessions"
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+            />
+          </div>
+          {found.length === 0 ? (
+            <Empty icon="chart" title={sessions.length === 0 ? "No session in this period" : "No session matches"} />
           ) : (
             <div className="table-card">
               <table className="sessions">
@@ -160,7 +184,7 @@ export function HistoryPage({ agents }: { agents: AgentInfo[] }) {
                   </tr>
                 </thead>
                 <tbody>
-                  {sessions.slice(0, 200).map((session) => (
+                  {found.slice(0, shown).map((session) => (
                     <tr key={`${session.agent}/${session.id}`}>
                       <td className="nowrap">{session.endedAt && dateOf(session.endedAt)}</td>
                       <td>
@@ -191,7 +215,16 @@ export function HistoryPage({ agents }: { agents: AgentInfo[] }) {
               </table>
             </div>
           )}
-          {sessions.length > 200 && <p className="hint">Showing the 200 most recent sessions.</p>}
+          {found.length > shown && (
+            <div className="more">
+              <span className="hint">
+                Showing {shown} of {found.length} sessions
+              </span>
+              <button className="small" onClick={() => setShown(shown + PAGE)}>
+                Show {Math.min(PAGE, found.length - shown)} more
+              </button>
+            </div>
+          )}
         </>
       )}
     </>

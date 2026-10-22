@@ -1258,6 +1258,29 @@ tr:hover .row-menu .icon-button,
   font-size: 12px;
 }
 
+.copies li.active {
+  box-shadow: inset 3px 0 0 var(--accent);
+}
+
+.copies li > div {
+  min-width: 0;
+}
+
+.copy-actions {
+  display: flex;
+  flex: none;
+  gap: 6px;
+}
+
+.differ-note {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-top: 2px;
+  color: var(--warn);
+  font-size: 12px;
+}
+
 .preview {
   max-height: 380px;
   margin: 0;
@@ -1598,4 +1621,24 @@ button.cell-differs:hover {
   display: block;
   margin-top: 4px;
   color: var(--muted);
+}
+
+.sessions-bar {
+  margin: 28px 0 12px;
+}
+
+.sessions-bar .section-title {
+  margin: 0;
+}
+
+.sessions-bar input {
+  width: min(320px, 100%);
+}
+
+.more {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  margin-top: 12px;
 }

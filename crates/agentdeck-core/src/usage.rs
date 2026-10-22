@@ -120,11 +120,243 @@ pub fn date_days_ago(days: u32) -> String {
 }
 
 /// Reads the usage of every agent with local logs.
+///
+/// Logs grow to gigabytes, so what each file says is cached in
+/// `~/.agentdeck/cache/usage.json` and a file is only parsed again when its
+/// size or modification time changes. Costs are computed on each read, so a
+/// price change applies to old sessions too.
 pub fn report(home: &Path) -> UsageReport {
+    let cache_path = home.join(".agentdeck").join("cache").join("usage.json");
+    let mut cache = Cache::load(&cache_path);
+    let mut kept = Cache::default();
     let mut builder = ReportBuilder::default();
-    read_claude_code(&home.join(".claude").join("projects"), &mut builder);
-    read_codex(&home.join(".codex"), &mut builder);
+
+    let codex = home.join(".codex");
+    let mut codex_files = jsonl_files(&codex.join("sessions"));
+    codex_files.extend(jsonl_files(&codex.join("archived_sessions")));
+    let sources = [
+        (
+            Agent::ClaudeCode,
+            jsonl_files(&home.join(".claude").join("projects")),
+        ),
+        (Agent::Codex, codex_files),
+    ];
+    for (agent, files) in sources {
+        for path in files {
+            let key = path.to_string_lossy().into_owned();
+            let stamp = stamp(&path);
+            let log = match cache.files.remove(&key) {
+                Some(log) if stamp == Some((log.size, log.modified_ms)) => log,
+                _ => {
+                    let parsed = match agent {
+                        Agent::Codex => parse_codex_rollout(&path),
+                        _ => parse_claude_code(&path),
+                    };
+                    match (parsed, stamp) {
+                        (Ok(mut log), Some((size, modified_ms))) => {
+                            (log.size, log.modified_ms) = (size, modified_ms);
+                            kept.changed = true;
+                            log
+                        }
+                        (Ok(log), None) => log,
+                        (Err(err), _) => {
+                            builder.errors.push(file_error(&path, err));
+                            continue;
+                        }
+                    }
+                }
+            };
+            builder.replay(agent, &log);
+            kept.files.insert(key, log);
+        }
+    }
+    // Files that are gone leave the cache too.
+    if kept.changed || !cache.files.is_empty() {
+        kept.save(&cache_path);
+    }
     builder.finish()
+}
+
+/// Bump when the parsers change, so that cached files are read again.
+const CACHE_VERSION: u32 = 1;
+
+#[derive(Default, Serialize, Deserialize)]
+struct Cache {
+    version: u32,
+    /// By path of the log file.
+    files: BTreeMap<String, FileLog>,
+    #[serde(skip)]
+    changed: bool,
+}
+
+impl Cache {
+    /// The cache, or an empty one when it is missing, unreadable or from
+    /// another version.
+    fn load(path: &Path) -> Cache {
+        fs::read(path)
+            .ok()
+            .and_then(|bytes| serde_json::from_slice::<Cache>(&bytes).ok())
+            .filter(|cache| cache.version == CACHE_VERSION)
+            .unwrap_or_default()
+    }
+
+    /// Saves the cache atomically. A cache that cannot be written only means
+    /// the logs are parsed again next time.
+    fn save(mut self, path: &Path) {
+        self.version = CACHE_VERSION;
+        let Some(dir) = path.parent() else {
+            return;
+        };
+        let tmp = path.with_extension("json.tmp");
+        let written = fs::create_dir_all(dir)
+            .and_then(|()| private(dir))
+            .and_then(|()| fs::write(&tmp, serde_json::to_vec(&self).unwrap_or_default()))
+            .and_then(|()| fs::rename(&tmp, path));
+        if written.is_err() {
+            let _ = fs::remove_file(&tmp);
+        }
+    }
+}
+
+/// The cache holds prompts and project paths: only the user may read it.
+fn private(dir: &Path) -> std::io::Result<()> {
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        fs::set_permissions(dir, fs::Permissions::from_mode(0o700))?;
+    }
+    #[cfg(not(unix))]
+    let _ = dir;
+    Ok(())
+}
+
+/// Size and modification time of a file, in milliseconds.
+fn stamp(path: &Path) -> Option<(u64, u64)> {
+    let metadata = fs::metadata(path).ok()?;
+    let modified = metadata
+        .modified()
+        .ok()?
+        .duration_since(std::time::UNIX_EPOCH)
+        .ok()?;
+    Some((metadata.len(), modified.as_millis() as u64))
+}
+
+/// What one log file says, on its own, so that it can be cached and combined
+/// with the other files later.
+#[derive(Default, Serialize, Deserialize)]
+struct FileLog {
+    size: u64,
+    modified_ms: u64,
+    sessions: Vec<FileSession>,
+    models: Vec<String>,
+    /// Token usage of each API response, in the order of the file.
+    usage: Vec<FileUsage>,
+}
+
+#[derive(Default, Serialize, Deserialize)]
+struct FileSession {
+    id: String,
+    /// The first working directory the file gives.
+    project: Option<String>,
+    started_at: Option<String>,
+    ended_at: Option<String>,
+    /// Title the agent generated; the last one wins over any prompt.
+    ai_title: Option<String>,
+    /// First prompt of the file, the title when the agent set none.
+    prompt: Option<String>,
+}
+
+/// Session and model (indexes in the file's lists), a hash of the message id
+/// to count a response copied into several files once (0 when there is
+/// none), the `YYYY-MM-DDTHH` hour, and the tokens.
+#[derive(Serialize, Deserialize)]
+struct FileUsage(usize, usize, u64, String, [u64; 5]);
+
+impl FileLog {
+    fn session(&mut self, id: &str) -> usize {
+        match self.sessions.iter().position(|session| session.id == id) {
+            Some(index) => index,
+            None => {
+                self.sessions.push(FileSession {
+                    id: id.to_owned(),
+                    ..FileSession::default()
+                });
+                self.sessions.len() - 1
+            }
+        }
+    }
+
+    fn touch(&mut self, id: &str, timestamp: Option<&str>, project: Option<&str>) -> usize {
+        let index = self.session(id);
+        let session = &mut self.sessions[index];
+        if session.project.is_none() {
+            session.project = project.map(str::to_owned);
+        }
+        if let Some(timestamp) = timestamp {
+            if session
+                .started_at
+                .as_deref()
+                .is_none_or(|start| timestamp < start)
+            {
+                session.started_at = Some(timestamp.to_owned());
+            }
+            if session
+                .ended_at
+                .as_deref()
+                .is_none_or(|end| timestamp > end)
+            {
+                session.ended_at = Some(timestamp.to_owned());
+            }
+        }
+        index
+    }
+
+    fn prompt(&mut self, session: usize, prompt: Option<String>) {
+        let session = &mut self.sessions[session];
+        if session.prompt.is_none() {
+            session.prompt = prompt;
+        }
+    }
+
+    fn add_usage(
+        &mut self,
+        session: usize,
+        message: u64,
+        model: &str,
+        timestamp: &str,
+        tokens: Tokens,
+    ) {
+        let model = match self.models.iter().position(|known| known == model) {
+            Some(index) => index,
+            None => {
+                self.models.push(model.to_owned());
+                self.models.len() - 1
+            }
+        };
+        let hour = timestamp.get(..13).unwrap_or(timestamp).to_owned();
+        let Tokens {
+            input,
+            output,
+            cache_read,
+            cache_write_5m,
+            cache_write_1h,
+        } = tokens;
+        self.usage.push(FileUsage(
+            session,
+            model,
+            message,
+            hour,
+            [input, output, cache_read, cache_write_5m, cache_write_1h],
+        ));
+    }
+}
+
+/// FNV-1a: a hash that stays the same across runs and Rust versions, since
+/// it is stored in the cache.
+fn stable_hash(text: &str) -> u64 {
+    text.bytes().fold(0xcbf2_9ce4_8422_2325, |hash, byte| {
+        (hash ^ u64::from(byte)).wrapping_mul(0x0100_0000_01b3)
+    })
 }
 
 #[derive(Default)]
@@ -133,9 +365,48 @@ struct ReportBuilder {
     daily: BTreeMap<(String, Agent), DayUsage>,
     hourly: BTreeMap<(String, Agent), HourUsage>,
     errors: Vec<String>,
+    /// Hashes of the responses already counted.
+    seen: HashSet<u64>,
 }
 
 impl ReportBuilder {
+    /// Adds what a file says, in the order the files are read.
+    fn replay(&mut self, agent: Agent, log: &FileLog) {
+        for found in &log.sessions {
+            self.touch(
+                agent,
+                &found.id,
+                found.started_at.as_deref(),
+                found.project.as_deref(),
+            );
+            self.touch(agent, &found.id, found.ended_at.as_deref(), None);
+            let session = self.session(agent, &found.id);
+            if let Some(title) = &found.ai_title {
+                session.title = Some(title.clone());
+            } else if session.title.is_none() {
+                session.title = found.prompt.clone();
+            }
+        }
+        for FileUsage(session, model, message, hour, tokens) in &log.usage {
+            if *message != 0 && !self.seen.insert(*message) {
+                continue;
+            }
+            let [input, output, cache_read, cache_write_5m, cache_write_1h] = *tokens;
+            let tokens = Tokens {
+                input,
+                output,
+                cache_read,
+                cache_write_5m,
+                cache_write_1h,
+            };
+            let (Some(found), Some(model)) = (log.sessions.get(*session), log.models.get(*model))
+            else {
+                continue;
+            };
+            self.add_usage(agent, &found.id, model, hour, tokens);
+        }
+    }
+
     fn session(&mut self, agent: Agent, id: &str) -> &mut Session {
         self.sessions
             .entry((agent, id.to_owned()))
@@ -333,75 +604,60 @@ impl ClaudeUsage {
     }
 }
 
-fn read_claude_code(projects: &Path, builder: &mut ReportBuilder) {
-    // One API response is logged once per content block, and a session that
-    // moves to another directory is copied there, so count each message once.
+fn parse_claude_code(path: &Path) -> std::io::Result<FileLog> {
+    let mut log = FileLog::default();
+    // One API response is logged once per content block. A session that
+    // moves to another directory is copied there, which the hash catches
+    // when the files are combined.
     let mut seen = HashSet::new();
-    for path in jsonl_files(projects) {
-        let read = for_each_line(&path, |line| {
-            let Ok(entry) = serde_json::from_str::<ClaudeLine>(line) else {
-                return;
-            };
-            let Some(session_id) = entry.session_id.as_deref() else {
-                return;
-            };
-            let timestamp = entry.timestamp.as_deref();
-            match entry.kind.as_deref() {
-                Some("ai-title") => {
-                    if let Some(title) = entry.ai_title {
-                        builder.session(Agent::ClaudeCode, session_id).title = Some(title);
-                    }
+    for_each_line(path, |line| {
+        let Ok(entry) = serde_json::from_str::<ClaudeLine>(line) else {
+            return;
+        };
+        let Some(session_id) = entry.session_id.as_deref() else {
+            return;
+        };
+        let timestamp = entry.timestamp.as_deref();
+        match entry.kind.as_deref() {
+            Some("ai-title") => {
+                if let Some(title) = entry.ai_title {
+                    let session = log.session(session_id);
+                    log.sessions[session].ai_title = Some(title);
                 }
-                Some("user") if !entry.is_meta => {
-                    builder.touch(
-                        Agent::ClaudeCode,
-                        session_id,
-                        timestamp,
-                        entry.cwd.as_deref(),
-                    );
-                    let prompt = entry
-                        .message
-                        .and_then(|message| message.content)
-                        .and_then(|content| first_prompt(&content));
-                    let session = builder.session(Agent::ClaudeCode, session_id);
-                    if session.title.is_none() {
-                        session.title = prompt;
-                    }
-                }
-                Some("assistant") => {
-                    builder.touch(
-                        Agent::ClaudeCode,
-                        session_id,
-                        timestamp,
-                        entry.cwd.as_deref(),
-                    );
-                    let Some(message) = entry.message else {
-                        return;
-                    };
-                    let (Some(id), Some(model), Some(usage)) =
-                        (message.id, message.model, message.usage)
-                    else {
-                        return;
-                    };
-                    if model.starts_with('<') || !seen.insert(id) {
-                        return;
-                    }
-                    let timestamp = timestamp.unwrap_or_default();
-                    builder.add_usage(
-                        Agent::ClaudeCode,
-                        session_id,
-                        &model,
-                        timestamp,
-                        usage.tokens(),
-                    );
-                }
-                _ => {}
             }
-        });
-        if let Err(err) = read {
-            builder.errors.push(file_error(&path, err));
+            Some("user") if !entry.is_meta => {
+                let session = log.touch(session_id, timestamp, entry.cwd.as_deref());
+                let prompt = entry
+                    .message
+                    .and_then(|message| message.content)
+                    .and_then(|content| first_prompt(&content));
+                log.prompt(session, prompt);
+            }
+            Some("assistant") => {
+                let session = log.touch(session_id, timestamp, entry.cwd.as_deref());
+                let Some(message) = entry.message else {
+                    return;
+                };
+                let (Some(id), Some(model), Some(usage)) =
+                    (message.id, message.model, message.usage)
+                else {
+                    return;
+                };
+                if model.starts_with('<') || !seen.insert(id.clone()) {
+                    return;
+                }
+                log.add_usage(
+                    session,
+                    stable_hash(&id).max(1),
+                    &model,
+                    timestamp.unwrap_or_default(),
+                    usage.tokens(),
+                );
+            }
+            _ => {}
         }
-    }
+    })?;
+    Ok(log)
 }
 
 /// The text the user typed, skipping tool results and command wrappers.
@@ -448,22 +704,15 @@ struct CodexUsage {
     output_tokens: u64,
 }
 
-fn read_codex(codex_home: &Path, builder: &mut ReportBuilder) {
-    let mut files = jsonl_files(&codex_home.join("sessions"));
-    files.extend(jsonl_files(&codex_home.join("archived_sessions")));
-    for path in files {
-        read_codex_rollout(&path, builder);
-    }
-}
-
-fn read_codex_rollout(path: &Path, builder: &mut ReportBuilder) {
-    let mut session_id: Option<String> = None;
+fn parse_codex_rollout(path: &Path) -> std::io::Result<FileLog> {
+    let mut log = FileLog::default();
+    let mut session: Option<usize> = None;
     let mut model = String::from("unknown");
     // Token counts are cumulative and sometimes repeated, so only the growth
     // since the previous count is attributed to the current model.
     let mut previous = CodexUsage::default();
 
-    let read = for_each_line(path, |line| {
+    for_each_line(path, |line| {
         let Ok(entry) = serde_json::from_str::<CodexLine>(line) else {
             return;
         };
@@ -477,8 +726,7 @@ fn read_codex_rollout(path: &Path, builder: &mut ReportBuilder) {
                     return;
                 };
                 let cwd = payload.get("cwd").and_then(Value::as_str);
-                builder.touch(Agent::Codex, id, timestamp, cwd);
-                session_id = Some(id.to_owned());
+                session = Some(log.touch(id, timestamp, cwd));
             }
             Some("turn_context") => {
                 if let Some(name) = payload.get("model").and_then(Value::as_str) {
@@ -486,10 +734,11 @@ fn read_codex_rollout(path: &Path, builder: &mut ReportBuilder) {
                 }
             }
             Some("event_msg") => {
-                let Some(id) = session_id.as_deref() else {
+                let Some(session) = session else {
                     return;
                 };
-                builder.touch(Agent::Codex, id, timestamp, None);
+                let id = log.sessions[session].id.clone();
+                log.touch(&id, timestamp, None);
                 match payload.get("type").and_then(Value::as_str) {
                     Some("user_message") => {
                         let prompt = payload
@@ -498,10 +747,7 @@ fn read_codex_rollout(path: &Path, builder: &mut ReportBuilder) {
                             .map(str::trim)
                             .filter(|text| !text.is_empty() && !text.starts_with('<'))
                             .map(|text| truncate(text, 120));
-                        let session = builder.session(Agent::Codex, id);
-                        if session.title.is_none() {
-                            session.title = prompt;
-                        }
+                        log.prompt(session, prompt);
                     }
                     Some("token_count") => {
                         let Some(total) = payload
@@ -525,23 +771,15 @@ fn read_codex_rollout(path: &Path, builder: &mut ReportBuilder) {
                             cache_read: cached,
                             ..Tokens::default()
                         };
-                        builder.add_usage(
-                            Agent::Codex,
-                            id,
-                            &model,
-                            timestamp.unwrap_or_default(),
-                            tokens,
-                        );
+                        log.add_usage(session, 0, &model, timestamp.unwrap_or_default(), tokens);
                     }
                     _ => {}
                 }
             }
             _ => {}
         }
-    });
-    if let Err(err) = read {
-        builder.errors.push(file_error(path, err));
-    }
+    })?;
+    Ok(log)
 }
 
 #[cfg(test)]
@@ -586,6 +824,42 @@ mod tests {
         assert_eq!(report.hourly.len(), 1);
         assert_eq!(report.hourly[0].hour, "2026-10-20T10");
         assert!((report.hourly[0].cost_usd - 24.0).abs() < 1e-9);
+    }
+
+    #[test]
+    fn parsed_files_are_cached_until_they_change() {
+        let home = tempfile::tempdir().unwrap();
+        let log = home.path().join(".claude/projects/-work/s1.jsonl");
+        let line = |id: &str| {
+            format!(
+                r#"{{"type":"assistant","sessionId":"s1","timestamp":"2026-10-20T10:00:05Z","message":{{"id":"{id}","model":"claude-opus-5-5","usage":{{"input_tokens":10,"output_tokens":10}}}}}}"#
+            )
+        };
+        write(&log, &[&line("msg_1")]);
+        assert_eq!(report(home.path()).sessions[0].tokens.input, 10);
+        let cache = home.path().join(".agentdeck/cache/usage.json");
+        assert!(cache.is_file());
+
+        // Same size and time: the cached reading is used, not the file.
+        let modified = fs::metadata(&log).unwrap().modified().unwrap();
+        let garbage = "x".repeat(fs::metadata(&log).unwrap().len() as usize);
+        fs::write(&log, garbage).unwrap();
+        File::options()
+            .write(true)
+            .open(&log)
+            .unwrap()
+            .set_modified(modified)
+            .unwrap();
+        assert_eq!(report(home.path()).sessions[0].tokens.input, 10);
+
+        // A file that grows is read again.
+        write(&log, &[&line("msg_1"), &line("msg_2")]);
+        assert_eq!(report(home.path()).sessions[0].tokens.input, 20);
+
+        // A file that is gone leaves the report and the cache.
+        fs::remove_file(&log).unwrap();
+        assert!(report(home.path()).sessions.is_empty());
+        assert!(!fs::read_to_string(&cache).unwrap().contains("s1.jsonl"));
     }
 
     #[test]
