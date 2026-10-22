@@ -1,5 +1,7 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { getVersion } from "@tauri-apps/api/app";
+import { getCurrentWindow } from "@tauri-apps/api/window";
+import { ConfirmDialog } from "./components/ConfirmDialog";
 import { Icon, type IconName } from "./components/ui";
 import { listAgents, listMcpServers, listSecrets } from "./lib/api";
 import type { AgentInfo, McpListing, SecretListing } from "./lib/types";
@@ -31,6 +33,14 @@ const SECTIONS = [
 
 export type PageId = (typeof SECTIONS)[number]["pages"][number]["id"];
 
+/** Unsaved changes on the current page, which leaving it would lose. */
+export interface UnsavedGuard {
+  /** What is unsaved, for example "Claude Code rules". */
+  what: string;
+  /** Saves the changes; resolves to false when saving failed. */
+  save: () => Promise<boolean>;
+}
+
 type Theme = "system" | "light" | "dark";
 const THEMES: Theme[] = ["system", "light", "dark"];
 const THEME_ICONS: Record<Theme, IconName> = { system: "monitor", light: "sun", dark: "moon" };
@@ -52,6 +62,9 @@ function App() {
   const [error, setError] = useState<string | null>(null);
   const [theme, setTheme] = useState<Theme>(storedTheme);
   const [version, setVersion] = useState<string | null>(null);
+  const guard = useRef<UnsavedGuard | null>(null);
+  // What to do once the user has saved or discarded their changes.
+  const [leaving, setLeaving] = useState<{ what: string; proceed: () => void } | null>(null);
 
   async function refresh() {
     try {
@@ -68,6 +81,15 @@ function App() {
   useEffect(() => {
     refresh();
     getVersion().then(setVersion, () => {});
+    const closing = getCurrentWindow().onCloseRequested((event) => {
+      const unsaved = guard.current;
+      if (!unsaved) return;
+      event.preventDefault();
+      setLeaving({ what: unsaved.what, proceed: () => getCurrentWindow().destroy() });
+    });
+    return () => {
+      closing.then((unlisten) => unlisten(), () => {});
+    };
   }, []);
 
   useEffect(() => {
@@ -89,9 +111,14 @@ function App() {
   const nextTheme = THEMES[(THEMES.indexOf(theme) + 1) % THEMES.length];
 
   function navigate(target: PageId) {
-    setPage(target);
-    // Pages edit configs; keep counts in the sidebar current when coming back.
-    if (target === "overview") refresh();
+    const go = () => {
+      guard.current = null;
+      setPage(target);
+      // Pages edit configs; keep counts in the sidebar current when coming back.
+      if (target === "overview") refresh();
+    };
+    if (guard.current && target !== page) setLeaving({ what: guard.current.what, proceed: go });
+    else go();
   }
 
   return (
@@ -166,12 +193,42 @@ function App() {
             <OverviewPage agents={agents} listing={listing} secrets={secrets} onNavigate={navigate} />
           )}
           {page === "mcp" && <McpPage agents={agents} listing={listing} onChange={refresh} />}
-          {page === "rules" && <RulesPage agents={agents} />}
+          {page === "rules" && (
+            <RulesPage agents={agents} setGuard={(unsaved) => (guard.current = unsaved)} />
+          )}
           {page === "skills" && <SkillsPage agents={agents} />}
           {page === "secrets" && <SecretsPage agents={agents} onChange={refresh} />}
           {page === "history" && <HistoryPage agents={agents} />}
         </div>
       </main>
+
+      {leaving && (
+        <ConfirmDialog
+          title="Unsaved changes"
+          onCancel={() => setLeaving(null)}
+          choices={[
+            {
+              label: "Discard",
+              tone: "danger",
+              onSelect: () => {
+                setLeaving(null);
+                leaving.proceed();
+              },
+            },
+            {
+              label: "Save",
+              tone: "primary",
+              onSelect: async () => {
+                const saved = (await guard.current?.save()) ?? true;
+                setLeaving(null);
+                if (saved) leaving.proceed();
+              },
+            },
+          ]}
+        >
+          Your changes to the {leaving.what} are not saved.
+        </ConfirmDialog>
+      )}
     </div>
   );
 }
