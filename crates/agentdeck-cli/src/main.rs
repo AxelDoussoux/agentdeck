@@ -177,6 +177,10 @@ enum RulesCommand {
         from: AgentArg,
         #[arg(long, required = true, num_args = 1..)]
         to: Vec<AgentArg>,
+        /// Only copy the shared base, between <!-- agentdeck:shared --> and
+        /// <!-- /agentdeck:shared -->, and keep the rest of their rules
+        #[arg(long)]
+        shared: bool,
     },
 }
 
@@ -459,11 +463,16 @@ fn run_rules(
                 print!("{}", found.content.unwrap_or_default());
             }
         }
-        RulesCommand::Copy { from, to } => {
+        RulesCommand::Copy { from, to, shared } => {
             for target in to {
                 let target = Agent::from(target);
-                rules::copy(home, from.into(), target)?;
-                println!("Copied rules to {}", target.display_name());
+                if shared {
+                    rules::copy_shared(home, from.into(), target)?;
+                    println!("Copied the shared base to {}", target.display_name());
+                } else {
+                    rules::copy(home, from.into(), target)?;
+                    println!("Copied rules to {}", target.display_name());
+                }
             }
         }
     }

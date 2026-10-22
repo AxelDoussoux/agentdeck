@@ -8,6 +8,7 @@ import { useToast } from "../components/Toasts";
 import { Tooltip } from "../components/Tooltip";
 import { listRules, saveRules, undoChange } from "../lib/api";
 import { lineCount } from "../lib/diff";
+import { SHARED_END, SHARED_START, sharedPart, startShared, withShared } from "../lib/rules";
 import { shortcut, withModifier } from "../lib/keys";
 import { useFilesChanged } from "../lib/watch";
 import type { Agent, AgentInfo, Rules } from "../lib/types";
@@ -58,6 +59,9 @@ export function RulesPage({ agents, setGuard, focus }: Props) {
 
   const contentOf = (agent: Agent) => rules.find((r) => r.agent === agent)?.content ?? "";
   const saved = contentOf(selected);
+  // The shared base of the saved rules, which copies carry when it exists.
+  const base = sharedPart(saved);
+  const draftHasBase = sharedPart(draft) !== null;
   const dirty = draft !== saved;
   const withFile = agents.filter((info) => info.rulesPath !== null);
   const current = agents.find((info) => info.agent === selected);
@@ -168,6 +172,37 @@ export function RulesPage({ agents, setGuard, focus }: Props) {
     const target = agents.find((info) => info.agent === pending)!;
     const replaced = rules.find((r) => r.agent === target.agent)?.content ?? "";
     const lines = (text: string) => `${lineCount(text)} line${lineCount(text) === 1 ? "" : "s"}`;
+    if (base !== null) {
+      const merged = withShared(replaced, base);
+      return (
+        <ConfirmDialog
+          wide
+          title={`Copy the shared base to ${target.name}?`}
+          onCancel={() => setPendingCopy(null)}
+          choices={[
+            {
+              label: "Replace everything",
+              tone: "danger",
+              onSelect: () => write(target.agent, saved, `Copied ${current?.name} rules to ${target.name}.`),
+            },
+            {
+              label: "Copy the shared base",
+              tone: "primary",
+              onSelect: () =>
+                write(target.agent, merged, `Copied the shared base of ${current?.name} to ${target.name}.`),
+            },
+          ]}
+        >
+          <p>
+            {sharedPart(replaced) !== null
+              ? `${target.name}'s shared base is replaced with ${current?.name}'s, and the rest of its rules stay as they are.`
+              : `${target.name}'s rules get ${current?.name}'s shared base on top, and keep what they have below it.`}{" "}
+            Replace everything instead to give {target.name} exactly the {lines(saved)} of {current?.name}'s rules.
+          </p>
+          {merged !== replaced && <DiffView before={replaced} after={merged} />}
+        </ConfirmDialog>
+      );
+    }
     return (
       <ConfirmDialog
         wide
@@ -226,7 +261,9 @@ export function RulesPage({ agents, setGuard, focus }: Props) {
           >
             <AgentMark agent={info.agent} size={18} />
             {info.name}
-            {info.agent !== selected && <SameBadge theirs={contentOf(info.agent)} ours={saved} name={current?.name} />}
+            {info.agent !== selected && (
+              <SameBadge theirs={contentOf(info.agent)} ours={saved} base={base} name={current?.name} />
+            )}
           </button>
         ))}
       </div>
@@ -236,6 +273,15 @@ export function RulesPage({ agents, setGuard, focus }: Props) {
           {current?.rulesPath && <code>{current.rulesPath}</code>}
           <span className="editor-bar-actions">
             {dirty && <span className="pill pill-warn">Unsaved changes</span>}
+            {!draftHasBase && (
+              <button
+                className="small"
+                title="Marks these rules as the base shared by every agent. Lines you then move below the end marker stay specific to this agent."
+                onClick={() => setDraft(startShared(draft))}
+              >
+                Make a shared base
+              </button>
+            )}
             <button className="small" aria-pressed={preview} onClick={togglePreview}>
               {preview ? "Hide preview" : "Preview"}
             </button>
@@ -268,14 +314,15 @@ export function RulesPage({ agents, setGuard, focus }: Props) {
         {dirty && <button onClick={() => (onDisk === null ? setDraft(saved) : load())}>Revert</button>}
 
         <span className="spacer" />
-        <span className="hint">Copy to</span>
+        <span className="hint">{base !== null ? "Copy the shared base to" : "Copy to"}</span>
         {withFile
           .filter((info) => info.agent !== selected)
           .map((info) => {
-            const same = (rules.find((r) => r.agent === info.agent)?.content ?? "") === saved;
+            const theirs = contentOf(info.agent);
+            const same = base !== null ? sharedPart(theirs) === base : theirs === saved;
             if (same) {
               return (
-                <button key={info.agent} disabled title="Already identical">
+                <button key={info.agent} disabled title={base !== null ? "Same shared base" : "Already identical"}>
                   <Icon name="check" size={14} /> {info.name}
                 </button>
               );
@@ -284,7 +331,13 @@ export function RulesPage({ agents, setGuard, focus }: Props) {
               <button
                 key={info.agent}
                 disabled={dirty}
-                title={dirty ? "Save first" : `Replace ${info.name} rules with these`}
+                title={
+                  dirty
+                    ? "Save first"
+                    : base !== null
+                      ? `Put this shared base in ${info.name}'s rules`
+                      : `Replace ${info.name} rules with these`
+                }
                 onClick={() => setPendingCopy(info.agent)}
               >
                 {info.name}
@@ -292,6 +345,13 @@ export function RulesPage({ agents, setGuard, focus }: Props) {
             );
           })}
       </div>
+
+      {draftHasBase && (
+        <p className="hint shared-hint">
+          The text between <code>{SHARED_START}</code> and <code>{SHARED_END}</code> is the shared base. Copying it
+          to another agent keeps the rest of that agent's rules.
+        </p>
+      )}
 
       {pendingCopy && copyDialog(pendingCopy)}
 
@@ -318,8 +378,35 @@ export function RulesPage({ agents, setGuard, focus }: Props) {
   );
 }
 
-/** Whether another agent's saved rules match the shown agent's. */
-function SameBadge({ theirs, ours, name }: { theirs: string; ours: string; name?: string }) {
+interface BadgeProps {
+  theirs: string;
+  ours: string;
+  /** The shared base of `ours`: when there is one, only bases are compared. */
+  base: string | null;
+  name?: string;
+}
+
+/** Whether another agent's saved rules, or their shared base, match the shown agent's. */
+function SameBadge({ theirs, ours, base, name }: BadgeProps) {
+  if (base !== null) {
+    const their = sharedPart(theirs);
+    if (their === null) {
+      return (
+        <span className="tab-badge" title={`No shared base yet: copy ${name}'s to add it`}>
+          No base
+        </span>
+      );
+    }
+    return their === base ? (
+      <span className="tab-badge tab-badge-same" title={`Same shared base as ${name}`}>
+        Same base
+      </span>
+    ) : (
+      <span className="tab-badge tab-badge-differs" title={`Shared base differs from ${name}'s`}>
+        Base differs
+      </span>
+    );
+  }
   if (!theirs.trim() && !ours.trim()) return null;
   if (!theirs.trim()) {
     return (

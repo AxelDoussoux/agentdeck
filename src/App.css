@@ -1266,6 +1266,10 @@ tr:hover .row-menu .icon-button,
   border-left: 1px solid var(--border);
 }
 
+.shared-hint {
+  margin: 10px 0 0;
+}
+
 .tab-badge {
   margin-left: 6px;
   padding: 0 6px;
@@ -2085,6 +2089,15 @@ th button.sort {
   margin-bottom: 12px;
 }
 
+/* Below the skeleton, so the bar stays put while the count changes. */
+.reading {
+  max-width: 360px;
+}
+
+.reading .meter i {
+  transition: width 0.2s ease-out;
+}
+
 @keyframes shimmer {
   from {
     background-position: 100% 0;
@@ -2097,6 +2110,10 @@ th button.sort {
 @media (prefers-reduced-motion: reduce) {
   .skeleton-block {
     animation: none;
+  }
+
+  .reading .meter i {
+    transition: none;
   }
 }
 
