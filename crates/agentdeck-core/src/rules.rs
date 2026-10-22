@@ -42,7 +42,7 @@ pub fn read_all(home: &Path) -> (Vec<Rules>, Vec<(Agent, Error)>) {
 
 /// Replaces the rules of `agent`, keeping the previous file as a backup.
 pub fn write(agent: Agent, home: &Path, content: &str) -> Result<()> {
-    config_file::write(&rules_path(agent, home)?, content)
+    config_file::write(home, &rules_path(agent, home)?, content)
 }
 
 /// Copies the rules of `from` over those of `to`.

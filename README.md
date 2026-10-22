@@ -113,8 +113,12 @@ their names. When copying a server between agents, secrets are copied by the
 Rust core and never reach the UI.
 
 Before changing a config file, AgentDeck saves the previous version next to
-it as `<file>.agentdeck.bak` and writes the new one atomically. Other settings,
-key order and TOML comments are kept.
+it as `<file>.agentdeck.bak`, keeps the last 20 versions in
+`~/.agentdeck/backups/`, and writes the new one atomically with the same
+permissions. If the agent rewrites the file in the meantime, as Claude Code
+does with `~/.claude.json` while it runs, AgentDeck applies its change again
+on top of the new content instead of overwriting it. Other settings, key order
+and TOML comments are kept.
 
 ## License
 
