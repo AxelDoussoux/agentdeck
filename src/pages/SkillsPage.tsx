@@ -2,6 +2,8 @@ import { useEffect, useState } from "react";
 import type { Focus } from "../App";
 import { AgentMark, Empty, Icon, Notice, PageHeader } from "../components/ui";
 import { ConfirmDialog } from "../components/ConfirmDialog";
+import { DiffView } from "../components/DiffView";
+import { Drawer } from "../components/Drawer";
 import { useToast } from "../components/Toasts";
 import { copySkill, listSkills, readSkill, removeSkill, replaceSkill, restoreSkill } from "../lib/api";
 import { useFilesChanged } from "../lib/watch";
@@ -18,6 +20,8 @@ const LOCATION_LABELS: Record<SkillLocation, string> = {
 const formatDate = (ms: number) =>
   new Date(ms).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" });
 
+type SkillTab = "details" | "differences" | "backups";
+
 /** The copy edited last, which a new copy starts from. */
 const newest = (copies: Skill[]) => copies.reduce((a, b) => (b.modifiedMs > a.modifiedMs ? b : a));
 
@@ -25,6 +29,7 @@ const newest = (copies: Skill[]) => copies.reduce((a, b) => (b.modifiedMs > a.mo
 export function SkillsPage({ agents, focus }: { agents: AgentInfo[]; focus?: Focus | null }) {
   const [listing, setListing] = useState<SkillListing>({ skills: [], errors: [], trash: [] });
   const [selected, setSelected] = useState<string | null>(null);
+  const [tab, setTab] = useState<SkillTab>("details");
   const [previewed, setPreviewed] = useState<SkillLocation | null>(null);
   const [preview, setPreview] = useState<string>("");
   const [pendingRemoval, setPendingRemoval] = useState<SkillLocation | null>(null);
@@ -62,6 +67,7 @@ export function SkillsPage({ agents, focus }: { agents: AgentInfo[]; focus?: Foc
     byName.set(skill.name, [...(byName.get(skill.name) ?? []), skill]);
   }
   const copies = selected ? (byName.get(selected) ?? []) : [];
+  const trashed = listing.trash.filter((skill) => skill.name === selected);
   const differ = (found: Skill[]) => new Set(found.map((skill) => skill.hash)).size > 1;
 
   async function show(name: string, location: SkillLocation) {
@@ -69,8 +75,9 @@ export function SkillsPage({ agents, focus }: { agents: AgentInfo[]; focus?: Foc
     setPreview(await readSkill(location, name).catch(String));
   }
 
-  async function open(name: string) {
+  async function open(name: string, opening: SkillTab = "details") {
     setSelected(name);
+    setTab(opening);
     setPendingRemoval(null);
     const found = byName.get(name);
     if (found) await show(name, newest(found).location);
@@ -187,7 +194,7 @@ export function SkillsPage({ agents, focus }: { agents: AgentInfo[]; focus?: Foc
                       </button>
                       {source.description && <small className="clamp">{source.description}</small>}
                       {differ(found) && (
-                        <button className="link differ-note" onClick={() => open(name)}>
+                        <button className="link differ-note" onClick={() => open(name, "differences")}>
                           <Icon name="differs" size={12} /> Copies differ
                         </button>
                       )}
@@ -226,41 +233,82 @@ export function SkillsPage({ agents, focus }: { agents: AgentInfo[]; focus?: Foc
       )}
 
       {selected && copies.length > 0 && (
-        <section className="card detail">
-          <header className="detail-header">
-            <h3>{selected}</h3>
-            <button className="small" onClick={() => setSelected(null)}>Close</button>
-          </header>
-          <ul className="copies">
-            {copies.map((skill) => {
-              const others = copies.filter((other) => other.hash !== skill.hash);
-              return (
-                <li key={skill.location} className={skill.location === previewed ? "active" : undefined}>
-                  <div>
-                    <button className="link" title="Show this copy" onClick={() => show(skill.name, skill.location)}>
-                      <code>{skill.path}</code>
+        <Drawer
+          title={selected}
+          subtitle={newest(copies).description ?? undefined}
+          tabs={[
+            { id: "details", label: "Details" },
+            {
+              id: "differences",
+              label: "Differences",
+              count: copies.filter((skill) => skill.hash !== newest(copies).hash).length,
+            },
+            { id: "backups", label: "Backups", count: trashed.length },
+          ]}
+          tab={tab}
+          onTab={setTab}
+          onClose={() => setSelected(null)}
+        >
+          {tab === "details" && (
+            <>
+              <ul className="copies">
+                {copies.map((skill) => {
+                  const others = copies.filter((other) => other.hash !== skill.hash);
+                  return (
+                    <li key={skill.location} className={skill.location === previewed ? "active" : undefined}>
+                      <div>
+                        <button className="link" title="Show this copy" onClick={() => show(skill.name, skill.location)}>
+                          <code>{skill.path}</code>
+                        </button>
+                        <span className="hint">
+                          Loaded by {skill.readers.map(nameOf).join(", ") || "no agent"} · edited{" "}
+                          {formatDate(skill.modifiedMs)}
+                          {copies.length > 1 && skill === newest(copies) && " · newest"}
+                          {others.length > 0 &&
+                            ` · differs from ${others.length === 1 ? "the other copy" : `${others.length} copies`}`}
+                        </span>
+                      </div>
+                      <span className="copy-actions">
+                        {others.length > 0 && (
+                          <button className="small" onClick={() => setPendingSpread(skill.location)}>
+                            Use everywhere
+                          </button>
+                        )}
+                        <button className="small" onClick={() => setPendingRemoval(skill.location)}>
+                          Remove
+                        </button>
+                      </span>
+                    </li>
+                  );
+                })}
+              </ul>
+              <pre className="preview">{preview}</pre>
+            </>
+          )}
+
+          {tab === "differences" && <SkillDifferences copies={copies} />}
+
+          {tab === "backups" &&
+            (trashed.length === 0 ? (
+              <p className="hint">
+                No removed or replaced copy of {selected}. AgentDeck moves them to ~/.agentdeck/trash.
+              </p>
+            ) : (
+              <ul className="copies">
+                {trashed.map((skill) => (
+                  <li key={skill.id}>
+                    <div>
+                      <strong>{LOCATION_LABELS[skill.location]}</strong>
+                      <span className="hint">Removed {formatDate(skill.removedMs)}</span>
+                    </div>
+                    <button className="small" onClick={() => restore(skill)}>
+                      Restore
                     </button>
-                    <span className="hint">
-                      Loaded by {skill.readers.map(nameOf).join(", ") || "no agent"} · edited{" "}
-                      {formatDate(skill.modifiedMs)}
-                      {copies.length > 1 && skill === newest(copies) && " · newest"}
-                      {others.length > 0 && ` · differs from ${others.length === 1 ? "the other copy" : `${others.length} copies`}`}
-                    </span>
-                  </div>
-                  <span className="copy-actions">
-                    {others.length > 0 && (
-                      <button className="small" onClick={() => setPendingSpread(skill.location)}>
-                        Use everywhere
-                      </button>
-                    )}
-                    <button className="small" onClick={() => setPendingRemoval(skill.location)}>Remove</button>
-                  </span>
-                </li>
-              );
-            })}
-          </ul>
-          <pre className="preview">{preview}</pre>
-        </section>
+                  </li>
+                ))}
+              </ul>
+            ))}
+        </Drawer>
       )}
 
       {pendingSpread &&
@@ -349,6 +397,62 @@ export function SkillsPage({ agents, focus }: { agents: AgentInfo[]; focus?: Foc
               </p>
             </ConfirmDialog>
           ))}
+    </>
+  );
+}
+
+/** The SKILL.md of each copy that differs from the newest one, against it. */
+function SkillDifferences({ copies }: { copies: Skill[] }) {
+  const base = newest(copies);
+  const others = copies.filter((skill) => skill.hash !== base.hash);
+  const [compared, setCompared] = useState<SkillLocation | null>(others[0]?.location ?? null);
+  const [texts, setTexts] = useState<Partial<Record<SkillLocation, string>>>({});
+
+  useEffect(() => {
+    let current = true;
+    Promise.all(
+      copies.map((skill) =>
+        readSkill(skill.location, skill.name)
+          .catch(String)
+          .then((text) => [skill.location, text] as const),
+      ),
+    ).then((found) => current && setTexts(Object.fromEntries(found)));
+    return () => {
+      current = false;
+    };
+  }, [copies.map((skill) => `${skill.location}:${skill.hash}`).join()]);
+
+  if (others.length === 0) return <p className="hint">Every copy of {base.name} is the same.</p>;
+  const other = others.find((skill) => skill.location === compared) ?? others[0];
+  const [before, after] = [texts[other.location], texts[base.location]];
+
+  return (
+    <>
+      {others.length > 1 && (
+        <div className="segmented" role="group" aria-label="Copy to compare">
+          {others.map((skill) => (
+            <button
+              key={skill.location}
+              aria-pressed={skill === other}
+              className={skill === other ? "active" : undefined}
+              onClick={() => setCompared(skill.location)}
+            >
+              {LOCATION_LABELS[skill.location]}
+            </button>
+          ))}
+        </div>
+      )}
+      <p className="hint">
+        What changes in SKILL.md from <code>{LOCATION_LABELS[other.location]}</code> to the newest copy, in{" "}
+        <code>{LOCATION_LABELS[base.location]}</code>.
+      </p>
+      {before === undefined || after === undefined ? (
+        <p className="hint">Reading the copies…</p>
+      ) : before === after ? (
+        <p className="hint">SKILL.md is the same: other files in the folders differ.</p>
+      ) : (
+        <DiffView before={before} after={after} />
+      )}
     </>
   );
 }

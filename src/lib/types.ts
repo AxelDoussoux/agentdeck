@@ -43,6 +43,18 @@ export interface McpListing {
   errors: string[];
 }
 
+/** An earlier version of a server, from the backups of its agent's config. */
+export interface ServerVersion {
+  /** The backup it comes from. */
+  id: string;
+  /** When AgentDeck replaced it. */
+  replacedMs: number;
+  /** `null` when the agent did not have the server then. */
+  server: McpServer | null;
+  /** The same as the server now. */
+  current: boolean;
+}
+
 export interface ServerSpec {
   transport: Transport;
   env: Record<string, string>;
