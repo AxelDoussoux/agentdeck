@@ -1,11 +1,15 @@
 import { useEffect, useRef, useState } from "react";
 import { getVersion } from "@tauri-apps/api/app";
 import { getCurrentWindow } from "@tauri-apps/api/window";
+import { CommandPalette, type Command } from "./components/CommandPalette";
 import { ConfirmDialog } from "./components/ConfirmDialog";
+import { useToast } from "./components/Toasts";
 import { Icon, type IconName } from "./components/ui";
-import { listAgents, listMcpServers, listSecrets } from "./lib/api";
+import { copyMcpServer, listAgents, listMcpServers, listSecrets, listSkills, undoChange } from "./lib/api";
+import { shortcut, withModifier } from "./lib/keys";
+import { byName } from "./lib/servers";
 import { useFilesChanged } from "./lib/watch";
-import type { AgentInfo, McpListing, SecretListing } from "./lib/types";
+import type { Agent, AgentInfo, McpListing, SecretListing } from "./lib/types";
 import { HistoryPage } from "./pages/HistoryPage";
 import { McpPage } from "./pages/McpPage";
 import { OverviewPage } from "./pages/OverviewPage";
@@ -33,6 +37,18 @@ const SECTIONS = [
 }[];
 
 export type PageId = (typeof SECTIONS)[number]["pages"][number]["id"];
+
+const PAGES: readonly { id: PageId; label: string; icon: IconName }[] = SECTIONS.flatMap(
+  (section): readonly { id: PageId; label: string; icon: IconName }[] => section.pages,
+);
+
+/** What a page shows first when opened from the command palette. */
+export type Focus =
+  | { kind: "server"; name: string }
+  | { kind: "add-server" }
+  | { kind: "edit-server"; name: string; agent: Agent }
+  | { kind: "skill"; name: string }
+  | { kind: "rules"; agent: Agent };
 
 /** Unsaved changes on the current page, which leaving it would lose. */
 export interface UnsavedGuard {
@@ -63,6 +79,10 @@ function App() {
   const [error, setError] = useState<string | null>(null);
   const [theme, setTheme] = useState<Theme>(storedTheme);
   const [version, setVersion] = useState<string | null>(null);
+  const [focus, setFocus] = useState<Focus | null>(null);
+  const [palette, setPalette] = useState(false);
+  const [skillNames, setSkillNames] = useState<string[]>([]);
+  const notify = useToast();
   const guard = useRef<UnsavedGuard | null>(null);
   // What to do once the user has saved or discarded their changes.
   const [leaving, setLeaving] = useState<{ what: string; proceed: () => void } | null>(null);
@@ -113,15 +133,118 @@ function App() {
   };
   const nextTheme = THEMES[(THEMES.indexOf(theme) + 1) % THEMES.length];
 
-  function navigate(target: PageId) {
+  function navigate(target: PageId, show: Focus | null = null) {
     const go = () => {
-      guard.current = null;
+      if (target !== page) guard.current = null;
+      setFocus(show);
       setPage(target);
       // Pages edit configs; keep counts in the sidebar current when coming back.
       if (target === "overview") refresh();
     };
     if (guard.current && target !== page) setLeaving({ what: guard.current.what, proceed: go });
     else go();
+  }
+
+  // Shortcuts: the palette, a page by its place in the sidebar, reload.
+  const keys = useRef<(event: KeyboardEvent) => void>(() => {});
+  keys.current = (event) => {
+    if (!withModifier(event) || leaving) return;
+    const key = event.key.toLowerCase();
+    const index = Number(key) - 1;
+    if (key === "k") {
+      event.preventDefault();
+      setPalette((open) => !open);
+    } else if (index >= 0 && index < PAGES.length) {
+      event.preventDefault();
+      setPalette(false);
+      navigate(PAGES[index].id);
+    } else if (key === "r") {
+      // Reload the configs, not the window.
+      event.preventDefault();
+      refresh();
+    }
+  };
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => keys.current(event);
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
+
+  useEffect(() => {
+    if (palette) listSkills().then((found) => setSkillNames([...new Set(found.skills.map((s) => s.name))]), () => {});
+  }, [palette]);
+
+  const nameOf = (agent: Agent) => agents.find((info) => info.agent === agent)?.name ?? agent;
+
+  async function copyServer(name: string, from: Agent, to: Agent) {
+    try {
+      const { undo, lost } = await copyMcpServer(name, from, to);
+      const left = lost?.length ? ` Not carried over: ${lost.join(", ")}.` : "";
+      notify({
+        tone: "success",
+        text: `Added ${name} to ${nameOf(to)}.${left}`,
+        undo: async () => {
+          await undoChange(undo);
+          await refresh();
+        },
+      });
+    } catch (err) {
+      notify({ tone: "error", text: String(err) });
+    }
+    await refresh();
+  }
+
+  function commands(): Command[] {
+    const list: Command[] = PAGES.map((item, i) => ({
+      label: item.label,
+      icon: item.icon,
+      hint: shortcut(String(i + 1)),
+      keywords: "go to page",
+      run: () => navigate(item.id),
+    }));
+    list.push(
+      { label: "Add an MCP server", icon: "plus", keywords: "new", run: () => navigate("mcp", { kind: "add-server" }) },
+      { label: "Reload configs", icon: "refresh", hint: shortcut("R"), keywords: "refresh", run: refresh },
+      { label: `Switch to the ${nextTheme} theme`, icon: THEME_ICONS[nextTheme], keywords: "theme dark light", run: () => setTheme(nextTheme) },
+    );
+    for (const info of agents.filter((info) => info.rulesPath)) {
+      list.push({
+        label: `Edit ${info.name} rules`,
+        icon: "rules",
+        keywords: info.rulesPath ?? "",
+        run: () => navigate("rules", { kind: "rules", agent: info.agent }),
+      });
+    }
+    const rows = byName(listing);
+    for (const name of rows.keys()) {
+      list.push({ label: name, icon: "plug", hint: "MCP server", run: () => navigate("mcp", { kind: "server", name }) });
+    }
+    for (const name of skillNames) {
+      list.push({ label: name, icon: "skills", hint: "Skill", run: () => navigate("skills", { kind: "skill", name }) });
+    }
+    for (const [name, copies] of rows) {
+      const [source] = copies.values();
+      for (const copy of copies.values()) {
+        list.push({
+          label: `Edit ${name} in ${nameOf(copy.agent)}`,
+          icon: "plug",
+          keywords: "change settings",
+          run: () => navigate("mcp", { kind: "edit-server", name, agent: copy.agent }),
+        });
+      }
+      for (const info of agents) {
+        // Codex has no SSE servers.
+        if (!info.installed || copies.has(info.agent)) continue;
+        if (info.agent === "codex" && source.transport.kind === "sse") continue;
+        list.push({
+          label: `Copy ${name} to ${info.name}`,
+          icon: "plus",
+          keywords: "add",
+          run: () => copyServer(name, source.agent, info.agent),
+        });
+      }
+    }
+    return list;
   }
 
   return (
@@ -173,7 +296,20 @@ function App() {
             ))}
           </ul>
           <div className="footer-actions">
-            <button className="icon-button" onClick={refresh} title="Reload configs" aria-label="Reload configs">
+            <button
+              className="icon-button"
+              onClick={() => setPalette(true)}
+              title={`Search and commands (${shortcut("K")})`}
+              aria-label="Search and commands"
+            >
+              <Icon name="search" />
+            </button>
+            <button
+              className="icon-button"
+              onClick={refresh}
+              title={`Reload configs (${shortcut("R")})`}
+              aria-label="Reload configs"
+            >
               <Icon name="refresh" />
             </button>
             <button
@@ -195,15 +331,17 @@ function App() {
           {page === "overview" && (
             <OverviewPage agents={agents} listing={listing} secrets={secrets} onNavigate={navigate} onChange={refresh} />
           )}
-          {page === "mcp" && <McpPage agents={agents} listing={listing} onChange={refresh} />}
+          {page === "mcp" && <McpPage agents={agents} listing={listing} onChange={refresh} focus={focus} />}
           {page === "rules" && (
-            <RulesPage agents={agents} setGuard={(unsaved) => (guard.current = unsaved)} />
+            <RulesPage agents={agents} setGuard={(unsaved) => (guard.current = unsaved)} focus={focus} />
           )}
-          {page === "skills" && <SkillsPage agents={agents} />}
+          {page === "skills" && <SkillsPage agents={agents} focus={focus} />}
           {page === "secrets" && <SecretsPage agents={agents} onChange={refresh} />}
           {page === "history" && <HistoryPage agents={agents} />}
         </div>
       </main>
+
+      {palette && <CommandPalette commands={commands()} onClose={() => setPalette(false)} />}
 
       {leaving && (
         <ConfirmDialog

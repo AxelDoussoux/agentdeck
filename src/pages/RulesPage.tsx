@@ -1,25 +1,28 @@
 import { useEffect, useRef, useState } from "react";
-import type { UnsavedGuard } from "../App";
+import type { Focus, UnsavedGuard } from "../App";
 import { ConfirmDialog } from "../components/ConfirmDialog";
 import { DiffView } from "../components/DiffView";
 import { AgentMark, Icon, Notice, PageHeader } from "../components/ui";
 import { useToast } from "../components/Toasts";
 import { listRules, saveRules, undoChange } from "../lib/api";
 import { lineCount } from "../lib/diff";
+import { shortcut, withModifier } from "../lib/keys";
 import { useFilesChanged } from "../lib/watch";
 import type { Agent, AgentInfo, Rules } from "../lib/types";
 
-const SAVE_SHORTCUT = /Mac|iPhone|iPad/.test(navigator.userAgent) ? "⌘S" : "Ctrl+S";
+const SAVE_SHORTCUT = shortcut("S");
 
 interface Props {
   agents: AgentInfo[];
   /** Tells the app there are unsaved changes, so leaving the page asks first. */
   setGuard: (guard: UnsavedGuard | null) => void;
+  /** The agent whose rules to show, chosen in the command palette. */
+  focus?: Focus | null;
 }
 
-export function RulesPage({ agents, setGuard }: Props) {
+export function RulesPage({ agents, setGuard, focus }: Props) {
   const [rules, setRules] = useState<Rules[]>([]);
-  const [selected, setSelected] = useState<Agent>("claude-code");
+  const [selected, setSelected] = useState<Agent>(focus?.kind === "rules" ? focus.agent : "claude-code");
   const [draft, setDraft] = useState("");
   const [pendingCopy, setPendingCopy] = useState<Agent | null>(null);
   const [pendingSelect, setPendingSelect] = useState<Agent | null>(null);
@@ -62,6 +65,22 @@ export function RulesPage({ agents, setGuard }: Props) {
     setRules(all.map((r) => (r.agent === selected ? { ...r, content: saved } : r)));
     setOnDisk(disk === saved ? null : disk);
   });
+
+  useEffect(() => {
+    if (focus?.kind === "rules") select(focus.agent);
+  }, [focus]);
+
+  /** Arrow keys, Home and End move between tabs, as in any tab list. */
+  function onTabKey(event: React.KeyboardEvent) {
+    const index = withFile.findIndex((info) => info.agent === selected);
+    const last = withFile.length - 1;
+    const target = { ArrowRight: index + 1, ArrowLeft: index - 1, Home: 0, End: last }[event.key];
+    if (target === undefined) return;
+    event.preventDefault();
+    const next = withFile[(target + withFile.length) % withFile.length];
+    select(next.agent);
+    document.getElementById(`rules-tab-${next.agent}`)?.focus();
+  }
 
   function select(agent: Agent, force = false) {
     if (agent === selected) return;
@@ -110,7 +129,7 @@ export function RulesPage({ agents, setGuard }: Props) {
 
   useEffect(() => {
     function onKey(event: KeyboardEvent) {
-      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "s") {
+      if (withModifier(event) && event.key.toLowerCase() === "s") {
         event.preventDefault();
         if (dirty) save();
       }
@@ -167,12 +186,15 @@ export function RulesPage({ agents, setGuard }: Props) {
         </Notice>
       )}
 
-      <div className="tabs" role="tablist">
+      <div className="tabs" role="tablist" aria-label="Agents" onKeyDown={onTabKey}>
         {withFile.map((info) => (
           <button
             key={info.agent}
+            id={`rules-tab-${info.agent}`}
             role="tab"
             aria-selected={info.agent === selected}
+            aria-controls="rules-panel"
+            tabIndex={info.agent === selected ? 0 : -1}
             className={info.agent === selected ? "active" : undefined}
             onClick={() => select(info.agent)}
           >
@@ -182,7 +204,7 @@ export function RulesPage({ agents, setGuard }: Props) {
         ))}
       </div>
 
-      <div className="editor-card">
+      <div className="editor-card" id="rules-panel" role="tabpanel" aria-labelledby={`rules-tab-${selected}`}>
         <div className="editor-bar">
           {current?.rulesPath && <code>{current.rulesPath}</code>}
           {dirty && <span className="pill pill-warn">Unsaved changes</span>}

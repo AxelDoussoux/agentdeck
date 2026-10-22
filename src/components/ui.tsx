@@ -24,6 +24,7 @@ const ICONS = {
   undo: "M9 14L4 9l5-5M4 9h10a6 6 0 0 1 0 12h-3",
   more: "M4.5 12a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0M10.5 12a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0M16.5 12a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0",
   differs: "M5 9h14M5 15h14M16 5L8 19",
+  search: "M11 4a7 7 0 1 0 0 14 7 7 0 0 0 0-14zM20 20l-4.2-4.2",
 } as const;
 
 export type IconName = keyof typeof ICONS;
