@@ -26,7 +26,9 @@ shows them side by side, and syncs them in one click.
 - **Rules.** Edit `CLAUDE.md`, `AGENTS.md` and `GEMINI.md` side by side and
   copy them from one agent to the others.
 - **Skills.** See which agents load each Agent Skill, and share a skill with
-  another agent without duplicating folders needlessly.
+  another agent without duplicating folders needlessly. When copies of a skill
+  differ, see which one was edited last and use it everywhere; removed and
+  replaced copies go to a trash you can restore from.
 - **Secrets.** Find API keys stored in plain text in agent configs and move them
   to the system keychain (Windows Credential Manager, macOS Keychain, Secret
   Service). Values are never displayed.
@@ -74,6 +76,8 @@ agentdeck rules copy --from claude-code --to codex gemini
 agentdeck skills list
 agentdeck skills copy pdf --from claude-code --to codex gemini
 agentdeck skills remove pdf --from shared   # moved to ~/.agentdeck/trash
+agentdeck skills trash
+agentdeck skills restore <id>   # --force replaces the skill there now
 agentdeck secrets list
 agentdeck secrets protect claude-code github   # credentials move to the keychain
 agentdeck secrets unprotect claude-code github
@@ -93,7 +97,8 @@ agentdeck usage --days 30
 Skills are read from `~/.claude/skills` (Claude Code), `~/.agents/skills`
 (shared by Codex, Gemini CLI and Cursor), `~/.codex/skills`, `~/.gemini/skills`
 and `~/.cursor/skills`. Copying a skill for Codex writes it to the shared
-folder. Removing a skill moves its folder to `~/.agentdeck/trash`.
+folder. Removing or replacing a skill moves its folder to `~/.agentdeck/trash`,
+and restoring puts it back where it was.
 
 When `CLAUDE_CONFIG_DIR` or `CODEX_HOME` is set, AgentDeck uses that folder in
 place of `~/.claude` or `~/.codex`, like the agents do: its config, rules,
