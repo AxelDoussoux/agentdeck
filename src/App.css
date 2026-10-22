@@ -2121,3 +2121,73 @@ th button.sort {
 .other-variables .copies {
   margin: 0;
 }
+
+/* Session detail */
+.date-range {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.token-bar {
+  display: flex;
+  height: 10px;
+  overflow: hidden;
+  margin-bottom: 10px;
+  border-radius: 999px;
+  background: var(--surface-2);
+}
+
+.token-bar i + i {
+  border-left: 2px solid var(--surface);
+}
+
+.token-list {
+  display: grid;
+  grid-template-columns: auto 1fr auto 3.5em;
+  gap: 4px 8px;
+  align-items: center;
+  margin: 0 0 8px;
+  padding: 0;
+  list-style: none;
+  font-size: 13px;
+}
+
+.token-list li {
+  display: contents;
+}
+
+.token-list .number {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.token-input {
+  background: var(--accent);
+}
+
+.token-cacheRead {
+  background: color-mix(in srgb, var(--accent) 45%, var(--surface));
+}
+
+.token-cacheWrite5m,
+.token-cacheWrite1h {
+  background: color-mix(in srgb, var(--accent) 22%, var(--surface));
+}
+
+.token-output {
+  background: color-mix(in srgb, var(--accent) 60%, var(--text));
+}
+
+.drawer-section .hint {
+  margin: 0;
+}
+
+.command {
+  display: block;
+  margin-bottom: 6px;
+  padding: 8px 10px;
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+  overflow-wrap: anywhere;
+}

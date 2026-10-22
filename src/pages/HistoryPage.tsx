@@ -1,11 +1,14 @@
 import { useEffect, useState } from "react";
 import { CostChart } from "../components/CostChart";
+import { Drawer } from "../components/Drawer";
+import { useToast } from "../components/Toasts";
 import { AgentMark, Empty, Notice, PageHeader } from "../components/ui";
 import { usageReport } from "../lib/api";
-import { dateOf, formatCost, lastDays, localDate, localDays } from "../lib/usage";
+import { dateOf, datesBetween, formatCost, lastDays, localDate, localDays } from "../lib/usage";
 import type { Agent, AgentInfo, Session, Tokens, UsageReport } from "../lib/types";
 
 const PERIODS = [7, 30, 90] as const;
+type Period = (typeof PERIODS)[number] | "custom";
 
 type View = "sessions" | "projects" | "models";
 const VIEWS: Record<View, string> = { sessions: "Sessions", projects: "Projects", models: "Models" };
@@ -37,6 +40,13 @@ function group(sessions: Session[], keyOf: (session: Session) => string, labelOf
   return [...groups.values()].sort((a, b) => b.cost - a.cost);
 }
 
+/** The days of a custom period, whichever way round its ends were picked, up to today. */
+function customDates(a: string, b: string): string[] {
+  const today = localDate(new Date());
+  const [from, to] = [a, b].map((date) => (date < today ? date : today)).sort();
+  return datesBetween(from, to);
+}
+
 /** The monthly budget, kept on this computer only. */
 function storedBudget(): number | null {
   try {
@@ -64,7 +74,12 @@ const basename = (path: string | null) => path?.split(/[\\/]/).filter(Boolean).p
 export function HistoryPage({ agents }: { agents: AgentInfo[] }) {
   const [report, setReport] = useState<UsageReport | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [days, setDays] = useState<(typeof PERIODS)[number]>(30);
+  const [period, setPeriod] = useState<Period>(30);
+  const [range, setRange] = useState(() => {
+    const recent = lastDays(30);
+    return { from: recent[0], to: recent[recent.length - 1] };
+  });
+  const [opened, setOpened] = useState<Session | null>(null);
   const [filter, setFilter] = useState<Agent | "all">("all");
   const [query, setQuery] = useState("");
   const [shown, setShown] = useState(PAGE);
@@ -88,13 +103,14 @@ export function HistoryPage({ agents }: { agents: AgentInfo[] }) {
   }, []);
 
   const nameOf = (agent: Agent) => agents.find((a) => a.agent === agent)?.name ?? agent;
-  const dates = lastDays(days);
-  const since = dates[0];
+  const dates = period === "custom" ? customDates(range.from, range.to) : lastDays(period);
+  const [since, until] = [dates[0], dates[dates.length - 1]];
+  const inPeriod = (date: string) => date >= since && date <= until;
   const matches = (agent: Agent) => filter === "all" || agent === filter;
 
-  const daily = report ? localDays(report).filter((d) => d.date >= since && matches(d.agent)) : [];
+  const daily = report ? localDays(report).filter((d) => inPeriod(d.date) && matches(d.agent)) : [];
   const sessions =
-    report?.sessions.filter((s) => s.endedAt && dateOf(s.endedAt) >= since && matches(s.agent)) ?? [];
+    report?.sessions.filter((s) => s.endedAt && inPeriod(dateOf(s.endedAt)) && matches(s.agent)) ?? [];
   const words = query.toLowerCase().split(/\s+/).filter(Boolean);
   const found = sessions.filter((s) => {
     const text = [s.title, s.project, s.id, ...s.models].join(" ").toLowerCase();
@@ -102,7 +118,7 @@ export function HistoryPage({ agents }: { agents: AgentInfo[] }) {
   });
 
   // A new search or period starts from the most recent sessions again.
-  useEffect(() => setShown(PAGE), [query, days, filter, sort]);
+  useEffect(() => setShown(PAGE), [query, since, until, filter, sort]);
   const costs = new Map<string, Map<Agent, number>>();
   for (const day of daily) {
     const byDay = costs.get(day.date) ?? new Map<Agent, number>();
@@ -186,17 +202,44 @@ export function HistoryPage({ agents }: { agents: AgentInfo[] }) {
 
       <div className="toolbar toolbar-top">
         <div className="segmented" role="group" aria-label="Period">
-          {PERIODS.map((period) => (
+          {PERIODS.map((option) => (
             <button
-              key={period}
-              className={period === days ? "active" : undefined}
-              aria-pressed={period === days}
-              onClick={() => setDays(period)}
+              key={option}
+              className={option === period ? "active" : undefined}
+              aria-pressed={option === period}
+              onClick={() => setPeriod(option)}
             >
-              {period} days
+              {option} days
             </button>
           ))}
+          <button
+            className={period === "custom" ? "active" : undefined}
+            aria-pressed={period === "custom"}
+            onClick={() => setPeriod("custom")}
+          >
+            Custom
+          </button>
         </div>
+        {period === "custom" && (
+          <span className="date-range">
+            <input
+              type="date"
+              aria-label="From"
+              value={since}
+              max={until}
+              onChange={(e) => e.target.value && setRange({ ...range, from: e.target.value })}
+            />
+            <span className="hint">to</span>
+            <input
+              type="date"
+              aria-label="To"
+              value={until}
+              min={since}
+              max={localDate(new Date())}
+              onChange={(e) => e.target.value && setRange({ ...range, to: e.target.value })}
+            />
+          </span>
+        )}
         <select
           aria-label="Agent"
           value={filter}
@@ -231,7 +274,9 @@ export function HistoryPage({ agents }: { agents: AgentInfo[] }) {
             <div className="stat">
               <span className="label">Estimated cost</span>
               <span className="value">{formatCost(periodCost)}</span>
-              <span className="hint">{sessions.length} sessions in {days} days</span>
+              <span className="hint">
+                {sessions.length} sessions in {dates.length} {dates.length === 1 ? "day" : "days"}
+              </span>
             </div>
             {[...byAgent].map(([agent, stats]) => (
               <div key={agent} className="stat">
@@ -379,13 +424,15 @@ export function HistoryPage({ agents }: { agents: AgentInfo[] }) {
                 </thead>
                 <tbody>
                   {sorted.slice(0, shown).map((session) => (
-                    <tr key={`${session.agent}/${session.id}`}>
+                    <tr key={`${session.agent}/${session.id}`} className={session === opened ? "highlight" : undefined}>
                       <td className="nowrap">{session.endedAt && dateOf(session.endedAt)}</td>
                       <td>
                         <span className="session-title">
                           <AgentMark agent={session.agent} size={20} />
                           <span>
-                            <strong>{session.title ?? "Untitled session"}</strong>
+                            <button className="link" onClick={() => setOpened(session)}>
+                              <strong>{session.title ?? "Untitled session"}</strong>
+                            </button>
                             <small>{basename(session.project)}</small>
                           </span>
                         </span>
@@ -421,6 +468,173 @@ export function HistoryPage({ agents }: { agents: AgentInfo[] }) {
           )}
         </>
       )}
+
+      {opened && (
+        <SessionDrawer
+          session={opened}
+          agentName={nameOf(opened.agent)}
+          onClose={() => setOpened(null)}
+          onProject={(project) => {
+            setOpened(null);
+            setView("sessions");
+            setQuery(project);
+          }}
+        />
+      )}
     </>
+  );
+}
+
+/** The kinds of tokens, in the order of the bar. */
+const TOKEN_KINDS: { key: keyof Tokens; label: string }[] = [
+  { key: "input", label: "Input" },
+  { key: "cacheRead", label: "Cache read" },
+  { key: "cacheWrite5m", label: "Cache write (5 min)" },
+  { key: "cacheWrite1h", label: "Cache write (1 h)" },
+  { key: "output", label: "Output" },
+];
+
+const formatMoment = (timestamp: string | null) =>
+  timestamp ? new Date(timestamp).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" }) : "Unknown";
+
+function formatDuration(start: string | null, end: string | null): string | null {
+  if (!start || !end) return null;
+  const minutes = Math.round((Date.parse(end) - Date.parse(start)) / 60000);
+  if (!(minutes >= 0)) return null;
+  if (minutes < 60) return `${minutes} min`;
+  const hours = Math.floor(minutes / 60);
+  return hours < 48 ? `${hours} h ${minutes % 60} min` : `${Math.round(hours / 24)} days`;
+}
+
+/** The command that reopens a session in its agent. */
+const resumeCommand = (session: Session) =>
+  session.agent === "codex" ? `codex resume ${session.id}` : `claude --resume ${session.id}`;
+
+interface SessionProps {
+  session: Session;
+  agentName: string;
+  onClose: () => void;
+  /** Shows only the sessions of this project. */
+  onProject: (project: string) => void;
+}
+
+/** One session's times, models, token split and cost. */
+function SessionDrawer({ session, agentName, onClose, onProject }: SessionProps) {
+  const notify = useToast();
+  const { tokens } = session;
+  const total = totalTokens(tokens);
+  const read = tokens.input + tokens.cacheRead + tokens.cacheWrite5m + tokens.cacheWrite1h;
+  const duration = formatDuration(session.startedAt, session.endedAt);
+  const project = basename(session.project);
+
+  async function copyResume() {
+    try {
+      await navigator.clipboard.writeText(resumeCommand(session));
+      notify({ tone: "success", text: "Copied the command." });
+    } catch (err) {
+      notify({ tone: "error", text: `Could not copy: ${err}` });
+    }
+  }
+
+  return (
+    <Drawer
+      title={session.title ?? "Untitled session"}
+      subtitle={
+        <span className="with-mark">
+          <AgentMark agent={session.agent} size={16} /> {agentName}
+          {project && ` · ${project}`}
+        </span>
+      }
+      tabs={[{ id: "details", label: "Details" }]}
+      tab="details"
+      onTab={() => {}}
+      onClose={onClose}
+    >
+      <dl className="facts">
+        <dt>Started</dt>
+        <dd>{formatMoment(session.startedAt)}</dd>
+        <dt>Ended</dt>
+        <dd>
+          {formatMoment(session.endedAt)}
+          {duration && <span className="hint"> · {duration}</span>}
+        </dd>
+        {session.project && (
+          <>
+            <dt>Folder</dt>
+            <dd>
+              <code>{session.project}</code>
+            </dd>
+          </>
+        )}
+        <dt>{session.models.length > 1 ? "Models" : "Model"}</dt>
+        <dd>
+          <code>{session.models.join(", ") || "Unknown"}</code>
+        </dd>
+        <dt>Session</dt>
+        <dd>
+          <code>{session.id}</code>
+        </dd>
+      </dl>
+
+      <section className="drawer-section">
+        <header>
+          <strong>Tokens</strong>
+          <span>{formatTokens(total)}</span>
+        </header>
+        {total > 0 && (
+          <div className="token-bar" aria-hidden="true">
+            {TOKEN_KINDS.filter(({ key }) => tokens[key] > 0).map(({ key }) => (
+              <i key={key} className={`token-${key}`} style={{ width: `${(tokens[key] / total) * 100}%` }} />
+            ))}
+          </div>
+        )}
+        <ul className="token-list">
+          {TOKEN_KINDS.filter(({ key }) => tokens[key] > 0).map(({ key, label }) => (
+            <li key={key}>
+              <i className={`swatch token-${key}`} />
+              <span>{label}</span>
+              <span className="number">{formatTokens(tokens[key])}</span>
+              <span className="number hint">{Math.round((tokens[key] / total) * 100)}%</span>
+            </li>
+          ))}
+        </ul>
+        {read > 0 && (
+          <p className="hint">
+            Cache hit rate: {Math.round((tokens.cacheRead / read) * 100)}% of the input was read from the cache.
+          </p>
+        )}
+      </section>
+
+      <section className="drawer-section">
+        <header>
+          <strong>Estimated cost</strong>
+          <span>{formatCost(session.costUsd)}</span>
+        </header>
+        <p className="hint">
+          At API list prices.
+          {session.unpricedTokens > 0 &&
+            ` ${formatTokens(session.unpricedTokens)} tokens from models without a known price are not counted.`}
+        </p>
+      </section>
+
+      <section className="drawer-section">
+        <header>
+          <strong>Resume</strong>
+          <button className="small" onClick={copyResume}>
+            Copy
+          </button>
+        </header>
+        <code className="command">{resumeCommand(session)}</code>
+        {session.project && <p className="hint">Run it in {session.project} to continue this session.</p>}
+      </section>
+
+      {project && (
+        <div className="drawer-footer">
+          <button className="small" onClick={() => onProject(project)}>
+            Show the sessions of {project}
+          </button>
+        </div>
+      )}
+    </Drawer>
   );
 }
