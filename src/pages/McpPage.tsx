@@ -4,6 +4,7 @@ import { AgentMark, Empty, Icon, Notice, PageHeader } from "../components/ui";
 import { Drawer } from "../components/Drawer";
 import { RowMenu, type MenuItem } from "../components/RowMenu";
 import { ServerForm, type ServerDraft } from "../components/ServerForm";
+import { ServerTestResult, type TestState } from "../components/ServerTest";
 import { useToast } from "../components/Toasts";
 import {
   addMcpServer,
@@ -13,6 +14,7 @@ import {
   removeMcpServer,
   restoreServerVersion,
   serverVersions,
+  testMcpServer,
   undoChange,
 } from "../lib/api";
 import { byName, changes, describe, differences, WITH_OPTIONS } from "../lib/servers";
@@ -44,6 +46,20 @@ export function McpPage({ agents, listing, onChange, focus }: Props) {
   const [opened, setOpened] = useState<Opened | null>(null);
   const [highlighted, setHighlighted] = useState<string | null>(null);
   const [versions, setVersions] = useState<Map<Agent, ServerVersion[]>>(new Map());
+  // Server tests by `agent/name`, kept while the page is open.
+  const [tests, setTests] = useState<Record<string, TestState>>({});
+
+  async function test(agent: Agent, name: string) {
+    const key = `${agent}/${name}`;
+    setTests((current) => ({ ...current, [key]: { running: true } }));
+    let state: TestState;
+    try {
+      state = { running: false, report: await testMcpServer(agent, name) };
+    } catch (err) {
+      state = { running: false, error: String(err) };
+    }
+    setTests((current) => ({ ...current, [key]: state }));
+  }
 
   useEffect(() => {
     if (focus?.kind === "add-server") setAdding(true);
@@ -398,6 +414,18 @@ export function McpPage({ agents, listing, onChange, focus }: Props) {
                       {nameOf(server.agent)}
                     </span>
                     <span className="copy-actions">
+                      <button
+                        className="small"
+                        disabled={tests[`${server.agent}/${name}`]?.running}
+                        title={
+                          server.transport.kind === "stdio"
+                            ? `Runs ${describe(server.transport)} on this computer, lists its tools, then stops it`
+                            : "Connects to the server and lists its tools"
+                        }
+                        onClick={() => test(server.agent, name)}
+                      >
+                        {tests[`${server.agent}/${name}`]?.running ? "Testing…" : "Test"}
+                      </button>
                       <button className="small" onClick={() => setOpened({ name, tab, editing: server.agent })}>
                         Edit
                       </button>
@@ -418,6 +446,7 @@ export function McpPage({ agents, listing, onChange, focus }: Props) {
                     </span>
                   </header>
                   <Facts server={server} />
+                  {tests[`${server.agent}/${name}`] && <ServerTestResult state={tests[`${server.agent}/${name}`]} />}
                 </section>
               ),
             )}

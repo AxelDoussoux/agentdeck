@@ -3,7 +3,7 @@ use std::process::ExitCode;
 
 use agentdeck_core::secrets::{self, Keychain};
 use agentdeck_core::skills::{self, Location};
-use agentdeck_core::{Agent, ServerSpec, Transport, agent, mcp, rules, usage};
+use agentdeck_core::{Agent, ServerSpec, Transport, agent, mcp, probe, rules, usage};
 use clap::{Parser, Subcommand, ValueEnum};
 
 #[derive(Parser)]
@@ -217,6 +217,8 @@ enum McpCommand {
     },
     /// Remove an MCP server from an agent
     Remove { agent: AgentArg, name: String },
+    /// Start an MCP server and list its tools, to check that it works
+    Test { agent: AgentArg, name: String },
     /// Copy an MCP server, secrets included, from one agent to others
     Copy {
         name: String,
@@ -364,6 +366,46 @@ fn run_mcp(command: McpCommand, home: &std::path::Path, json: bool) -> agentdeck
             let agent = Agent::from(agent);
             mcp::remove(agent, home, &name)?;
             println!("Removed \"{name}\" from {}", agent.display_name());
+        }
+        McpCommand::Test { agent, name } => {
+            let agent = Agent::from(agent);
+            let spec = mcp::get(agent, home, &name)?.ok_or(agentdeck_core::Error::NotFound {
+                agent,
+                name: name.clone(),
+            })?;
+            let report = probe::probe(&spec, probe::TIMEOUT);
+            if json {
+                println!("{}", serde_json::to_string_pretty(&report).unwrap());
+            } else if report.ok {
+                let server = [
+                    report.server_name.as_deref(),
+                    report.server_version.as_deref(),
+                ]
+                .into_iter()
+                .flatten()
+                .collect::<Vec<_>>()
+                .join(" ");
+                println!(
+                    "\"{name}\" works ({server}, {:.1} s): {} tool(s)",
+                    report.elapsed_ms as f64 / 1000.0,
+                    report.tools.len()
+                );
+                for tool in &report.tools {
+                    let first_line = tool.description.as_deref().and_then(|d| d.lines().next());
+                    println!("  {:<32} {}", tool.name, first_line.unwrap_or(""));
+                }
+            } else {
+                eprintln!(
+                    "\"{name}\" failed: {}",
+                    report.error.as_deref().unwrap_or("unknown error")
+                );
+                if !report.log.is_empty() {
+                    eprintln!("\nServer output:\n{}", report.log);
+                }
+            }
+            if !report.ok {
+                std::process::exit(1);
+            }
         }
         McpCommand::Copy {
             name,

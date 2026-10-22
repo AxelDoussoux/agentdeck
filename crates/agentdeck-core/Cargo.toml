@@ -14,6 +14,7 @@ toml_edit = "0.25"
 dirs = "6"
 thiserror = "2"
 keyring = { version = "3", features = ["apple-native", "windows-native", "async-secret-service", "tokio", "crypto-rust"] }
+ureq = { version = "3", features = ["platform-verifier"] }
 
 [dev-dependencies]
 tempfile = "3"

@@ -2442,6 +2442,64 @@ th button.sort {
   flex-shrink: 0;
 }
 
+.test-result {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.test-running {
+  margin: 12px 0 0;
+}
+
+.test-ok {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+  margin: 0;
+  color: var(--ok);
+  font-size: 13px;
+}
+
+.tool-list {
+  max-height: 240px;
+  margin: 0;
+  padding: 0;
+  overflow-y: auto;
+  list-style: none;
+  font-size: 12px;
+}
+
+.tool-list li {
+  display: flex;
+  gap: 10px;
+  padding: 3px 0;
+}
+
+.tool-list code {
+  flex-shrink: 0;
+}
+
+.tool-list .hint {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.test-log summary {
+  cursor: pointer;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.test-log .preview {
+  margin-top: 6px;
+  max-height: 200px;
+}
+
 .command-change {
   margin-top: 12px;
 }
