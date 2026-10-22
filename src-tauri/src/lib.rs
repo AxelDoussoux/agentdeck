@@ -562,7 +562,8 @@ async fn export_sessions_csv(
         // The byte order mark tells Excel the file is UTF-8, so accents and
         // emoji in titles show as written.
         let csv = format!("\u{feff}{}", usage::sessions_csv(&sessions));
-        fs::write(&path, csv).map_err(|err| format!("Could not write {}: {err}", path.display()))?;
+        fs::write(&path, csv)
+            .map_err(|err| format!("Could not write {}: {err}", path.display()))?;
         Ok(Some(path.display().to_string()))
     })
     .await
