@@ -111,7 +111,8 @@ from the command line). Unprotect your servers before uninstalling the app.
 Headers of remote servers are listed but stay in the config.
 
 Session history is read from `~/.claude/projects` (Claude Code) and
-`~/.codex/sessions` (Codex). Costs are estimates at API list prices
+`~/.codex/sessions` (Codex). What each log file holds is cached in
+`~/.agentdeck/cache`, so only new or changed files are read again. Costs are estimates at API list prices
 (`crates/agentdeck-core/src/pricing.rs`); subscriptions are billed
 differently, and models without a known price are left out of the total.
 
