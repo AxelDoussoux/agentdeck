@@ -1,7 +1,8 @@
-import { useEffect, useRef, useState } from "react";
+import { lazy, Suspense, useEffect, useRef, useState } from "react";
 import type { Focus, UnsavedGuard } from "../App";
 import { ConfirmDialog } from "../components/ConfirmDialog";
 import { DiffView } from "../components/DiffView";
+import { Markdown } from "../components/Markdown";
 import { AgentMark, Icon, Notice, PageHeader } from "../components/ui";
 import { useToast } from "../components/Toasts";
 import { listRules, saveRules, undoChange } from "../lib/api";
@@ -10,7 +11,20 @@ import { shortcut, withModifier } from "../lib/keys";
 import { useFilesChanged } from "../lib/watch";
 import type { Agent, AgentInfo, Rules } from "../lib/types";
 
+// CodeMirror is most of the app's code, so it loads with the Rules page.
+const MarkdownEditor = lazy(() => import("../components/MarkdownEditor").then((m) => ({ default: m.MarkdownEditor })));
+
 const SAVE_SHORTCUT = shortcut("S");
+const PREVIEW_KEY = "agentdeck.rules.preview";
+
+/** Whether the preview was left open, if this browser storage can tell. */
+function previewWasOpen(): boolean {
+  try {
+    return localStorage.getItem(PREVIEW_KEY) === "1";
+  } catch {
+    return false;
+  }
+}
 
 interface Props {
   agents: AgentInfo[];
@@ -29,9 +43,20 @@ export function RulesPage({ agents, setGuard, focus }: Props) {
   const [loadError, setLoadError] = useState<string | null>(null);
   // The selected file's content on disk, when it changed while being edited.
   const [onDisk, setOnDisk] = useState<string | null>(null);
+  const [preview, setPreview] = useState(previewWasOpen);
   const notify = useToast();
 
-  const saved = rules.find((r) => r.agent === selected)?.content ?? "";
+  function togglePreview() {
+    setPreview(!preview);
+    try {
+      localStorage.setItem(PREVIEW_KEY, preview ? "0" : "1");
+    } catch {
+      // The choice is only kept for this session.
+    }
+  }
+
+  const contentOf = (agent: Agent) => rules.find((r) => r.agent === agent)?.content ?? "";
+  const saved = contentOf(selected);
   const dirty = draft !== saved;
   const withFile = agents.filter((info) => info.rulesPath !== null);
   const current = agents.find((info) => info.agent === selected);
@@ -200,6 +225,7 @@ export function RulesPage({ agents, setGuard, focus }: Props) {
           >
             <AgentMark agent={info.agent} size={18} />
             {info.name}
+            {info.agent !== selected && <SameBadge theirs={contentOf(info.agent)} ours={saved} name={current?.name} />}
           </button>
         ))}
       </div>
@@ -207,15 +233,29 @@ export function RulesPage({ agents, setGuard, focus }: Props) {
       <div className="editor-card" id="rules-panel" role="tabpanel" aria-labelledby={`rules-tab-${selected}`}>
         <div className="editor-bar">
           {current?.rulesPath && <code>{current.rulesPath}</code>}
-          {dirty && <span className="pill pill-warn">Unsaved changes</span>}
+          <span className="editor-bar-actions">
+            {dirty && <span className="pill pill-warn">Unsaved changes</span>}
+            <button className="small" aria-pressed={preview} onClick={togglePreview}>
+              {preview ? "Hide preview" : "Preview"}
+            </button>
+          </span>
         </div>
-        <textarea
-          className="editor"
-          spellCheck={false}
-          value={draft}
-          placeholder="No rules yet. Write Markdown here."
-          onChange={(e) => setDraft(e.target.value)}
-        />
+        <div className={preview ? "rules-split" : "rules-single"}>
+          <Suspense fallback={<div className="markdown-editor" />}>
+            <MarkdownEditor
+              docKey={selected}
+              value={draft}
+              onChange={setDraft}
+              label={`${current?.name ?? ""} rules`}
+              placeholder="No rules yet. Write Markdown here."
+            />
+          </Suspense>
+          {preview && (
+            <div className="rules-preview" aria-label="Preview">
+              {draft.trim() ? <Markdown text={draft} /> : <p className="hint">Nothing to preview yet.</p>}
+            </div>
+          )}
+        </div>
       </div>
 
       <div className="toolbar">
@@ -272,5 +312,26 @@ export function RulesPage({ agents, setGuard, focus }: Props) {
         </ConfirmDialog>
       )}
     </>
+  );
+}
+
+/** Whether another agent's saved rules match the shown agent's. */
+function SameBadge({ theirs, ours, name }: { theirs: string; ours: string; name?: string }) {
+  if (!theirs.trim() && !ours.trim()) return null;
+  if (!theirs.trim()) {
+    return (
+      <span className="tab-badge" title="No rules yet">
+        Empty
+      </span>
+    );
+  }
+  return theirs === ours ? (
+    <span className="tab-badge tab-badge-same" title={`Same as the saved ${name} rules`}>
+      Same
+    </span>
+  ) : (
+    <span className="tab-badge tab-badge-differs" title={`Differs from the saved ${name} rules`}>
+      Differs
+    </span>
   );
 }
