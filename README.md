@@ -48,7 +48,8 @@ shows them side by side, and syncs them in one click.
 - **Keyboard.** `Ctrl+K` (`⌘K` on macOS) opens a palette to jump to a page,
   a server, a skill or an agent's rules, or to copy a server to another agent.
   `Ctrl+1` to `Ctrl+6` switch pages, `Ctrl+R` reloads the configs and `Ctrl+S`
-  saves rules.
+  saves rules. Arrow keys move between the buttons of the MCP and Skills
+  grids, and tips show on keyboard focus as well as on hover.
 - **Settings.** Theme, update checks, the folder used for each agent, the
   launcher of protected servers, backups and the skills trash, in one place.
 - **CLI.** Everything is also available from the `agentdeck` command line.

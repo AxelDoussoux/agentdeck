@@ -1,6 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { Icon } from "./ui";
+import { Tooltip } from "./Tooltip";
 
 interface Toast {
   tone: "success" | "error";
@@ -116,9 +117,11 @@ function ToastItem({ toast, onUndo, onClose }: ItemProps) {
           <Icon name="undo" size={14} /> {toast.busy ? "Undoing…" : "Undo"}
         </button>
       )}
-      <button className="icon-button" aria-label="Dismiss" title="Dismiss" onClick={onClose}>
-        <Icon name="close" size={14} />
-      </button>
+      <Tooltip text="Dismiss">
+        <button className="icon-button" aria-label="Dismiss" onClick={onClose}>
+          <Icon name="close" size={14} />
+        </button>
+      </Tooltip>
     </div>
   );
 }

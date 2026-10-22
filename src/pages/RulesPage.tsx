@@ -5,6 +5,7 @@ import { DiffView } from "../components/DiffView";
 import { Markdown } from "../components/Markdown";
 import { AgentMark, Icon, Notice, PageHeader } from "../components/ui";
 import { useToast } from "../components/Toasts";
+import { Tooltip } from "../components/Tooltip";
 import { listRules, saveRules, undoChange } from "../lib/api";
 import { lineCount } from "../lib/diff";
 import { SHARED_END, SHARED_START, sharedPart, startShared, withShared } from "../lib/rules";
@@ -273,13 +274,11 @@ export function RulesPage({ agents, setGuard, focus }: Props) {
           <span className="editor-bar-actions">
             {dirty && <span className="pill pill-warn">Unsaved changes</span>}
             {!draftHasBase && (
-              <button
-                className="small"
-                title="Marks these rules as the base shared by every agent. Lines you then move below the end marker stay specific to this agent."
-                onClick={() => setDraft(startShared(draft))}
-              >
-                Make a shared base
-              </button>
+              <Tooltip text="Marks these rules as the base shared by every agent. Lines you then move below the end marker stay specific to this agent.">
+                <button className="small" onClick={() => setDraft(startShared(draft))}>
+                  Make a shared base
+                </button>
+              </Tooltip>
             )}
             <button className="small" aria-pressed={preview} onClick={togglePreview}>
               {preview ? "Hide preview" : "Preview"}
@@ -305,9 +304,11 @@ export function RulesPage({ agents, setGuard, focus }: Props) {
       </div>
 
       <div className="toolbar">
-        <button className="primary" disabled={!dirty} onClick={save} title={`Save (${SAVE_SHORTCUT})`}>
-          Save <kbd>{SAVE_SHORTCUT}</kbd>
-        </button>
+        <Tooltip text={`Save (${SAVE_SHORTCUT})`}>
+          <button className="primary" disabled={!dirty} onClick={save}>
+            Save <kbd>{SAVE_SHORTCUT}</kbd>
+          </button>
+        </Tooltip>
         {dirty && <button onClick={() => (onDisk === null ? setDraft(saved) : load())}>Revert</button>}
 
         <span className="spacer" />
@@ -325,20 +326,15 @@ export function RulesPage({ agents, setGuard, focus }: Props) {
               );
             }
             return (
-              <button
+              <Tooltip
                 key={info.agent}
-                disabled={dirty}
-                title={
-                  dirty
-                    ? "Save first"
-                    : base !== null
-                      ? `Put this shared base in ${info.name}'s rules`
-                      : `Replace ${info.name} rules with these`
-                }
-                onClick={() => setPendingCopy(info.agent)}
+                text={base !== null ? `Put this shared base in ${info.name}'s rules` : `Replace ${info.name} rules with these`}
               >
-                {info.name}
-              </button>
+                {/* A disabled button gets no mouse events, so its reason stays a title. */}
+                <button disabled={dirty} title={dirty ? "Save first" : undefined} onClick={() => setPendingCopy(info.agent)}>
+                  {info.name}
+                </button>
+              </Tooltip>
             );
           })}
       </div>

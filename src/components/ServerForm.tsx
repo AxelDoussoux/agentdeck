@@ -1,6 +1,7 @@
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { useState, type ClipboardEvent, type FormEvent } from "react";
 import { Icon, Notice } from "./ui";
+import { Tooltip } from "./Tooltip";
 import { CATALOG, type CatalogServer } from "../lib/catalog";
 import { splitCommand } from "../lib/command";
 import { parseServers, type ImportedServer } from "../lib/importServers";
@@ -371,15 +372,16 @@ export function ServerForm({ agents, editing, has = () => false, onSubmit, onCan
                   placeholder={i === 0 ? "-y" : "Argument"}
                   spellCheck={false}
                 />
-                <button
-                  type="button"
-                  className="icon-button"
-                  aria-label={`Remove argument ${i + 1}`}
-                  title="Remove"
-                  onClick={() => setArgs(args.filter((_, j) => j !== i))}
-                >
-                  <Icon name="close" size={14} />
-                </button>
+                <Tooltip text={`Remove argument ${i + 1}`}>
+                  <button
+                    type="button"
+                    className="icon-button"
+                    aria-label={`Remove argument ${i + 1}`}
+                    onClick={() => setArgs(args.filter((_, j) => j !== i))}
+                  >
+                    <Icon name="close" size={14} />
+                  </button>
+                </Tooltip>
               </div>
             ))}
             <button
@@ -431,26 +433,28 @@ export function ServerForm({ agents, editing, has = () => false, onSubmit, onCan
               onChange={(e) => setVariable(v.id, { value: e.target.value })}
               placeholder={v.value === null ? "Unchanged, hidden" : (v.hint ?? "Value")}
             />
-            <button
-              type="button"
-              className="icon-button"
-              aria-label={v.shown ? "Hide the value" : "Show the value"}
-              title={v.shown ? "Hide" : "Show"}
-              aria-pressed={v.shown}
-              disabled={v.value === null}
-              onClick={() => setVariable(v.id, { shown: !v.shown })}
-            >
-              <Icon name={v.shown ? "eye-off" : "eye"} size={14} />
-            </button>
-            <button
-              type="button"
-              className="icon-button"
-              aria-label={`Remove ${v.key || "this variable"}`}
-              title="Remove"
-              onClick={() => setVariables(variables.filter((other) => other.id !== v.id))}
-            >
-              <Icon name="close" size={14} />
-            </button>
+            <Tooltip text={v.shown ? "Hide the value" : "Show the value"}>
+              <button
+                type="button"
+                className="icon-button"
+                aria-label={v.shown ? "Hide the value" : "Show the value"}
+                aria-pressed={v.shown}
+                disabled={v.value === null}
+                onClick={() => setVariable(v.id, { shown: !v.shown })}
+              >
+                <Icon name={v.shown ? "eye-off" : "eye"} size={14} />
+              </button>
+            </Tooltip>
+            <Tooltip text={`Remove ${v.key || "this variable"}`}>
+              <button
+                type="button"
+                className="icon-button"
+                aria-label={`Remove ${v.key || "this variable"}`}
+                onClick={() => setVariables(variables.filter((other) => other.id !== v.id))}
+              >
+                <Icon name="close" size={14} />
+              </button>
+            </Tooltip>
           </div>
         ))}
         <button

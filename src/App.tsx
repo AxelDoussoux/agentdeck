@@ -4,6 +4,7 @@ import { getCurrentWindow } from "@tauri-apps/api/window";
 import { CommandPalette, type Command } from "./components/CommandPalette";
 import { ConfirmDialog } from "./components/ConfirmDialog";
 import { useToast } from "./components/Toasts";
+import { Tooltip } from "./components/Tooltip";
 import { Icon, type IconName } from "./components/ui";
 import { copyMcpServer, listAgents, listMcpServers, listSecrets, listSkills, undoChange } from "./lib/api";
 import { shortcut, withModifier } from "./lib/keys";
@@ -62,6 +63,20 @@ export interface UnsavedGuard {
 export type Theme = "system" | "light" | "dark";
 const THEMES: Theme[] = ["system", "light", "dark"];
 const THEME_ICONS: Record<Theme, IconName> = { system: "monitor", light: "sun", dark: "moon" };
+
+/** Below this width the sidebar shows only icons; see App.css. */
+const NARROW = "(max-width: 760px)";
+
+function useMediaQuery(query: string) {
+  const [matches, setMatches] = useState(() => window.matchMedia(query).matches);
+  useEffect(() => {
+    const list = window.matchMedia(query);
+    const onChange = () => setMatches(list.matches);
+    list.addEventListener("change", onChange);
+    return () => list.removeEventListener("change", onChange);
+  }, [query]);
+  return matches;
+}
 
 function storedTheme(): Theme {
   try {
@@ -145,6 +160,9 @@ function App() {
     if (guard.current && target !== page) setLeaving({ what: guard.current.what, proceed: go });
     else go();
   }
+
+  // A narrow window shows the sidebar as icons, with their labels as tips.
+  const narrow = useMediaQuery(NARROW);
 
   // Shortcuts: the palette, a page by its place in the sidebar, reload.
   const keys = useRef<(event: KeyboardEvent) => void>(() => {});
@@ -270,19 +288,19 @@ function App() {
             {section.pages.map((item) => {
               const badge = badges[item.id];
               return (
-                <button
-                  key={item.id}
-                  className={`nav-item ${item.id === page ? "active" : ""}`}
-                  aria-current={item.id === page ? "page" : undefined}
-                  title={item.label}
-                  onClick={() => navigate(item.id)}
-                >
-                  <Icon name={item.icon} />
-                  <span>{item.label}</span>
-                  {badge && (
-                    <span className={`badge ${badge.danger ? "badge-danger" : ""}`}>{badge.value}</span>
-                  )}
-                </button>
+                <Tooltip key={item.id} text={item.label} disabled={!narrow}>
+                  <button
+                    className={`nav-item ${item.id === page ? "active" : ""}`}
+                    aria-current={item.id === page ? "page" : undefined}
+                    onClick={() => navigate(item.id)}
+                  >
+                    <Icon name={item.icon} />
+                    <span>{item.label}</span>
+                    {badge && (
+                      <span className={`badge ${badge.danger ? "badge-danger" : ""}`}>{badge.value}</span>
+                    )}
+                  </button>
+                </Tooltip>
               );
             })}
           </div>
@@ -307,31 +325,34 @@ function App() {
             ))}
           </ul>
           <div className="footer-actions">
-            <button
-              className="icon-button"
-              onClick={() => setPalette(true)}
-              title={`Search and commands (${shortcut("K")})`}
-              aria-label="Search and commands"
-            >
-              <Icon name="search" />
-            </button>
-            <button
-              className="icon-button"
-              onClick={refresh}
-              title={`Reload configs (${shortcut("R")})`}
-              aria-label="Reload configs"
-            >
-              <Icon name="refresh" />
-            </button>
-            <button
-              className={`icon-button ${page === "settings" ? "active" : ""}`}
-              aria-current={page === "settings" ? "page" : undefined}
-              onClick={() => navigate("settings")}
-              title="Settings"
-              aria-label="Settings"
-            >
-              <Icon name="settings" />
-            </button>
+            <Tooltip text={`Search and commands (${shortcut("K")})`}>
+              <button
+                className="icon-button"
+                onClick={() => setPalette(true)}
+                aria-label="Search and commands"
+              >
+                <Icon name="search" />
+              </button>
+            </Tooltip>
+            <Tooltip text={`Reload configs (${shortcut("R")})`}>
+              <button
+                className="icon-button"
+                onClick={refresh}
+                aria-label="Reload configs"
+              >
+                <Icon name="refresh" />
+              </button>
+            </Tooltip>
+            <Tooltip text="Settings">
+              <button
+                className={`icon-button ${page === "settings" ? "active" : ""}`}
+                aria-current={page === "settings" ? "page" : undefined}
+                onClick={() => navigate("settings")}
+                aria-label="Settings"
+              >
+                <Icon name="settings" />
+              </button>
+            </Tooltip>
           </div>
         </div>
       </nav>
