@@ -1,14 +1,135 @@
+use std::collections::HashMap;
 use std::fs;
 use std::path::PathBuf;
+use std::sync::Mutex;
 
 use agentdeck_core::rules::{self, Rules};
 use agentdeck_core::secrets::{self, Keychain, SecretRef};
 use agentdeck_core::skills::{self, Location, Skill};
 use agentdeck_core::usage::{self, UsageReport};
-use agentdeck_core::{Agent, AgentInfo, McpServer, ServerSpec, agent, mcp};
+use agentdeck_core::{Agent, AgentInfo, Error, McpServer, ServerSpec, agent, mcp};
+use tauri::State;
 
 fn home() -> Result<PathBuf, String> {
     agent::home_dir().map_err(|err| err.to_string())
+}
+
+/// How to take back a change made from the app, for the Undo button of its
+/// notification. Kept in memory only: secrets never leave the Rust side.
+enum UndoAction {
+    /// Put back the previous settings of a server, or remove it if it was new.
+    Mcp {
+        agent: Agent,
+        name: String,
+        previous: Option<ServerSpec>,
+    },
+    /// Put back the previous rules, unless they changed again since.
+    Rules {
+        agent: Agent,
+        previous: String,
+        written: String,
+    },
+    /// Protect (or unprotect) the server again.
+    Protect {
+        agent: Agent,
+        server: String,
+        protect: bool,
+    },
+}
+
+/// How many recent changes can still be undone.
+const UNDO_KEPT: u64 = 20;
+
+/// Changes that can still be undone, by id.
+#[derive(Default)]
+struct UndoStore(Mutex<(u64, HashMap<u64, UndoAction>)>);
+
+impl UndoStore {
+    fn push(&self, action: UndoAction) -> u64 {
+        let mut store = self.0.lock().unwrap_or_else(|err| err.into_inner());
+        store.0 += 1;
+        let id = store.0;
+        store.1.insert(id, action);
+        // Only the last few toasts offer Undo; drop older entries and their secrets.
+        store.1.retain(|&kept, _| kept + UNDO_KEPT > id);
+        id
+    }
+
+    fn take(&self, id: u64) -> Option<UndoAction> {
+        let mut store = self.0.lock().unwrap_or_else(|err| err.into_inner());
+        store.1.remove(&id)
+    }
+}
+
+/// Runs an MCP edit of `name` in `agent` and returns the id that undoes it.
+fn undoable_mcp(
+    undo: &UndoStore,
+    agent: Agent,
+    name: &str,
+    edit: impl FnOnce(&std::path::Path) -> agentdeck_core::Result<()>,
+) -> Result<u64, String> {
+    let home = home()?;
+    let previous = mcp::get(agent, &home, name).map_err(|err| err.to_string())?;
+    edit(&home).map_err(|err| err.to_string())?;
+    Ok(undo.push(UndoAction::Mcp {
+        agent,
+        name: name.to_owned(),
+        previous,
+    }))
+}
+
+#[tauri::command]
+fn undo_change(undo: State<UndoStore>, id: u64) -> Result<(), String> {
+    let action = undo
+        .take(id)
+        .ok_or("This change can no longer be undone.")?;
+    let home = home()?;
+    match action {
+        UndoAction::Mcp {
+            agent,
+            name,
+            previous: Some(spec),
+        } => mcp::add(agent, &home, &name, &spec, true),
+        UndoAction::Mcp {
+            agent,
+            name,
+            previous: None,
+        } => match mcp::remove(agent, &home, &name) {
+            Err(Error::NotFound { .. }) => Ok(()),
+            other => other,
+        },
+        UndoAction::Rules {
+            agent,
+            previous,
+            written,
+        } => {
+            let current = rules::read(agent, &home)
+                .map_err(|err| err.to_string())?
+                .content
+                .unwrap_or_default();
+            if current != written {
+                return Err(format!(
+                    "The {} rules changed since, so they were left as they are.",
+                    agent.display_name()
+                ));
+            }
+            rules::write(agent, &home, &previous)
+        }
+        UndoAction::Protect {
+            agent,
+            server,
+            protect: true,
+        } => {
+            let launcher = launcher().ok_or(LAUNCHER_MISSING)?;
+            secrets::protect(&Keychain, &home, agent, &server, &launcher)
+        }
+        UndoAction::Protect {
+            agent,
+            server,
+            protect: false,
+        } => secrets::unprotect(&Keychain, &home, agent, &server),
+    }
+    .map_err(|err| err.to_string())
 }
 
 #[tauri::command]
@@ -35,18 +156,32 @@ fn list_mcp_servers() -> Result<McpListing, String> {
 }
 
 #[tauri::command]
-fn add_mcp_server(agent: Agent, name: String, spec: ServerSpec) -> Result<(), String> {
-    mcp::add(agent, &home()?, &name, &spec, false).map_err(|err| err.to_string())
+fn add_mcp_server(
+    undo: State<UndoStore>,
+    agent: Agent,
+    name: String,
+    spec: ServerSpec,
+) -> Result<u64, String> {
+    undoable_mcp(&undo, agent, &name, |home| {
+        mcp::add(agent, home, &name, &spec, false)
+    })
 }
 
 #[tauri::command]
-fn remove_mcp_server(agent: Agent, name: String) -> Result<(), String> {
-    mcp::remove(agent, &home()?, &name).map_err(|err| err.to_string())
+fn remove_mcp_server(undo: State<UndoStore>, agent: Agent, name: String) -> Result<u64, String> {
+    undoable_mcp(&undo, agent, &name, |home| mcp::remove(agent, home, &name))
 }
 
 #[tauri::command]
-fn copy_mcp_server(name: String, from: Agent, to: Agent) -> Result<(), String> {
-    mcp::copy(&home()?, &name, from, to, false).map_err(|err| err.to_string())
+fn copy_mcp_server(
+    undo: State<UndoStore>,
+    name: String,
+    from: Agent,
+    to: Agent,
+) -> Result<u64, String> {
+    undoable_mcp(&undo, to, &name, |home| {
+        mcp::copy(home, &name, from, to, false)
+    })
 }
 
 #[tauri::command]
@@ -59,8 +194,18 @@ fn list_rules() -> Result<Vec<Rules>, String> {
 }
 
 #[tauri::command]
-fn save_rules(agent: Agent, content: String) -> Result<(), String> {
-    rules::write(agent, &home()?, &content).map_err(|err| err.to_string())
+fn save_rules(undo: State<UndoStore>, agent: Agent, content: String) -> Result<u64, String> {
+    let home = home()?;
+    let previous = rules::read(agent, &home)
+        .map_err(|err| err.to_string())?
+        .content
+        .unwrap_or_default();
+    rules::write(agent, &home, &content).map_err(|err| err.to_string())?;
+    Ok(undo.push(UndoAction::Rules {
+        agent,
+        previous,
+        written: content,
+    }))
 }
 
 #[derive(serde::Serialize)]
@@ -133,17 +278,29 @@ fn list_secrets() -> Result<SecretListing, String> {
     })
 }
 
+const LAUNCHER_MISSING: &str =
+    "The agentdeck CLI that protected servers start through was not found. Reinstall AgentDeck.";
+
 #[tauri::command]
-fn protect_server(agent: Agent, server: String) -> Result<(), String> {
-    let launcher = launcher().ok_or(
-        "The agentdeck CLI that protected servers start through was not found. Reinstall AgentDeck.",
-    )?;
-    secrets::protect(&Keychain, &home()?, agent, &server, &launcher).map_err(|err| err.to_string())
+fn protect_server(undo: State<UndoStore>, agent: Agent, server: String) -> Result<u64, String> {
+    let launcher = launcher().ok_or(LAUNCHER_MISSING)?;
+    secrets::protect(&Keychain, &home()?, agent, &server, &launcher)
+        .map_err(|err| err.to_string())?;
+    Ok(undo.push(UndoAction::Protect {
+        agent,
+        server,
+        protect: false,
+    }))
 }
 
 #[tauri::command]
-fn unprotect_server(agent: Agent, server: String) -> Result<(), String> {
-    secrets::unprotect(&Keychain, &home()?, agent, &server).map_err(|err| err.to_string())
+fn unprotect_server(undo: State<UndoStore>, agent: Agent, server: String) -> Result<u64, String> {
+    secrets::unprotect(&Keychain, &home()?, agent, &server).map_err(|err| err.to_string())?;
+    Ok(undo.push(UndoAction::Protect {
+        agent,
+        server,
+        protect: true,
+    }))
 }
 
 /// Parsing months of logs takes a while, so it runs off the main thread.
@@ -161,6 +318,7 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_process::init())
+        .manage(UndoStore::default())
         .invoke_handler(tauri::generate_handler![
             list_agents,
             list_mcp_servers,
@@ -176,7 +334,8 @@ pub fn run() {
             list_secrets,
             protect_server,
             unprotect_server,
-            usage_report
+            usage_report,
+            undo_change
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

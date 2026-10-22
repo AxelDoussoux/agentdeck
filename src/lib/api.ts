@@ -11,25 +11,26 @@ import type {
   UsageReport,
 } from "./types";
 
-// Typed wrappers around the commands of src-tauri/src/lib.rs.
+// Typed wrappers around the commands of src-tauri/src/lib.rs. Commands that
+// change a config return an id to pass to `undoChange`.
 
 export const listAgents = () => invoke<AgentInfo[]>("list_agents");
 
 export const listMcpServers = () => invoke<McpListing>("list_mcp_servers");
 
 export const addMcpServer = (agent: Agent, name: string, spec: ServerSpec) =>
-  invoke<void>("add_mcp_server", { agent, name, spec });
+  invoke<number>("add_mcp_server", { agent, name, spec });
 
 export const removeMcpServer = (agent: Agent, name: string) =>
-  invoke<void>("remove_mcp_server", { agent, name });
+  invoke<number>("remove_mcp_server", { agent, name });
 
 export const copyMcpServer = (name: string, from: Agent, to: Agent) =>
-  invoke<void>("copy_mcp_server", { name, from, to });
+  invoke<number>("copy_mcp_server", { name, from, to });
 
 export const listRules = () => invoke<Rules[]>("list_rules");
 
 export const saveRules = (agent: Agent, content: string) =>
-  invoke<void>("save_rules", { agent, content });
+  invoke<number>("save_rules", { agent, content });
 
 export const usageReport = () => invoke<UsageReport>("usage_report");
 
@@ -48,7 +49,10 @@ export const removeSkill = (location: SkillLocation, name: string) =>
 export const listSecrets = () => invoke<SecretListing>("list_secrets");
 
 export const protectServer = (agent: Agent, server: string) =>
-  invoke<void>("protect_server", { agent, server });
+  invoke<number>("protect_server", { agent, server });
 
 export const unprotectServer = (agent: Agent, server: string) =>
-  invoke<void>("unprotect_server", { agent, server });
+  invoke<number>("unprotect_server", { agent, server });
+
+/** Reverts the change that returned `id`. Each change can be undone once. */
+export const undoChange = (id: number) => invoke<void>("undo_change", { id });

@@ -20,6 +20,8 @@ const ICONS = {
   shield: "M12 3l8 3v6c0 5-3.5 8-8 9-4.5-1-8-4-8-9V6z",
   alert: "M12 3l10 18H2zM12 10v4M12 17.5h.01",
   download: "M12 4v11M7 10l5 5 5-5M5 20h14",
+  close: "M6 6l12 12M18 6L6 18",
+  undo: "M9 14L4 9l5-5M4 9h10a6 6 0 0 1 0 12h-3",
 } as const;
 
 export type IconName = keyof typeof ICONS;

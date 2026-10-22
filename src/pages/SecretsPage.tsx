@@ -1,18 +1,21 @@
 import { useEffect, useState } from "react";
 import { Empty, Icon, Notice, PageHeader } from "../components/ui";
-import { listSecrets, protectServer, unprotectServer } from "../lib/api";
+import { useToast } from "../components/Toasts";
+import { listSecrets, protectServer, undoChange, unprotectServer } from "../lib/api";
 import type { Agent, AgentInfo, SecretListing, SecretRef } from "../lib/types";
 
 export function SecretsPage({ agents, onChange }: { agents: AgentInfo[]; onChange: () => void }) {
   const [listing, setListing] = useState<SecretListing | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
-  const [message, setMessage] = useState<{ error: boolean; text: string } | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const notify = useToast();
 
   async function load() {
     try {
       setListing(await listSecrets());
+      setLoadError(null);
     } catch (err) {
-      setMessage({ error: true, text: String(err) });
+      setLoadError(String(err));
     }
   }
 
@@ -20,13 +23,21 @@ export function SecretsPage({ agents, onChange }: { agents: AgentInfo[]; onChang
     load();
   }, []);
 
-  async function run(key: string, action: () => Promise<void>, done: string) {
+  async function run(key: string, action: () => Promise<number>, done: string) {
     setBusy(key);
     try {
-      await action();
-      setMessage({ error: false, text: done });
+      const id = await action();
+      notify({
+        tone: "success",
+        text: done,
+        undo: async () => {
+          await undoChange(id);
+          await load();
+          onChange();
+        },
+      });
     } catch (err) {
-      setMessage({ error: true, text: String(err) });
+      notify({ tone: "error", text: String(err) });
     }
     setBusy(null);
     await load();
@@ -68,7 +79,7 @@ export function SecretsPage({ agents, onChange }: { agents: AgentInfo[]; onChang
       {listing?.errors.map((text) => (
         <Notice key={text} tone="error">{text}</Notice>
       ))}
-      {message && <Notice tone={message.error ? "error" : "success"}>{message.text}</Notice>}
+      {loadError && <Notice tone="error">{loadError}</Notice>}
 
       {listing && (
         <div className="stats">

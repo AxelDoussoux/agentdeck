@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { AgentMark, Empty, Icon, Notice, PageHeader } from "../components/ui";
-import { addMcpServer, copyMcpServer, removeMcpServer } from "../lib/api";
+import { useToast } from "../components/Toasts";
+import { addMcpServer, copyMcpServer, removeMcpServer, undoChange } from "../lib/api";
 import { joinCommand, splitCommand } from "../lib/command";
 import type { Agent, AgentInfo, McpListing, McpServer, ServerSpec, Transport } from "../lib/types";
 
@@ -22,7 +23,7 @@ interface Props {
 }
 
 export function McpPage({ agents, listing, onChange }: Props) {
-  const [error, setError] = useState<string | null>(null);
+  const notify = useToast();
   const [pendingRemoval, setPendingRemoval] = useState<string | null>(null);
   const [adding, setAdding] = useState(false);
 
@@ -33,19 +34,28 @@ export function McpPage({ agents, listing, onChange }: Props) {
     rows.get(server.name)!.set(server.agent, server);
   }
 
-  async function run(action: () => Promise<void>): Promise<boolean> {
+  async function run(action: () => Promise<number>, done: string): Promise<boolean> {
     let ok = true;
     try {
-      await action();
-      setError(null);
+      const id = await action();
+      notify({
+        tone: "success",
+        text: done,
+        undo: async () => {
+          await undoChange(id);
+          await onChange();
+        },
+      });
     } catch (err) {
-      setError(String(err));
+      notify({ tone: "error", text: String(err) });
       ok = false;
     }
     setPendingRemoval(null);
     await onChange();
     return ok;
   }
+
+  const nameOf = (agent: Agent) => agents.find((a) => a.agent === agent)?.name ?? agent;
 
   return (
     <>
@@ -58,7 +68,7 @@ export function McpPage({ agents, listing, onChange }: Props) {
           </button>
         }
       />
-      {[...listing.errors, ...(error ? [error] : [])].map((message) => (
+      {listing.errors.map((message) => (
         <Notice key={message} tone="error">{message}</Notice>
       ))}
 
@@ -67,7 +77,7 @@ export function McpPage({ agents, listing, onChange }: Props) {
           agents={agents}
           onCancel={() => setAdding(false)}
           onAdd={async (agent, name, spec) => {
-            if (await run(() => addMcpServer(agent, name, spec))) setAdding(false);
+            if (await run(() => addMcpServer(agent, name, spec), `Added ${name} to ${nameOf(agent)}.`)) setAdding(false);
           }}
         />
       )}
@@ -119,7 +129,7 @@ export function McpPage({ agents, listing, onChange }: Props) {
                               <span className="confirm">
                                 <button
                                   className="danger small"
-                                  onClick={() => run(() => removeMcpServer(agent, name))}
+                                  onClick={() => run(() => removeMcpServer(agent, name), `Removed ${name} from ${nameOf(agent)}.`)}
                                 >
                                   Remove
                                 </button>
@@ -146,7 +156,7 @@ export function McpPage({ agents, listing, onChange }: Props) {
                             className="cell-add"
                             disabled={unsupported}
                             title={unsupported ? "Codex does not support SSE servers" : `Copy ${name} to this agent`}
-                            onClick={() => run(() => copyMcpServer(name, source.agent, agent))}
+                            onClick={() => run(() => copyMcpServer(name, source.agent, agent), `Added ${name} to ${nameOf(agent)}.`)}
                           >
                             <Icon name="plus" size={14} /> Add
                           </button>
