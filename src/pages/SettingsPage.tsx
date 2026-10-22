@@ -6,9 +6,10 @@ import type { Theme } from "../App";
 import { ConfirmDialog } from "../components/ConfirmDialog";
 import { LauncherRepair } from "../components/LauncherRepair";
 import { useToast } from "../components/Toasts";
+import { Tooltip } from "../components/Tooltip";
 import { AgentMark, Icon, Notice, PageHeader } from "../components/ui";
-import { appSettings, emptySkillTrash, openFolder } from "../lib/api";
-import type { AgentInfo, AppSettings, SecretListing } from "../lib/types";
+import { appSettings, emptySkillTrash, openFolder, pickAgentFolder, resetAgentFolder } from "../lib/api";
+import type { Agent, AgentInfo, AppSettings, SecretListing } from "../lib/types";
 import { errorText, LANGUAGES, t, type LanguageSetting } from "../lib/i18n";
 
 const RELEASES = "https://github.com/AxelDoussoux/agentdeck/releases";
@@ -58,6 +59,29 @@ export function SettingsPage({ agents, secrets, version, theme, setTheme, langua
   const nameOf = (agent: string) => agents.find((a) => a.agent === agent)?.name ?? agent;
   const open = (folder: Parameters<typeof openFolder>[0]) =>
     openFolder(folder).catch((err) => notify({ tone: "error", text: errorText(err) }));
+
+  // Every page reads the agent's files from the new folder: reload them all.
+  async function choose(agent: Agent) {
+    try {
+      if (!(await pickAgentFolder(agent))) return;
+      notify({ tone: "success", text: t.settings.folderChosen(nameOf(agent)) });
+    } catch (err) {
+      notify({ tone: "error", text: errorText(err) });
+    }
+    await load();
+    onChange();
+  }
+
+  async function reset(agent: Agent) {
+    try {
+      await resetAgentFolder(agent);
+      notify({ tone: "success", text: t.settings.folderReset(nameOf(agent)) });
+    } catch (err) {
+      notify({ tone: "error", text: errorText(err) });
+    }
+    await load();
+    onChange();
+  }
 
   async function checkUpdates() {
     setUpdates({ kind: "checking" });
@@ -178,13 +202,27 @@ export function SettingsPage({ agents, secrets, version, theme, setTheme, langua
                 <AgentMark agent={folder.agent} size={18} /> {nameOf(folder.agent)}
               </span>
               <code>{folder.path}</code>
-              {folder.variable && (
-                <small>{folder.moved ? t.settings.setBy(folder.variable) : t.settings.setToMove(folder.variable)}</small>
+              {folder.moved && folder.variable ? (
+                <small>{t.settings.setBy(folder.variable)}</small>
+              ) : (
+                folder.chosen && <small>{t.settings.chosen}</small>
               )}
             </span>
-            <button className="small" onClick={() => open({ agent: folder.agent })}>
-              {t.common.open}
-            </button>
+            <span className="setting-actions">
+              <button className="small" onClick={() => open({ agent: folder.agent })}>
+                {t.common.open}
+              </button>
+              <Tooltip text={folder.moved && folder.variable ? t.settings.setBy(folder.variable) : null}>
+                <button className="small" disabled={folder.moved} onClick={() => choose(folder.agent)}>
+                  {t.settings.change}
+                </button>
+              </Tooltip>
+              {folder.chosen && !folder.moved && (
+                <button className="small" onClick={() => reset(folder.agent)}>
+                  {t.settings.useDefault}
+                </button>
+              )}
+            </span>
           </div>
         ))}
       </section>

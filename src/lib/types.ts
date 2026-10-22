@@ -276,7 +276,10 @@ export interface AgentFolder {
   agent: Agent;
   path: string;
   variable: string | null;
+  /** Its variable is set, and moves the folder. */
   moved: boolean;
+  /** Another folder was chosen in AgentDeck. */
+  chosen: boolean;
 }
 
 /** AgentDeck's own files, for the Settings page. */

@@ -1,3 +1,6 @@
+use std::collections::BTreeMap;
+use std::fs;
+use std::io::ErrorKind;
 use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
@@ -57,7 +60,7 @@ impl Agent {
     }
 
     /// The folder set by [`Agent::folder_variable`], when it is set.
-    fn moved_folder(self, home: &Path) -> Option<PathBuf> {
+    pub fn variable_folder(self, home: &Path) -> Option<PathBuf> {
         if cfg!(test) {
             return None;
         }
@@ -65,16 +68,28 @@ impl Agent {
         folder_from(&value, home)
     }
 
+    /// Where the agent's folder was moved: by its variable, which is what
+    /// the agent itself reads, or else by a folder chosen in AgentDeck.
+    fn moved_folder(self, home: &Path) -> Option<PathBuf> {
+        self.variable_folder(home)
+            .or_else(|| chosen_folders(home).ok()?.remove(&self))
+    }
+
     /// The agent's own folder: `~/.claude`, `~/.codex`, `~/.cursor` or
-    /// `~/.gemini`, unless `CLAUDE_CONFIG_DIR` or `CODEX_HOME` moves it.
+    /// `~/.gemini`, unless `CLAUDE_CONFIG_DIR` or `CODEX_HOME` moves it, or
+    /// another folder was chosen with [`choose_folder`].
     pub fn folder(self, home: &Path) -> PathBuf {
-        self.moved_folder(home).unwrap_or_else(|| {
-            home.join(match self {
-                Agent::ClaudeCode => ".claude",
-                Agent::Codex => ".codex",
-                Agent::Cursor => ".cursor",
-                Agent::Gemini => ".gemini",
-            })
+        self.moved_folder(home)
+            .unwrap_or_else(|| self.default_folder(home))
+    }
+
+    /// The folder the agent uses when nothing moves it.
+    fn default_folder(self, home: &Path) -> PathBuf {
+        home.join(match self {
+            Agent::ClaudeCode => ".claude",
+            Agent::Codex => ".codex",
+            Agent::Cursor => ".cursor",
+            Agent::Gemini => ".gemini",
         })
     }
 
@@ -163,6 +178,65 @@ fn folder_from(value: &std::ffi::OsStr, home: &Path) -> Option<PathBuf> {
     })
 }
 
+fn chosen_folders_path(home: &Path) -> PathBuf {
+    home.join(".agentdeck").join("folders.json")
+}
+
+/// The folders chosen for agents that do not keep their files in the
+/// default place, kept in `~/.agentdeck/folders.json`. An app opened from
+/// the macOS Finder does not see `CLAUDE_CONFIG_DIR` or `CODEX_HOME`, so
+/// this is also how it finds a folder those variables move.
+pub fn chosen_folders(home: &Path) -> Result<BTreeMap<Agent, PathBuf>> {
+    let path = chosen_folders_path(home);
+    match fs::read_to_string(&path) {
+        Ok(content) => {
+            serde_json::from_str(&content).map_err(|source| Error::Json { path, source })
+        }
+        Err(err) if err.kind() == ErrorKind::NotFound => Ok(BTreeMap::new()),
+        Err(source) => Err(Error::Io { path, source }),
+    }
+}
+
+/// Makes AgentDeck read and write `agent`'s files in `folder`, which must
+/// exist, or in its default folder again with `None` or that folder. `~`
+/// stands for `home`. Its variable, when set, still comes first.
+pub fn choose_folder(home: &Path, agent: Agent, folder: Option<&Path>) -> Result<()> {
+    let mut chosen = chosen_folders(home)?;
+    match folder.and_then(|folder| folder_from(folder.as_os_str(), home)) {
+        Some(folder) => {
+            let meta = fs::metadata(&folder).map_err(|source| Error::Io {
+                path: folder.clone(),
+                source,
+            })?;
+            if !meta.is_dir() {
+                return Err(Error::Invalid {
+                    path: folder,
+                    reason: "it is not a folder",
+                });
+            }
+            // Not kept as a move: Claude Code's `.claude.json` sits next to
+            // its default folder, but inside a moved one.
+            if folder == agent.default_folder(home) {
+                chosen.remove(&agent);
+            } else {
+                chosen.insert(agent, folder);
+            }
+        }
+        None => {
+            chosen.remove(&agent);
+        }
+    }
+    let path = chosen_folders_path(home);
+    if let Some(dir) = path.parent() {
+        fs::create_dir_all(dir).map_err(|source| Error::Io {
+            path: dir.to_path_buf(),
+            source,
+        })?;
+    }
+    let content = serde_json::to_string_pretty(&chosen).unwrap_or_default();
+    fs::write(&path, content).map_err(|source| Error::Io { path, source })
+}
+
 /// Whether `command` names an executable in one of the PATH folders.
 pub(crate) fn on_path(command: &str) -> bool {
     let with_suffix = format!("{command}{}", std::env::consts::EXE_SUFFIX);
@@ -199,6 +273,56 @@ mod tests {
         let codex = Agent::Codex.info(home);
         assert!(codex.installed && codex.has_config);
         assert!(!Agent::Cursor.info(home).has_config);
+    }
+
+    #[test]
+    fn a_chosen_folder_moves_every_file_of_the_agent() {
+        let home = tempfile::tempdir().unwrap();
+        let home = home.path();
+        let elsewhere = home.join("work/claude");
+        fs::create_dir_all(&elsewhere).unwrap();
+
+        choose_folder(home, Agent::ClaudeCode, Some(Path::new("~/work/claude"))).unwrap();
+        assert_eq!(Agent::ClaudeCode.folder(home), elsewhere);
+        // Like with CLAUDE_CONFIG_DIR, `.claude.json` moves into the folder.
+        assert_eq!(
+            Agent::ClaudeCode.mcp_config_path(home),
+            elsewhere.join(".claude.json")
+        );
+        assert_eq!(
+            Agent::ClaudeCode.rules_path(home),
+            Some(elsewhere.join("CLAUDE.md"))
+        );
+        assert_eq!(Agent::Codex.folder(home), home.join(".codex"));
+
+        choose_folder(home, Agent::ClaudeCode, None).unwrap();
+        assert_eq!(Agent::ClaudeCode.folder(home), home.join(".claude"));
+        assert!(chosen_folders(home).unwrap().is_empty());
+    }
+
+    #[test]
+    fn choosing_the_default_folder_is_no_move() {
+        let home = tempfile::tempdir().unwrap();
+        let home = home.path();
+        fs::create_dir_all(home.join(".claude")).unwrap();
+        choose_folder(home, Agent::ClaudeCode, Some(&home.join(".claude"))).unwrap();
+        assert!(chosen_folders(home).unwrap().is_empty());
+        assert_eq!(
+            Agent::ClaudeCode.mcp_config_path(home),
+            home.join(".claude.json")
+        );
+    }
+
+    #[test]
+    fn only_an_existing_folder_can_be_chosen() {
+        let home = tempfile::tempdir().unwrap();
+        let home = home.path();
+        let missing = choose_folder(home, Agent::Codex, Some(&home.join("nowhere")));
+        assert!(matches!(missing, Err(Error::Io { .. })));
+        fs::write(home.join("file"), "").unwrap();
+        let file = choose_folder(home, Agent::Codex, Some(&home.join("file")));
+        assert!(matches!(file, Err(Error::Invalid { .. })));
+        assert!(chosen_folders(home).unwrap().is_empty());
     }
 
     #[test]

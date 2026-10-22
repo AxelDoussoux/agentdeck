@@ -131,4 +131,9 @@ export const openFolder = (
   folder: "backups" | "trash" | { agent: Agent } | { skill: { location: SkillLocation; name: string } },
 ) => invoke<void>("open_folder", { folder });
 
+/** Asks for an agent's folder in a folder picker; false when cancelled. */
+export const pickAgentFolder = (agent: Agent) => invoke<boolean>("pick_agent_folder", { agent });
+
+export const resetAgentFolder = (agent: Agent) => invoke<void>("reset_agent_folder", { agent });
+
 export const emptySkillTrash = () => invoke<number>("empty_skill_trash");

@@ -112,11 +112,16 @@ export const en = {
     foldersHint: (
       <>
         Where AgentDeck reads and writes each agent's files. Claude Code and Codex use another folder when{" "}
-        <code>CLAUDE_CONFIG_DIR</code> or <code>CODEX_HOME</code> is set, and AgentDeck follows them.
+        <code>CLAUDE_CONFIG_DIR</code> or <code>CODEX_HOME</code> is set, and AgentDeck follows them. Choose the folder
+        here when the app does not see them, as when it is opened from the macOS Finder.
       </>
     ) as ReactNode,
     setBy: (variable: string) => `Set by ${variable}.`,
-    setToMove: (variable: string) => `Set ${variable} to move it.`,
+    chosen: "Chosen in AgentDeck.",
+    change: "Change…",
+    useDefault: "Reset",
+    folderChosen: (agent: string) => `AgentDeck now reads ${agent}'s files from the folder you chose.`,
+    folderReset: (agent: string) => `AgentDeck reads ${agent}'s files from its default folder again.`,
     protected: "Protected servers",
     launcher: "Launcher",
     launcherMissing: "Not found: reinstall AgentDeck.",

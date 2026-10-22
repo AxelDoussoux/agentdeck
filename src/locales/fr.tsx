@@ -135,11 +135,16 @@ export const fr: Messages = {
     foldersHint: (
       <>
         Où AgentDeck lit et écrit les fichiers de chaque agent. Claude Code et Codex utilisent un autre dossier quand{" "}
-        <code>CLAUDE_CONFIG_DIR</code> ou <code>CODEX_HOME</code> est défini, et AgentDeck les suit.
+        <code>CLAUDE_CONFIG_DIR</code> ou <code>CODEX_HOME</code> est défini, et AgentDeck les suit. Choisissez le dossier
+        ici quand l’app ne voit pas ces variables, comme lorsqu’elle est ouverte depuis le Finder de macOS.
       </>
     ),
     setBy: (variable: string) => `Défini par ${variable}.`,
-    setToMove: (variable: string) => `Définissez ${variable} pour le déplacer.`,
+    chosen: "Choisi dans AgentDeck.",
+    change: "Changer…",
+    useDefault: "Réinitialiser",
+    folderChosen: (agent: string) => `AgentDeck lit maintenant les fichiers de ${agent} dans le dossier choisi.`,
+    folderReset: (agent: string) => `AgentDeck lit de nouveau les fichiers de ${agent} dans son dossier par défaut.`,
     protected: "Serveurs protégés",
     launcher: "Lanceur",
     launcherMissing: "Introuvable : réinstallez AgentDeck.",
