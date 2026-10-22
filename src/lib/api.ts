@@ -4,6 +4,7 @@ import type {
   AgentInfo,
   AppSettings,
   McpListing,
+  ProbeReport,
   ProtectPreview,
   ReadProgress,
   Rules,
@@ -26,6 +27,10 @@ export const listMcpServers = () => invoke<McpListing>("list_mcp_servers");
 
 export const addMcpServer = (agent: Agent, name: string, spec: ServerSpec) =>
   invoke<number>("add_mcp_server", { agent, name, spec });
+
+/** Starts a server, lists its tools and stops it. Takes up to a minute. */
+export const testMcpServer = (agent: Agent, name: string) =>
+  invoke<ProbeReport>("test_mcp_server", { agent, name });
 
 /** Changes a server. A `null` value keeps that variable's current value. */
 export const editMcpServer = (agent: Agent, name: string, edit: ServerEdit) =>

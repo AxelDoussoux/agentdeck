@@ -8,7 +8,9 @@ use agentdeck_core::rules::{self, Rules};
 use agentdeck_core::secrets::{self, Keychain, SecretRef};
 use agentdeck_core::skills::{self, Location, Skill};
 use agentdeck_core::usage::{self, ReadProgress, UsageReport};
-use agentdeck_core::{Agent, AgentInfo, Error, McpServer, ServerSpec, agent, config_file, mcp};
+use agentdeck_core::{
+    Agent, AgentInfo, Error, McpServer, ServerSpec, agent, config_file, mcp, probe,
+};
 use tauri::ipc::Channel;
 use tauri::{Manager, State};
 
@@ -515,6 +517,21 @@ fn unprotect_server(undo: State<UndoStore>, agent: Agent, server: String) -> Res
     }))
 }
 
+/// Starts a server to list its tools. It can take a while, as `npx` may
+/// download the server first, so it runs off the main thread.
+#[tauri::command]
+async fn test_mcp_server(agent: Agent, name: String) -> Result<probe::ProbeReport, String> {
+    let home = home()?;
+    tauri::async_runtime::spawn_blocking(move || {
+        let spec = mcp::get(agent, &home, &name)
+            .map_err(|err| err.to_string())?
+            .ok_or_else(|| Error::NotFound { agent, name }.to_string())?;
+        Ok(probe::probe(&spec, probe::TIMEOUT))
+    })
+    .await
+    .map_err(|err| err.to_string())?
+}
+
 /// Parsing months of logs takes a while, so it runs off the main thread.
 #[tauri::command]
 async fn usage_report(progress: Channel<ReadProgress>) -> Result<UsageReport, String> {
@@ -567,6 +584,7 @@ pub fn run() {
             copy_mcp_server,
             edit_mcp_server,
             server_versions,
+            test_mcp_server,
             restore_server_version,
             list_rules,
             save_rules,
