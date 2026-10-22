@@ -6,6 +6,7 @@ import { AgentMark, Icon, Notice, PageHeader } from "../components/ui";
 import { useToast } from "../components/Toasts";
 import { listRules, saveRules, undoChange } from "../lib/api";
 import { lineCount } from "../lib/diff";
+import { useFilesChanged } from "../lib/watch";
 import type { Agent, AgentInfo, Rules } from "../lib/types";
 
 const SAVE_SHORTCUT = /Mac|iPhone|iPad/.test(navigator.userAgent) ? "⌘S" : "Ctrl+S";
@@ -23,6 +24,8 @@ export function RulesPage({ agents, setGuard }: Props) {
   const [pendingCopy, setPendingCopy] = useState<Agent | null>(null);
   const [pendingSelect, setPendingSelect] = useState<Agent | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
+  // The selected file's content on disk, when it changed while being edited.
+  const [onDisk, setOnDisk] = useState<string | null>(null);
   const notify = useToast();
 
   const saved = rules.find((r) => r.agent === selected)?.content ?? "";
@@ -38,6 +41,7 @@ export function RulesPage({ agents, setGuard }: Props) {
       const all = await listRules();
       setRules(all);
       if (!keepDraft) setDraft(all.find((r) => r.agent === selected)?.content ?? "");
+      setOnDisk(null);
       setLoadError(null);
     } catch (err) {
       setLoadError(String(err));
@@ -48,6 +52,17 @@ export function RulesPage({ agents, setGuard }: Props) {
     load();
   }, []);
 
+  // A change on disk shows up at once, unless it would overwrite edits: then
+  // the editor keeps them and says the file moved on.
+  useFilesChanged("rules", async () => {
+    if (!dirty) return load();
+    const all = await listRules().catch(() => null);
+    const disk = all?.find((r) => r.agent === selected)?.content ?? "";
+    if (!all) return;
+    setRules(all.map((r) => (r.agent === selected ? { ...r, content: saved } : r)));
+    setOnDisk(disk === saved ? null : disk);
+  });
+
   function select(agent: Agent, force = false) {
     if (agent === selected) return;
     if (dirty && !force) {
@@ -57,6 +72,7 @@ export function RulesPage({ agents, setGuard }: Props) {
     setPendingSelect(null);
     setSelected(agent);
     setDraft(rules.find((r) => r.agent === agent)?.content ?? "");
+    setOnDisk(null);
     setPendingCopy(null);
   }
 
@@ -137,6 +153,19 @@ export function RulesPage({ agents, setGuard }: Props) {
         description="Global instructions each agent loads into every session. Write them once, then copy them to the other agents. Cursor keeps its user rules in its own settings, so AgentDeck cannot edit them yet."
       />
       {loadError && <Notice tone="error">{loadError}</Notice>}
+      {onDisk !== null && dirty && (
+        <Notice tone="warning">
+          <div className="notice-row">
+            <span>
+              {current?.name}'s rules changed on disk while you were editing. Saving replaces that
+              version.
+            </span>
+            <button className="small" onClick={() => load()}>
+              Discard my edits and reload
+            </button>
+          </div>
+        </Notice>
+      )}
 
       <div className="tabs" role="tablist">
         {withFile.map((info) => (
@@ -171,7 +200,7 @@ export function RulesPage({ agents, setGuard }: Props) {
         <button className="primary" disabled={!dirty} onClick={save} title={`Save (${SAVE_SHORTCUT})`}>
           Save <kbd>{SAVE_SHORTCUT}</kbd>
         </button>
-        {dirty && <button onClick={() => setDraft(saved)}>Revert</button>}
+        {dirty && <button onClick={() => (onDisk === null ? setDraft(saved) : load())}>Revert</button>}
 
         <span className="spacer" />
         <span className="hint">Copy to</span>

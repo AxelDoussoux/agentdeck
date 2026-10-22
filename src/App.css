@@ -639,6 +639,22 @@ textarea {
   word-break: normal;
 }
 
+.notice > div {
+  flex: 1;
+  min-width: 0;
+}
+
+.notice-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 16px;
+}
+
+.notice-row > span {
+  flex: 1;
+}
+
 .notice-error {
   border-color: color-mix(in srgb, var(--danger) 30%, transparent);
   background: var(--danger-soft);

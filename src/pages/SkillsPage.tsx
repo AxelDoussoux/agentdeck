@@ -3,6 +3,7 @@ import { AgentMark, Empty, Icon, Notice, PageHeader } from "../components/ui";
 import { ConfirmDialog } from "../components/ConfirmDialog";
 import { useToast } from "../components/Toasts";
 import { copySkill, listSkills, readSkill, removeSkill } from "../lib/api";
+import { useFilesChanged } from "../lib/watch";
 import type { Agent, AgentInfo, Skill, SkillListing, SkillLocation } from "../lib/types";
 
 const LOCATION_LABELS: Record<SkillLocation, string> = {
@@ -47,6 +48,12 @@ export function SkillsPage({ agents }: { agents: AgentInfo[] }) {
     const [first] = byName.get(name) ?? [];
     setPreview(first ? await readSkill(first.location, name).catch(String) : "");
   }
+
+  useFilesChanged("skills", async () => {
+    await load();
+    const [first] = selected ? (byName.get(selected) ?? []) : [];
+    if (first) setPreview(await readSkill(first.location, first.name).catch(() => ""));
+  });
 
   async function run(action: () => Promise<string>) {
     try {

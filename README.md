@@ -130,6 +130,10 @@ does with `~/.claude.json` while it runs, AgentDeck applies its change again
 on top of the new content instead of overwriting it. Other settings, key order
 and TOML comments are kept.
 
+AgentDeck watches these files and skill folders, so a server added from a
+terminal or a rules file changed by another editor shows up at once. If the
+rules being edited change on disk, the editor keeps your edits and says so.
+
 Adding, removing or copying a server, saving rules and moving secrets to or
 from the keychain can be undone from the notification that follows. Undo
 reverts only that change, so edits the agent made since are kept.

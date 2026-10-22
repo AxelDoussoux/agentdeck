@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { Empty, Icon, Notice, PageHeader } from "../components/ui";
 import { useToast } from "../components/Toasts";
 import { listSecrets, protectServer, undoChange, unprotectServer } from "../lib/api";
+import { useFilesChanged } from "../lib/watch";
 import type { Agent, AgentInfo, SecretListing, SecretRef } from "../lib/types";
 
 export function SecretsPage({ agents, onChange }: { agents: AgentInfo[]; onChange: () => void }) {
@@ -22,6 +23,7 @@ export function SecretsPage({ agents, onChange }: { agents: AgentInfo[]; onChang
   useEffect(() => {
     load();
   }, []);
+  useFilesChanged("mcp", load);
 
   async function run(key: string, action: () => Promise<number>, done: string) {
     setBusy(key);
