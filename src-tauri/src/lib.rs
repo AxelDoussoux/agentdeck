@@ -141,6 +141,24 @@ fn list_agents() -> Result<Vec<AgentInfo>, String> {
     Ok(agent::detect(&home()?))
 }
 
+/// Opens an agent's MCP config in the default editor, or shows it in the
+/// file manager. Only these files: the UI never passes a path.
+#[tauri::command]
+fn open_config(app: tauri::AppHandle, agent: Agent, reveal: bool) -> Result<(), String> {
+    use tauri_plugin_opener::OpenerExt;
+    let path = agent.mcp_config_path(&home()?);
+    if !path.is_file() {
+        return Err(format!("{} does not exist yet.", path.display()));
+    }
+    let opener = app.opener();
+    let opened = if reveal {
+        opener.reveal_item_in_dir(&path)
+    } else {
+        opener.open_path(path.to_string_lossy(), None::<&str>)
+    };
+    opened.map_err(|err| err.to_string())
+}
+
 #[derive(serde::Serialize)]
 struct McpListing {
     servers: Vec<McpServer>,
@@ -372,6 +390,7 @@ pub fn run() {
         .manage(UndoStore::default())
         .invoke_handler(tauri::generate_handler![
             list_agents,
+            open_config,
             list_mcp_servers,
             add_mcp_server,
             remove_mcp_server,
