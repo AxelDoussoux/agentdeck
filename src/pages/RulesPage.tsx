@@ -12,6 +12,7 @@ import { SHARED_END, SHARED_START, sharedPart, startShared, withShared } from ".
 import { shortcut, withModifier } from "../lib/keys";
 import { useFilesChanged } from "../lib/watch";
 import type { Agent, AgentInfo, Rules } from "../lib/types";
+import { t } from "../lib/i18n";
 
 // CodeMirror is most of the app's code, so it loads with the Rules page.
 const MarkdownEditor = lazy(() => import("../components/MarkdownEditor").then((m) => ({ default: m.MarkdownEditor })));
@@ -150,10 +151,10 @@ export function RulesPage({ agents, setGuard, focus }: Props) {
     }
   }
 
-  const save = () => write(selected, draft, `Saved ${current?.name} rules.`);
+  const save = () => write(selected, draft, t.rules.saved(current?.name ?? ""));
 
   useEffect(() => {
-    setGuard(dirty ? { what: `${current?.name} rules`, save } : null);
+    setGuard(dirty ? { what: t.rules.what(current?.name ?? ""), save } : null);
   });
   useEffect(() => () => setGuard(null), []);
 
@@ -171,33 +172,31 @@ export function RulesPage({ agents, setGuard, focus }: Props) {
   function copyDialog(pending: Agent) {
     const target = agents.find((info) => info.agent === pending)!;
     const replaced = rules.find((r) => r.agent === target.agent)?.content ?? "";
-    const lines = (text: string) => `${lineCount(text)} line${lineCount(text) === 1 ? "" : "s"}`;
+    const lines = (text: string) => t.rules.lines(lineCount(text));
+    const [from, to] = [current?.name ?? "", target.name];
     if (base !== null) {
       const merged = withShared(replaced, base);
       return (
         <ConfirmDialog
           wide
-          title={`Copy the shared base to ${target.name}?`}
+          title={t.rules.copyBaseTitle(to)}
           onCancel={() => setPendingCopy(null)}
           choices={[
             {
-              label: "Replace everything",
+              label: t.rules.replaceEverything,
               tone: "danger",
-              onSelect: () => write(target.agent, saved, `Copied ${current?.name} rules to ${target.name}.`),
+              onSelect: () => write(target.agent, saved, t.rules.copied(from, to)),
             },
             {
-              label: "Copy the shared base",
+              label: t.rules.copyBase,
               tone: "primary",
-              onSelect: () =>
-                write(target.agent, merged, `Copied the shared base of ${current?.name} to ${target.name}.`),
+              onSelect: () => write(target.agent, merged, t.rules.copiedBase(from, to)),
             },
           ]}
         >
           <p>
-            {sharedPart(replaced) !== null
-              ? `${target.name}'s shared base is replaced with ${current?.name}'s, and the rest of its rules stay as they are.`
-              : `${target.name}'s rules get ${current?.name}'s shared base on top, and keep what they have below it.`}{" "}
-            Replace everything instead to give {target.name} exactly the {lines(saved)} of {current?.name}'s rules.
+            {sharedPart(replaced) !== null ? t.rules.baseReplaced(to, from) : t.rules.baseAdded(to, from)}{" "}
+            {t.rules.orReplaceAll(to, lines(saved), from)}
           </p>
           {merged !== replaced && <DiffView before={replaced} after={merged} />}
         </ConfirmDialog>
@@ -206,20 +205,18 @@ export function RulesPage({ agents, setGuard, focus }: Props) {
     return (
       <ConfirmDialog
         wide
-        title={`Replace ${target.name} rules?`}
+        title={t.rules.replaceTitle(to)}
         onCancel={() => setPendingCopy(null)}
         choices={[
           {
-            label: `Replace ${target.name} rules`,
+            label: t.rules.replace(to),
             tone: "danger",
-            onSelect: () => write(target.agent, saved, `Copied ${current?.name} rules to ${target.name}.`),
+            onSelect: () => write(target.agent, saved, t.rules.copied(from, to)),
           },
         ]}
       >
         <p>
-          {replaced
-            ? `The ${lines(replaced)} of ${target.name}'s rules are replaced with the ${lines(saved)} of ${current?.name}'s.`
-            : `${target.name} has no rules yet. It gets the ${lines(saved)} of ${current?.name}'s.`}
+          {replaced ? t.rules.replacedWith(lines(replaced), to, lines(saved), from) : t.rules.getsRules(to, lines(saved), from)}
         </p>
         {replaced && <DiffView before={replaced} after={saved} />}
       </ConfirmDialog>
@@ -229,25 +226,22 @@ export function RulesPage({ agents, setGuard, focus }: Props) {
   return (
     <>
       <PageHeader
-        title="Rules"
-        description="Global instructions each agent loads into every session. Write them once, then copy them to the other agents. Cursor keeps its user rules in its own settings, so AgentDeck cannot edit them yet."
+        title={t.rules.title}
+        description={t.rules.description}
       />
       {loadError && <Notice tone="error">{loadError}</Notice>}
       {onDisk !== null && dirty && (
         <Notice tone="warning">
           <div className="notice-row">
-            <span>
-              {current?.name}'s rules changed on disk while you were editing. Saving replaces that
-              version.
-            </span>
+            <span>{t.rules.changedOnDisk(current?.name ?? "")}</span>
             <button className="small" onClick={() => load()}>
-              Discard my edits and reload
+              {t.rules.reload}
             </button>
           </div>
         </Notice>
       )}
 
-      <div className="tabs" role="tablist" aria-label="Agents" onKeyDown={onTabKey}>
+      <div className="tabs" role="tablist" aria-label={t.rules.agents} onKeyDown={onTabKey}>
         {withFile.map((info) => (
           <button
             key={info.agent}
@@ -272,16 +266,16 @@ export function RulesPage({ agents, setGuard, focus }: Props) {
         <div className="editor-bar">
           {current?.rulesPath && <code>{current.rulesPath}</code>}
           <span className="editor-bar-actions">
-            {dirty && <span className="pill pill-warn">Unsaved changes</span>}
+            {dirty && <span className="pill pill-warn">{t.common.unsaved}</span>}
             {!draftHasBase && (
-              <Tooltip text="Marks these rules as the base shared by every agent. Lines you then move below the end marker stay specific to this agent.">
+              <Tooltip text={t.rules.makeBaseTip}>
                 <button className="small" onClick={() => setDraft(startShared(draft))}>
-                  Make a shared base
+                  {t.rules.makeBase}
                 </button>
               </Tooltip>
             )}
             <button className="small" aria-pressed={preview} onClick={togglePreview}>
-              {preview ? "Hide preview" : "Preview"}
+              {preview ? t.rules.hidePreview : t.skills.preview}
             </button>
           </span>
         </div>
@@ -291,28 +285,28 @@ export function RulesPage({ agents, setGuard, focus }: Props) {
               docKey={selected}
               value={draft}
               onChange={setDraft}
-              label={`${current?.name ?? ""} rules`}
-              placeholder="No rules yet. Write Markdown here."
+              label={t.rules.what(current?.name ?? "")}
+              placeholder={t.rules.placeholder}
             />
           </Suspense>
           {preview && (
-            <div className="rules-preview" aria-label="Preview">
-              {draft.trim() ? <Markdown text={draft} /> : <p className="hint">Nothing to preview yet.</p>}
+            <div className="rules-preview" aria-label={t.skills.preview}>
+              {draft.trim() ? <Markdown text={draft} /> : <p className="hint">{t.rules.nothingToPreview}</p>}
             </div>
           )}
         </div>
       </div>
 
       <div className="toolbar">
-        <Tooltip text={`Save (${SAVE_SHORTCUT})`}>
+        <Tooltip text={`${t.common.save} (${SAVE_SHORTCUT})`}>
           <button className="primary" disabled={!dirty} onClick={save}>
-            Save <kbd>{SAVE_SHORTCUT}</kbd>
+            {t.common.save} <kbd>{SAVE_SHORTCUT}</kbd>
           </button>
         </Tooltip>
-        {dirty && <button onClick={() => (onDisk === null ? setDraft(saved) : load())}>Revert</button>}
+        {dirty && <button onClick={() => (onDisk === null ? setDraft(saved) : load())}>{t.rules.revert}</button>}
 
         <span className="spacer" />
-        <span className="hint">{base !== null ? "Copy the shared base to" : "Copy to"}</span>
+        <span className="hint">{base !== null ? t.rules.copyBaseTo : t.rules.copyTo}</span>
         {withFile
           .filter((info) => info.agent !== selected)
           .map((info) => {
@@ -320,7 +314,7 @@ export function RulesPage({ agents, setGuard, focus }: Props) {
             const same = base !== null ? sharedPart(theirs) === base : theirs === saved;
             if (same) {
               return (
-                <button key={info.agent} disabled title={base !== null ? "Same shared base" : "Already identical"}>
+                <button key={info.agent} disabled title={base !== null ? t.rules.sameBase : t.rules.identical}>
                   <Icon name="check" size={14} /> {info.name}
                 </button>
               );
@@ -328,10 +322,10 @@ export function RulesPage({ agents, setGuard, focus }: Props) {
             return (
               <Tooltip
                 key={info.agent}
-                text={base !== null ? `Put this shared base in ${info.name}'s rules` : `Replace ${info.name} rules with these`}
+                text={base !== null ? t.rules.putBase(info.name) : t.rules.replaceWithThese(info.name)}
               >
                 {/* A disabled button gets no mouse events, so its reason stays a title. */}
-                <button disabled={dirty} title={dirty ? "Save first" : undefined} onClick={() => setPendingCopy(info.agent)}>
+                <button disabled={dirty} title={dirty ? t.rules.saveFirst : undefined} onClick={() => setPendingCopy(info.agent)}>
                   {info.name}
                 </button>
               </Tooltip>
@@ -340,22 +334,19 @@ export function RulesPage({ agents, setGuard, focus }: Props) {
       </div>
 
       {draftHasBase && (
-        <p className="hint shared-hint">
-          The text between <code>{SHARED_START}</code> and <code>{SHARED_END}</code> is the shared base. Copying it
-          to another agent keeps the rest of that agent's rules.
-        </p>
+        <p className="hint shared-hint">{t.rules.sharedHint(<code>{SHARED_START}</code>, <code>{SHARED_END}</code>)}</p>
       )}
 
       {pendingCopy && copyDialog(pendingCopy)}
 
       {pendingSelect && (
         <ConfirmDialog
-          title="Unsaved changes"
+          title={t.common.unsaved}
           onCancel={() => setPendingSelect(null)}
           choices={[
-            { label: "Discard", tone: "danger", onSelect: () => select(pendingSelect, true) },
+            { label: t.common.discard, tone: "danger", onSelect: () => select(pendingSelect, true) },
             {
-              label: "Save",
+              label: t.common.save,
               tone: "primary",
               onSelect: async () => {
                 if (await save()) select(pendingSelect, true);
@@ -364,7 +355,7 @@ export function RulesPage({ agents, setGuard, focus }: Props) {
             },
           ]}
         >
-          Your changes to the {current?.name} rules are not saved.
+          {t.common.notSaved(t.rules.what(current?.name ?? ""))}
         </ConfirmDialog>
       )}
     </>
@@ -385,36 +376,36 @@ function SameBadge({ theirs, ours, base, name }: BadgeProps) {
     const their = sharedPart(theirs);
     if (their === null) {
       return (
-        <span className="tab-badge" title={`No shared base yet: copy ${name}'s to add it`}>
-          No base
+        <span className="tab-badge" title={t.rules.noBaseTip(name ?? "")}>
+          {t.rules.noBase}
         </span>
       );
     }
     return their === base ? (
-      <span className="tab-badge tab-badge-same" title={`Same shared base as ${name}`}>
-        Same base
+      <span className="tab-badge tab-badge-same" title={t.rules.sameBaseTip(name ?? "")}>
+        {t.rules.sameBaseBadge}
       </span>
     ) : (
-      <span className="tab-badge tab-badge-differs" title={`Shared base differs from ${name}'s`}>
-        Base differs
+      <span className="tab-badge tab-badge-differs" title={t.rules.baseDiffersTip(name ?? "")}>
+        {t.rules.baseDiffers}
       </span>
     );
   }
   if (!theirs.trim() && !ours.trim()) return null;
   if (!theirs.trim()) {
     return (
-      <span className="tab-badge" title="No rules yet">
-        Empty
+      <span className="tab-badge" title={t.rules.noRules}>
+        {t.markdown.empty}
       </span>
     );
   }
   return theirs === ours ? (
-    <span className="tab-badge tab-badge-same" title={`Same as the saved ${name} rules`}>
-      Same
+    <span className="tab-badge tab-badge-same" title={t.rules.sameTip(name ?? "")}>
+      {t.rules.same}
     </span>
   ) : (
-    <span className="tab-badge tab-badge-differs" title={`Differs from the saved ${name} rules`}>
-      Differs
+    <span className="tab-badge tab-badge-differs" title={t.rules.differsTip(name ?? "")}>
+      {t.rules.differs}
     </span>
   );
 }

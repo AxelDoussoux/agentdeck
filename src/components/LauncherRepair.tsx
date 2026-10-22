@@ -3,6 +3,7 @@ import { repairLaunchers } from "../lib/api";
 import type { AgentInfo, SecretListing } from "../lib/types";
 import { useToast } from "./Toasts";
 import { Notice } from "./ui";
+import { t } from "../lib/i18n";
 
 /**
  * Warns that some protected servers no longer start because the `agentdeck`
@@ -32,7 +33,7 @@ export function LauncherRepair({
       const repaired = await repairLaunchers();
       notify({
         tone: "success",
-        text: `Repaired ${repaired} protected server${repaired === 1 ? "" : "s"}. Restart the agents that use them.`,
+        text: t.launcher.repaired(repaired),
       });
     } catch (err) {
       notify({ tone: "error", text: String(err) });
@@ -45,19 +46,13 @@ export function LauncherRepair({
     <Notice tone="error">
       <div className="notice-row repair">
         <span>
-          <strong>
-            {count} protected server{count === 1 ? " no longer starts" : "s no longer start"}
-          </strong>
-          Their agent runs the <code>agentdeck</code> launcher from <code>{missing[0]}</code>
-          {missing.length > 1 && ` and ${missing.length - 1} other place${missing.length > 2 ? "s" : ""}`}, which is
-          gone: AgentDeck was likely moved or reinstalled.{" "}
-          {launcher
-            ? "Repair points them at this copy; their secrets stay in the keychain."
-            : "Reinstall AgentDeck, then repair them here."}
+          <strong>{t.launcher.title(count)}</strong>
+          {t.launcher.gone(<code>{missing[0]}</code>, missing.length - 1)}{" "}
+          {launcher ? t.launcher.repairHint : t.launcher.reinstall}
           <small>{stranded.map((s) => `${s.server} (${nameOf(s.agent)})`).join(", ")}</small>
         </span>
         <button className="primary small" disabled={!launcher || busy} onClick={repair}>
-          {busy ? "Repairing…" : "Repair"}
+          {busy ? t.launcher.repairing : t.launcher.repair}
         </button>
       </div>
     </Notice>

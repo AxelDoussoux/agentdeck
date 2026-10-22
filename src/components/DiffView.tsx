@@ -1,4 +1,5 @@
 import { diffLines } from "../lib/diff";
+import { t } from "../lib/i18n";
 
 /** Unchanged lines kept around each change. */
 const CONTEXT = 2;
@@ -19,7 +20,7 @@ export function DiffView({ before, after }: { before: string; after: string }) {
       let end = index;
       while (end + 1 < lines.length && !near[end + 1]) end++;
       const hidden = end - index + 1;
-      rows.push({ key: index, className: "diff-fold", text: `⋯ ${hidden} unchanged line${hidden > 1 ? "s" : ""}` });
+      rows.push({ key: index, className: "diff-fold", text: `⋯ ${t.diff.unchanged(hidden)}` });
       index = end;
       continue;
     }
@@ -29,7 +30,7 @@ export function DiffView({ before, after }: { before: string; after: string }) {
   }
 
   return (
-    <pre className="diff" aria-label="Differences">
+    <pre className="diff" aria-label={t.diff.label}>
       {rows.map((row) => (
         <span key={row.key} className={row.className}>
           {row.text}

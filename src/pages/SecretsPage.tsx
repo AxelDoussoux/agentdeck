@@ -4,6 +4,7 @@ import { Empty, Icon, Notice, PageHeader } from "../components/ui";
 import { LauncherRepair } from "../components/LauncherRepair";
 import { useToast } from "../components/Toasts";
 import { listSecrets, markSecretName, previewProtect, protectServer, undoChange, unprotectServer } from "../lib/api";
+import { formatList, t } from "../lib/i18n";
 import { IS_MAC } from "../lib/keys";
 import { describe } from "../lib/servers";
 import { useFilesChanged } from "../lib/watch";
@@ -12,11 +13,9 @@ import type { Agent, AgentInfo, McpListing, ProtectPreview, SecretListing, Secre
 /** Where protected secrets go on this system. */
 const IS_WINDOWS = /Windows/.test(navigator.userAgent);
 
-const KEYCHAIN = IS_MAC
-  ? "macOS Keychain"
-  : IS_WINDOWS
-    ? "Windows Credential Manager"
-    : "Secret Service";
+const SYSTEM = IS_MAC ? "mac" : IS_WINDOWS ? "windows" : "linux";
+/** The keychain's name, and the phrase that names it in sentences. */
+const keychain = () => t.secrets.keychains[SYSTEM];
 
 interface Props {
   agents: AgentInfo[];
@@ -89,12 +88,7 @@ export function SecretsPage({ agents, servers, onChange }: Props) {
       await markSecretName(name, secret);
       notify({
         tone: "success",
-        text:
-          secret === null
-            ? `${name} is judged by its name and value again.`
-            : secret
-              ? `${name} is now treated as a secret on every server.`
-              : `${name} is now treated as a setting on every server.`,
+        text: secret === null ? t.secrets.judgedAgain(name) : t.secrets.nowTreated(name, secret),
       });
     } catch (err) {
       notify({ tone: "error", text: String(err) });
@@ -105,9 +99,9 @@ export function SecretsPage({ agents, servers, onChange }: Props) {
   async function copyHook() {
     try {
       await navigator.clipboard.writeText(listing?.shellHook ?? "");
-      notify({ tone: "success", text: "Copied the line." });
+      notify({ tone: "success", text: t.secrets.copiedLine });
     } catch (err) {
-      notify({ tone: "error", text: `Could not copy: ${err}` });
+      notify({ tone: "error", text: t.secrets.copyFailed(String(err)) });
     }
   }
 
@@ -132,15 +126,8 @@ export function SecretsPage({ agents, servers, onChange }: Props) {
   return (
     <>
       <PageHeader
-        title="Secrets"
-        description={
-          <>
-            API keys and tokens set in MCP server configs. In plain text, anything that can read
-            these files can read them. AgentDeck moves them to your system keychain: a local server
-            then starts through <code>agentdeck exec</code>, which passes them back, and a remote
-            server's headers read a variable that your shell sets. Values are never shown here.
-          </>
-        }
+        title={t.nav.secrets}
+        description={t.secrets.description}
         actions={
           toProtect.length > 0 && (
             <button
@@ -148,18 +135,14 @@ export function SecretsPage({ agents, servers, onChange }: Props) {
               disabled={!listing?.launcher || busy !== null}
               onClick={() => setConfirmAll(true)}
             >
-              <Icon name="shield" /> Protect all
+              <Icon name="shield" /> {t.secrets.protectAll}
             </button>
           )
         }
       />
 
       {listing && !listing.launcher && (
-        <Notice tone="warning">
-          Moving secrets to the keychain needs the <code>agentdeck</code> command-line tool that
-          ships with AgentDeck, and it was not found next to the app. Reinstall AgentDeck, or
-          install the tool with <code>cargo install --path crates/agentdeck-cli</code>.
-        </Notice>
+        <Notice tone="warning">{t.secrets.noLauncher}</Notice>
       )}
       {listing && <LauncherRepair agents={agents} listing={listing} onRepaired={refresh} />}
       {listing?.errors.map((text) => (
@@ -170,28 +153,28 @@ export function SecretsPage({ agents, servers, onChange }: Props) {
       {listing && (
         <div className="stats">
           <div className="stat">
-            <span className="label">In plain text</span>
+            <span className="label">{t.secrets.inPlainText}</span>
             <span className={`value ${plainCount > 0 ? "danger-text" : ""}`}>{plainCount}</span>
             <span className="hint">
-              {toProtect.length > 0
-                ? `${toProtect.length} server${toProtect.length === 1 ? "" : "s"} can be protected`
-                : "Nothing left to protect"}
+              {toProtect.length > 0 ? t.secrets.canProtect(toProtect.length) : t.secrets.nothingLeft}
             </span>
           </div>
           <div className="stat">
-            <span className="label">Protected</span>
+            <span className="label">{t.secrets.protected}</span>
             <span className="value ok-text">{vaultCount}</span>
-            <span className="hint">{variables.length > 0 ? `${KEYCHAIN} and variables` : KEYCHAIN}</span>
+            <span className="hint">
+              {variables.length > 0 ? t.secrets.andVariables(keychain().name) : keychain().name}
+            </span>
           </div>
           <div className="stat">
-            <span className="label">Launcher</span>
+            <span className="label">{t.settings.launcher}</span>
             <span className={`value ${listing.launcher ? "ok-text" : "danger-text"}`}>
-              {listing.launcher ? "Ready" : "Missing"}
+              {listing.launcher ? t.secrets.ready : t.secrets.missing}
             </span>
             <span className="hint clamp" title={listing.launcher ?? undefined}>
               {listing.stranded.length > 0
-                ? `${listing.stranded.length} protected server${listing.stranded.length === 1 ? "" : "s"} to repair`
-                : (listing.launcher ?? "agentdeck was not found")}
+                ? t.secrets.toRepair(listing.stranded.length)
+                : (listing.launcher ?? t.secrets.launcherNotFound)}
             </span>
           </div>
         </div>
@@ -200,23 +183,25 @@ export function SecretsPage({ agents, servers, onChange }: Props) {
       {variables.length > 0 && listing?.shellHook && (
         <div className="card shell-hook">
           <p>
-            Remote servers read {listOf(variables.map((name) => `$${name}`))} from your shell. This line in your shell
-            profile ({IS_WINDOWS ? <code>$PROFILE</code> : <><code>~/.zshrc</code>, <code>~/.bashrc</code> or similar</>})
-            sets {variables.length === 1 ? "it" : "them"} from the {KEYCHAIN} each time a shell starts. Agents started
-            afterwards find {variables.length === 1 ? "it" : "them"}.
+            {t.secrets.shellHook(
+              formatList(variables.map((name) => `$${name}`)),
+              variables.length,
+              IS_WINDOWS,
+              keychain().the,
+            )}
           </p>
           <div className="hook-line">
             <code>{listing.shellHook}</code>
             <button className="small" onClick={copyHook}>
-              Copy
+              {t.secrets.copy}
             </button>
           </div>
         </div>
       )}
 
       {listing && all.length === 0 && (
-        <Empty icon="shield" title="No MCP server uses secrets">
-          Servers with API keys or tokens in their config show up here.
+        <Empty icon="shield" title={t.secrets.emptyTitle}>
+          {t.secrets.empty}
         </Empty>
       )}
 
@@ -225,9 +210,9 @@ export function SecretsPage({ agents, servers, onChange }: Props) {
           <table className="secrets">
             <thead>
               <tr>
-                <th>Server</th>
-                <th>Secret</th>
-                <th>Stored</th>
+                <th>{t.mcp.server}</th>
+                <th>{t.secrets.secret}</th>
+                <th>{t.secrets.stored}</th>
                 <th />
               </tr>
             </thead>
@@ -245,13 +230,13 @@ export function SecretsPage({ agents, servers, onChange }: Props) {
                         <strong>{server}</strong>
                         <small>{nameOf(agent)}</small>
                         {stranded && (
-                          <span className="pill pill-danger" title="The agentdeck launcher this server starts through is missing">
-                            <Icon name="alert" size={12} /> Won't start
+                          <span className="pill pill-danger" title={t.secrets.wontStartTip}>
+                            <Icon name="alert" size={12} /> {t.secrets.wontStart}
                           </span>
                         )}
                         {command && (
                           <details className="runs">
-                            <summary>What {nameOf(agent)} runs</summary>
+                            <summary>{t.secrets.runs(nameOf(agent))}</summary>
                             <code>{command}</code>
                           </details>
                         )}
@@ -259,20 +244,20 @@ export function SecretsPage({ agents, servers, onChange }: Props) {
                     )}
                     <td>
                       <code>{secret.key}</code>
-                      <small>{secret.kind === "env" ? "Environment variable" : "HTTP header"}</small>
+                      <small>{secret.kind === "env" ? t.secrets.envVariable : t.secrets.httpHeader}</small>
                     </td>
                     <td>
                       {secret.vaultId ? (
-                        <span className="pill pill-ok"><Icon name="shield" size={12} /> Keychain</span>
+                        <span className="pill pill-ok"><Icon name="shield" size={12} /> {t.secrets.keychain}</span>
                       ) : secret.envVar ? (
-                        <span className="pill pill-ok" title="The config reads this variable instead of holding the value">
+                        <span className="pill pill-ok" title={t.secrets.readsVariable}>
                           <Icon name="shield" size={12} /> ${secret.envVar}
                         </span>
                       ) : (
-                        <span className="pill pill-danger"><Icon name="alert" size={12} /> Plain text</span>
+                        <span className="pill pill-danger"><Icon name="alert" size={12} /> {t.secrets.plainText}</span>
                       )}
                       {!isProtected(secret) && secret.sameValueElsewhere > 0 && (
-                        <small>Same value in {secret.sameValueElsewhere} other place(s)</small>
+                        <small>{t.secrets.sameValue(secret.sameValueElsewhere)}</small>
                       )}
                       {!isProtected(secret) && (
                         <MarkButton secret={secret} onMark={mark} />
@@ -286,7 +271,7 @@ export function SecretsPage({ agents, servers, onChange }: Props) {
                             disabled={!listing?.launcher || busy !== null}
                             onClick={() => askToProtect(agent, server)}
                           >
-                            {busy === key ? "Moving…" : "Move to keychain"}
+                            {busy === key ? t.secrets.moving : t.overview.moveToKeychain}
                           </button>
                         )}
                         {protectedCount > 0 && (
@@ -294,10 +279,10 @@ export function SecretsPage({ agents, servers, onChange }: Props) {
                             className="small"
                             disabled={busy !== null}
                             onClick={() =>
-                              run(key, [() => unprotectServer(agent, server)], () => `Put the secrets of ${server} back in its config.`)
+                              run(key, [() => unprotectServer(agent, server)], () => t.secrets.putBack(server))
                             }
                           >
-                            Restore to config
+                            {t.secrets.restoreToConfig}
                           </button>
                         )}
                       </td>
@@ -313,11 +298,8 @@ export function SecretsPage({ agents, servers, onChange }: Props) {
       {others.length > 0 && (
         <details className="card other-variables">
           <summary>
-            <strong>Other variables</strong>
-            <span className="hint">
-              {others.length} setting{others.length === 1 ? "" : "s"} such as <code>{others[0].key}</code>, kept in the
-              config
-            </span>
+            <strong>{t.secrets.otherVariables}</strong>
+            <span className="hint">{t.secrets.othersHint(others.length, <code>{others[0].key}</code>)}</span>
           </summary>
           <ul className="copies">
             {others.map((secret) => (
@@ -326,7 +308,7 @@ export function SecretsPage({ agents, servers, onChange }: Props) {
                   <code>{secret.key}</code>
                   <span className="hint">
                     {secret.server} · {nameOf(secret.agent)} ·{" "}
-                    {secret.kind === "env" ? "environment variable" : "HTTP header"}
+                    {secret.kind === "env" ? t.secrets.envVariableLower : t.secrets.httpHeaderLower}
                   </span>
                 </div>
                 <MarkButton secret={secret} onMark={mark} />
@@ -339,11 +321,11 @@ export function SecretsPage({ agents, servers, onChange }: Props) {
       {pending && (
         <ConfirmDialog
           wide
-          title={`Move the secrets of ${pending.server} to the keychain?`}
+          title={t.secrets.protectTitle(pending.server)}
           onCancel={() => setPending(null)}
           choices={[
             {
-              label: "Move to keychain",
+              label: t.overview.moveToKeychain,
               tone: "primary",
               onSelect: () => {
                 const { agent, server } = pending;
@@ -351,29 +333,21 @@ export function SecretsPage({ agents, servers, onChange }: Props) {
                 run(
                   `${agent}/${server}`,
                   [() => protectServer(agent, server)],
-                  () => `Moved the secrets of ${server} to the keychain.`,
+                  () => t.secrets.moved(server),
                 );
               },
             },
           ]}
         >
           <p>
-            {listOf(pending.preview.moved)} {pending.preview.moved.length === 1 ? "moves" : "move"} to the {KEYCHAIN}
-            {pending.preview.kept.length > 0 &&
-              `, and ${listOf(pending.preview.kept)} ${pending.preview.kept.length === 1 ? "stays" : "stay"} in the config`}
-            .{" "}
-            {pending.preview.headers.length > 0 ? (
-              <>
-                {nameOf(pending.agent)} then reads {pending.preview.headers.length === 1 ? "it" : "them"} from{" "}
-                {listOf(pending.preview.headers.map((change) => `$${change.variable}`))}, which your shell sets from the
-                keychain with the line below in your shell profile. It can be undone.
-              </>
-            ) : (
-              <>
-                {nameOf(pending.agent)} then starts {pending.server} through <code>agentdeck exec</code>, which reads
-                them back. It can be undone.
-              </>
-            )}
+            {t.secrets.moves(pending.preview.moved, pending.preview.kept, keychain().the)}{" "}
+            {pending.preview.headers.length > 0
+              ? t.secrets.readsHeaders(
+                  nameOf(pending.agent),
+                  pending.preview.headers.length,
+                  formatList(pending.preview.headers.map((change) => `$${change.variable}`)),
+                )
+              : t.secrets.startsThroughExec(nameOf(pending.agent), pending.server)}
           </p>
           {pending.preview.headers.length > 0 ? (
             <>
@@ -391,18 +365,18 @@ export function SecretsPage({ agents, servers, onChange }: Props) {
                 <div className="hook-line">
                   <code>{listing.shellHook}</code>
                   <button className="small" onClick={copyHook}>
-                    Copy
+                    {t.secrets.copy}
                   </button>
                 </div>
               )}
             </>
           ) : (
             <dl className="facts command-change">
-              <dt>Now</dt>
+              <dt>{t.secrets.now}</dt>
               <dd>
                 <code>{describe(pending.preview.before)}</code>
               </dd>
-              <dt>After</dt>
+              <dt>{t.secrets.after}</dt>
               <dd>
                 <code>{describe(pending.preview.after)}</code>
               </dd>
@@ -414,18 +388,18 @@ export function SecretsPage({ agents, servers, onChange }: Props) {
       {confirmAll && (
         <ConfirmDialog
           wide
-          title={`Move the secrets of ${toProtect.length} server${toProtect.length === 1 ? "" : "s"} to the keychain?`}
+          title={t.secrets.protectAllTitle(toProtect.length)}
           onCancel={() => setConfirmAll(false)}
           choices={[
             {
-              label: "Protect all",
+              label: t.secrets.protectAll,
               tone: "primary",
               onSelect: () => {
                 setConfirmAll(false);
                 run(
                   "all",
                   toProtect.map(([, group]) => () => protectServer(group[0].agent, group[0].server)),
-                  (count) => `Moved the secrets of ${count} server${count === 1 ? "" : "s"} to the keychain.`,
+                  (count) => t.secrets.movedAll(count),
                 );
               },
             },
@@ -435,18 +409,17 @@ export function SecretsPage({ agents, servers, onChange }: Props) {
             {toProtect.map(([key, group]) => (
               <li key={key}>
                 <strong>{group[0].server}</strong> ({nameOf(group[0].agent)}):{" "}
-                {group
-                  .filter((s) => s.protectable)
-                  .map((s) => s.key)
-                  .join(", ")}
+                {formatList(group.filter((s) => s.protectable).map((s) => s.key))}
               </li>
             ))}
           </ul>
           <p>
-            Before: {plainCount} secret{plainCount === 1 ? "" : "s"} in plain text. After:{" "}
-            {plainCount - countProtectable(toProtect)} in plain text, {vaultCount + countProtectable(toProtect)} in the{" "}
-            {KEYCHAIN}. Local servers then start through <code>agentdeck exec</code>, which reads them back, and remote
-            servers read their headers from variables that your shell sets. It can be undone.
+            {t.secrets.beforeAfter(
+              plainCount,
+              plainCount - countProtectable(toProtect),
+              vaultCount + countProtectable(toProtect),
+              keychain().the,
+            )}
           </p>
         </ConfirmDialog>
       )}
@@ -463,11 +436,6 @@ function groupByServer(secrets: SecretRef[]): Map<string, SecretRef[]> {
   return groups;
 }
 
-/** "A", "A and B", "A, B and C". */
-function listOf(items: string[]): string {
-  return items.length < 2 ? items.join("") : `${items.slice(0, -1).join(", ")} and ${items[items.length - 1]}`;
-}
-
 const countProtectable = (groups: [string, SecretRef[]][]) =>
   groups.reduce((sum, [, group]) => sum + group.filter((s) => s.protectable).length, 0);
 
@@ -476,9 +444,9 @@ function MarkButton({ secret, onMark }: { secret: SecretRef; onMark: (name: stri
   if (secret.marked) {
     return (
       <small>
-        Marked as {secret.likely ? "a secret" : "a setting"} by you ·{" "}
+        {t.secrets.markedAs(secret.likely)} ·{" "}
         <button className="link" onClick={() => onMark(secret.key, null)}>
-          Reset
+          {t.secrets.reset}
         </button>
       </small>
     );
@@ -486,7 +454,7 @@ function MarkButton({ secret, onMark }: { secret: SecretRef; onMark: (name: stri
   return (
     <small>
       <button className="link" onClick={() => onMark(secret.key, !secret.likely)}>
-        {secret.likely ? "Not a secret" : "Treat as a secret"}
+        {secret.likely ? t.secrets.notSecret : t.secrets.treatAsSecret}
       </button>
     </small>
   );

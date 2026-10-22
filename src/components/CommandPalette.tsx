@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { Icon, type IconName } from "./ui";
+import { t } from "../lib/i18n";
 
 export interface Command {
   label: string;
@@ -65,7 +66,7 @@ export function CommandPalette({ commands, onClose }: { commands: Command[]; onC
     <dialog
       ref={ref}
       className="dialog palette"
-      aria-label="Command palette"
+      aria-label={t.palette.label}
       onCancel={(e) => {
         e.preventDefault();
         onClose();
@@ -83,13 +84,13 @@ export function CommandPalette({ commands, onClose }: { commands: Command[]; onC
           aria-controls="palette-list"
           aria-activedescendant={shown[active] ? `palette-${active}` : undefined}
           aria-autocomplete="list"
-          placeholder="Go to a page, find a server or a skill, run a command"
+          placeholder={t.palette.placeholder}
           value={query}
           onChange={(e) => setQuery(e.target.value)}
           onKeyDown={onKeyDown}
         />
       </div>
-      <ul id="palette-list" role="listbox" ref={list} aria-label="Commands">
+      <ul id="palette-list" role="listbox" ref={list} aria-label={t.palette.commands}>
         {shown.map((command, i) => (
           <li
             key={`${command.label} ${command.hint}`}
@@ -105,10 +106,10 @@ export function CommandPalette({ commands, onClose }: { commands: Command[]; onC
             {command.hint && <small>{command.hint}</small>}
           </li>
         ))}
-        {shown.length === 0 && <li className="palette-empty">Nothing matches “{query}”.</li>}
+        {shown.length === 0 && <li className="palette-empty">{t.palette.nothing(query)}</li>}
       </ul>
       {matches.length > SHOWN && (
-        <p className="palette-more">{matches.length - SHOWN} more: type more words to narrow down.</p>
+        <p className="palette-more">{t.palette.more(matches.length - SHOWN)}</p>
       )}
     </dialog>
   );

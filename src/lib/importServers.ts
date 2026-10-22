@@ -1,6 +1,7 @@
 // Reading MCP server settings pasted from a README or another agent's config.
 
 import type { ServerOptions, Transport } from "./types";
+import { t } from "./i18n";
 
 /** A server read from pasted JSON, with the values it gives in clear. */
 export interface ImportedServer {
@@ -39,12 +40,12 @@ export function parseServers(text: string): ImportedServer[] {
           : isObject(root.mcp) && isObject(root.mcp.servers)
             ? root.mcp.servers
             : root;
-  if (!found) throw new Error("Paste a JSON object, such as {\"mcpServers\": {…}}.");
+  if (!found) throw new Error(t.importing.notObject);
   if (isServer(found)) return [toServer("", found)];
   const servers = Object.entries(found)
     .filter(([, value]) => isServer(value))
     .map(([name, value]) => toServer(name, value as Json));
-  if (servers.length === 0) throw new Error("No server found: each one needs a command or a URL.");
+  if (servers.length === 0) throw new Error(t.importing.noServer);
   return servers;
 }
 
@@ -60,7 +61,7 @@ function readJson(text: string): unknown {
       }
     }
   }
-  throw new Error("This is not valid JSON.");
+  throw new Error(t.importing.notJson);
 }
 
 /** Drops comments and trailing commas outside of strings. */

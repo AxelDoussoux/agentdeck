@@ -24,6 +24,11 @@ lives in `crates/agentdeck-core`, one module per area: `mcp.rs`, `rules.rs`,
 `skills.rs`, `secrets.rs`, `usage.rs`, `pricing.rs`. Supporting a new agent
 starts in `agent.rs`.
 
+The texts of the app are in `src/locales`: `en.tsx` is the reference, and
+`fr.tsx` must have the same keys, which `pnpm build` checks. A new text goes
+in both files. A new language is one more file there, listed in
+`src/lib/i18n.ts`.
+
 ## Build from source
 
 Prerequisites: [Rust](https://rustup.rs), Node 22, pnpm 10 and the

@@ -14,6 +14,7 @@ import {
 } from "@codemirror/view";
 import { tags } from "@lezer/highlight";
 import { GFM, parser } from "@lezer/markdown";
+import { t } from "../lib/i18n";
 
 interface Props {
   value: string;
@@ -108,6 +109,7 @@ export function MarkdownEditor({ value, onChange, placeholder: hint, label, docK
         keymap.of([...defaultKeymap, ...historyKeymap, ...searchKeymap, indentWithTab]),
         placeholder(hint ?? ""),
         theme,
+        EditorState.phrases.of(t.editor.phrases),
         EditorView.contentAttributes.of({ "aria-label": label, spellcheck: "false" }),
         EditorView.updateListener.of((update) => {
           if (update.docChanged) changed.current(update.state.doc.toString());

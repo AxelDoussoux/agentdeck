@@ -1,5 +1,6 @@
 import { openUrl } from "@tauri-apps/plugin-opener";
 import type { ReactNode } from "react";
+import { t } from "../lib/i18n";
 
 /**
  * Renders the Markdown of a SKILL.md as React elements. Skills come from
@@ -26,7 +27,7 @@ function Field({ name, value }: { name: string; value: string }) {
   return (
     <>
       <dt>{name}</dt>
-      <dd>{value || <span className="hint">Empty</span>}</dd>
+      <dd>{value || <span className="hint">{t.markdown.empty}</span>}</dd>
     </>
   );
 }
@@ -303,7 +304,7 @@ function inline(text: string): ReactNode[] {
       // Images would load from anywhere, so they show as their description.
       nodes.push(
         <span key={key++} className="markdown-image" title={match[4]}>
-          {alt || "Image"}
+          {alt || t.markdown.image}
         </span>,
       );
     } else if (label !== undefined) {

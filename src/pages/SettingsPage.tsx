@@ -9,10 +9,9 @@ import { useToast } from "../components/Toasts";
 import { AgentMark, Icon, Notice, PageHeader } from "../components/ui";
 import { appSettings, emptySkillTrash, openFolder } from "../lib/api";
 import type { AgentInfo, AppSettings, SecretListing } from "../lib/types";
+import { LANGUAGES, t, type LanguageSetting } from "../lib/i18n";
 
 const RELEASES = "https://github.com/AxelDoussoux/agentdeck/releases";
-
-const THEME_LABELS: Record<Theme, string> = { system: "Match the system", light: "Light", dark: "Dark" };
 
 type UpdateState =
   | { kind: "idle" }
@@ -28,12 +27,15 @@ interface Props {
   version: string | null;
   theme: Theme;
   setTheme: (theme: Theme) => void;
+  language: LanguageSetting;
+  setLanguage: (language: LanguageSetting) => void;
   onChange: () => void;
 }
 
-const plural = (count: number, one: string, many: string) => `${count} ${count === 1 ? one : many}`;
+const THEMES: Theme[] = ["system", "light", "dark"];
+const LANGUAGE_SETTINGS: LanguageSetting[] = ["system", "en", "fr"];
 
-export function SettingsPage({ agents, secrets, version, theme, setTheme, onChange }: Props) {
+export function SettingsPage({ agents, secrets, version, theme, setTheme, language, setLanguage, onChange }: Props) {
   const [settings, setSettings] = useState<AppSettings | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [updates, setUpdates] = useState<UpdateState>({ kind: "idle" });
@@ -63,25 +65,25 @@ export function SettingsPage({ agents, secrets, version, theme, setTheme, onChan
       const update = await check();
       setUpdates(update ? { kind: "available", update } : { kind: "latest" });
     } catch (err) {
-      setUpdates({ kind: "error", text: `Could not check for updates: ${err}` });
+      setUpdates({ kind: "error", text: t.settings.checkFailed(String(err)) });
     }
   }
 
   async function install(update: Update) {
     try {
-      setUpdates({ kind: "installing", text: "Downloading…" });
+      setUpdates({ kind: "installing", text: t.update.downloading });
       await update.downloadAndInstall();
-      setUpdates({ kind: "installing", text: "Restarting…" });
+      setUpdates({ kind: "installing", text: t.update.restarting });
       await relaunch();
     } catch (err) {
-      setUpdates({ kind: "error", text: `Update failed: ${err}` });
+      setUpdates({ kind: "error", text: t.update.failed(String(err)) });
     }
   }
 
   async function emptyTrash() {
     try {
       const count = await emptySkillTrash();
-      notify({ tone: "success", text: `Deleted ${plural(count, "skill", "skills")} for good.` });
+      notify({ tone: "success", text: t.settings.trashEmptied(count) });
     } catch (err) {
       notify({ tone: "error", text: String(err) });
     }
@@ -91,15 +93,15 @@ export function SettingsPage({ agents, secrets, version, theme, setTheme, onChan
 
   return (
     <>
-      <PageHeader title="Settings" description="How AgentDeck looks, where it finds each agent, and the files it keeps." />
+      <PageHeader title={t.settings.title} description={t.settings.description} />
       {loadError && <Notice tone="error">{loadError}</Notice>}
 
       <section className="card settings-section">
-        <h2>Appearance</h2>
+        <h2>{t.settings.appearance}</h2>
         <div className="setting-row">
-          <span className="setting-label">Theme</span>
-          <div className="segmented" role="radiogroup" aria-label="Theme">
-            {(Object.keys(THEME_LABELS) as Theme[]).map((option) => (
+          <span className="setting-label">{t.settings.theme}</span>
+          <div className="segmented" role="radiogroup" aria-label={t.settings.theme}>
+            {THEMES.map((option) => (
               <button
                 key={option}
                 role="radio"
@@ -107,7 +109,24 @@ export function SettingsPage({ agents, secrets, version, theme, setTheme, onChan
                 className={theme === option ? "active" : undefined}
                 onClick={() => setTheme(option)}
               >
-                {THEME_LABELS[option]}
+                {t.settings.themes[option]}
+              </button>
+            ))}
+          </div>
+        </div>
+        <div className="setting-row">
+          <span className="setting-label">{t.settings.language}</span>
+          <div className="segmented" role="radiogroup" aria-label={t.settings.language}>
+            {LANGUAGE_SETTINGS.map((option) => (
+              <button
+                key={option}
+                role="radio"
+                aria-checked={language === option}
+                className={language === option ? "active" : undefined}
+                lang={option === "system" ? undefined : option}
+                onClick={() => setLanguage(option)}
+              >
+                {option === "system" ? t.settings.systemLanguage : LANGUAGES[option].name}
               </button>
             ))}
           </div>
@@ -115,26 +134,26 @@ export function SettingsPage({ agents, secrets, version, theme, setTheme, onChan
       </section>
 
       <section className="card settings-section">
-        <h2>Updates</h2>
+        <h2>{t.settings.updates}</h2>
         <div className="setting-row">
           <span className="setting-label">
             AgentDeck {version ? `v${version}` : ""}
             <small>
-              {updates.kind === "idle" && "Checked when the app starts."}
-              {updates.kind === "checking" && "Checking…"}
-              {updates.kind === "latest" && "This is the latest version."}
-              {updates.kind === "available" && `Version ${updates.update.version} is available.`}
+              {updates.kind === "idle" && t.settings.checkedAtStart}
+              {updates.kind === "checking" && t.settings.checking}
+              {updates.kind === "latest" && t.settings.latest}
+              {updates.kind === "available" && t.settings.versionAvailable(updates.update.version)}
               {updates.kind === "installing" && updates.text}
               {updates.kind === "error" && updates.text}
             </small>
           </span>
           <span className="setting-actions">
             <button className="small" onClick={() => openUrl(RELEASES)}>
-              Release notes
+              {t.settings.releaseNotes}
             </button>
             {updates.kind === "available" ? (
               <button className="primary small" onClick={() => install(updates.update)}>
-                Install and restart
+                {t.update.install}
               </button>
             ) : (
               <button
@@ -142,7 +161,7 @@ export function SettingsPage({ agents, secrets, version, theme, setTheme, onChan
                 disabled={updates.kind === "checking" || updates.kind === "installing"}
                 onClick={checkUpdates}
               >
-                Check now
+                {t.settings.checkNow}
               </button>
             )}
           </span>
@@ -150,11 +169,8 @@ export function SettingsPage({ agents, secrets, version, theme, setTheme, onChan
       </section>
 
       <section className="card settings-section">
-        <h2>Agent folders</h2>
-        <p className="hint">
-          Where AgentDeck reads and writes each agent's files. Claude Code and Codex use another folder when{" "}
-          <code>CLAUDE_CONFIG_DIR</code> or <code>CODEX_HOME</code> is set, and AgentDeck follows them.
-        </p>
+        <h2>{t.settings.folders}</h2>
+        <p className="hint">{t.settings.foldersHint}</p>
         {settings?.folders.map((folder) => (
           <div className="setting-row" key={folder.agent}>
             <span className="setting-label">
@@ -163,62 +179,59 @@ export function SettingsPage({ agents, secrets, version, theme, setTheme, onChan
               </span>
               <code>{folder.path}</code>
               {folder.variable && (
-                <small>{folder.moved ? `Set by ${folder.variable}.` : `Set ${folder.variable} to move it.`}</small>
+                <small>{folder.moved ? t.settings.setBy(folder.variable) : t.settings.setToMove(folder.variable)}</small>
               )}
             </span>
             <button className="small" onClick={() => open({ agent: folder.agent })}>
-              Open
+              {t.common.open}
             </button>
           </div>
         ))}
       </section>
 
       <section className="card settings-section">
-        <h2>Protected servers</h2>
+        <h2>{t.settings.protected}</h2>
         <div className="setting-row">
           <span className="setting-label">
-            Launcher
-            {settings?.launcher ? <code>{settings.launcher}</code> : <small>Not found: reinstall AgentDeck.</small>}
-            <small>Servers whose keys are in the keychain start through this <code>agentdeck</code> command.</small>
+            {t.settings.launcher}
+            {settings?.launcher ? <code>{settings.launcher}</code> : <small>{t.settings.launcherMissing}</small>}
+            <small>{t.settings.launcherHint}</small>
           </span>
         </div>
         {secrets && <LauncherRepair agents={agents} listing={secrets} onRepaired={onChange} />}
       </section>
 
       <section className="card settings-section">
-        <h2>Backups</h2>
+        <h2>{t.settings.backups}</h2>
         <div className="setting-row">
           <span className="setting-label">
             <code>{settings?.backups}</code>
             <small>
-              {settings &&
-                `${plural(settings.backupCount, "backup", "backups")}. Each write keeps the previous version; the last ${settings.backupsKept} of each file are kept.`}
+              {settings && t.settings.backupsHint(settings.backupCount, settings.backupsKept)}
             </small>
           </span>
           <button className="small" onClick={() => open("backups")}>
-            Open
+            {t.common.open}
           </button>
         </div>
       </section>
 
       <section className="card settings-section">
-        <h2>Skills trash</h2>
+        <h2>{t.settings.trash}</h2>
         <div className="setting-row">
           <span className="setting-label">
             <code>{settings?.trash}</code>
             <small>
               {settings &&
-                (settings.trashCount === 0
-                  ? "Empty."
-                  : `${plural(settings.trashCount, "skill", "skills")} removed or replaced, which you can restore from the Skills page.`)}
+                (settings.trashCount === 0 ? t.settings.trashEmpty : t.settings.trashHint(settings.trashCount))}
             </small>
           </span>
           <span className="setting-actions">
             <button className="small" onClick={() => open("trash")}>
-              Open
+              {t.common.open}
             </button>
             <button className="small" disabled={!settings?.trashCount} onClick={() => setEmptying(true)}>
-              <Icon name="close" size={14} /> Empty trash
+              <Icon name="close" size={14} /> {t.settings.emptyTrash}
             </button>
           </span>
         </div>
@@ -226,13 +239,11 @@ export function SettingsPage({ agents, secrets, version, theme, setTheme, onChan
 
       {emptying && settings && (
         <ConfirmDialog
-          title="Empty the skills trash?"
+          title={t.settings.emptyTitle}
           onCancel={() => setEmptying(false)}
-          choices={[{ label: "Delete for good", tone: "danger", onSelect: emptyTrash }]}
+          choices={[{ label: t.settings.deleteForGood, tone: "danger", onSelect: emptyTrash }]}
         >
-          <p>
-            {plural(settings.trashCount, "skill is", "skills are")} deleted for good. This cannot be undone.
-          </p>
+          <p>{t.settings.emptyBody(settings.trashCount)}</p>
         </ConfirmDialog>
       )}
     </>

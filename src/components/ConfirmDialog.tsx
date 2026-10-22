@@ -1,4 +1,5 @@
 import { useEffect, useRef, type ReactNode } from "react";
+import { t } from "../lib/i18n";
 
 export interface DialogChoice {
   label: string;
@@ -42,7 +43,7 @@ export function ConfirmDialog({ title, children, choices, onCancel, wide }: Prop
       <h3 id="dialog-title">{title}</h3>
       {children && <div className="dialog-body">{children}</div>}
       <div className="dialog-actions">
-        <button onClick={onCancel}>Cancel</button>
+        <button onClick={onCancel}>{t.common.cancel}</button>
         {choices.map((choice) => (
           <button key={choice.label} className={choice.tone} onClick={choice.onSelect}>
             {choice.label}

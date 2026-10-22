@@ -7,6 +7,7 @@ import { useToast } from "./components/Toasts";
 import { Tooltip } from "./components/Tooltip";
 import { Icon, type IconName } from "./components/ui";
 import { copyMcpServer, listAgents, listMcpServers, listSecrets, listSkills, undoChange } from "./lib/api";
+import { applyLanguage, formatList, storedLanguage, t, type LanguageSetting } from "./lib/i18n";
 import { shortcut, withModifier } from "./lib/keys";
 import { byName } from "./lib/servers";
 import { useFilesChanged } from "./lib/watch";
@@ -21,27 +22,28 @@ import { SkillsPage } from "./pages/SkillsPage";
 import { UpdateBanner } from "./UpdateBanner";
 import "./App.css";
 
+/** The sidebar; labels are in `t.nav`, by page and section. */
 const SECTIONS = [
-  { title: null, pages: [{ id: "overview", label: "Overview", icon: "overview" }] },
+  { title: null, pages: [{ id: "overview", icon: "overview" }] },
   {
-    title: "Configure",
+    title: "configure",
     pages: [
-      { id: "mcp", label: "MCP servers", icon: "plug" },
-      { id: "rules", label: "Rules", icon: "rules" },
-      { id: "skills", label: "Skills", icon: "skills" },
-      { id: "secrets", label: "Secrets", icon: "key" },
+      { id: "mcp", icon: "plug" },
+      { id: "rules", icon: "rules" },
+      { id: "skills", icon: "skills" },
+      { id: "secrets", icon: "key" },
     ],
   },
-  { title: "Insights", pages: [{ id: "history", label: "History & costs", icon: "chart" }] },
+  { title: "insights", pages: [{ id: "history", icon: "chart" }] },
 ] as const satisfies readonly {
   title: string | null;
-  pages: readonly { id: string; label: string; icon: IconName }[];
+  pages: readonly { id: string; icon: IconName }[];
 }[];
 
 export type PageId = (typeof SECTIONS)[number]["pages"][number]["id"] | "settings";
 
-const PAGES: readonly { id: PageId; label: string; icon: IconName }[] = SECTIONS.flatMap(
-  (section): readonly { id: PageId; label: string; icon: IconName }[] => section.pages,
+const PAGES: readonly { id: Exclude<PageId, "settings">; icon: IconName }[] = SECTIONS.flatMap(
+  (section): readonly { id: Exclude<PageId, "settings">; icon: IconName }[] => section.pages,
 );
 
 /** What a page shows first when opened from the command palette. */
@@ -54,7 +56,7 @@ export type Focus =
 
 /** Unsaved changes on the current page, which leaving it would lose. */
 export interface UnsavedGuard {
-  /** What is unsaved, for example "Claude Code rules". */
+  /** What is unsaved, for example "Claude Code rules", in the current language. */
   what: string;
   /** Saves the changes; resolves to false when saving failed. */
   save: () => Promise<boolean>;
@@ -94,6 +96,7 @@ function App() {
   const [secrets, setSecrets] = useState<SecretListing | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [theme, setTheme] = useState<Theme>(storedTheme);
+  const [language, setLanguage] = useState<LanguageSetting>(storedLanguage);
   const [version, setVersion] = useState<string | null>(null);
   const [focus, setFocus] = useState<Focus | null>(null);
   const [palette, setPalette] = useState(false);
@@ -140,6 +143,12 @@ function App() {
       // Private mode or blocked storage: the choice just won't persist.
     }
   }, [theme]);
+
+  function changeLanguage(setting: LanguageSetting) {
+    // `t` changes at once; the new state re-renders every page with it.
+    applyLanguage(setting);
+    setLanguage(setting);
+  }
 
   const serverCount = new Set(listing.servers.map((s) => s.name)).size;
   const plainSecrets = secrets?.secrets.filter((s) => s.likely && !s.vaultId && !s.envVar).length ?? 0;
@@ -198,10 +207,10 @@ function App() {
   async function copyServer(name: string, from: Agent, to: Agent) {
     try {
       const { undo, lost } = await copyMcpServer(name, from, to);
-      const left = lost?.length ? ` Not carried over: ${lost.join(", ")}.` : "";
+      const left = lost?.length ? ` ${t.mcp.notCarried(formatList(lost))}` : "";
       notify({
         tone: "success",
-        text: `Added ${name} to ${nameOf(to)}.${left}`,
+        text: `${t.mcp.added(name, nameOf(to))}${left}`,
         undo: async () => {
           await undoChange(undo);
           await refresh();
@@ -215,21 +224,21 @@ function App() {
 
   function commands(): Command[] {
     const list: Command[] = PAGES.map((item, i) => ({
-      label: item.label,
+      label: t.nav[item.id],
       icon: item.icon,
       hint: shortcut(String(i + 1)),
-      keywords: "go to page",
+      keywords: t.nav.keywords.page,
       run: () => navigate(item.id),
     }));
     list.push(
-      { label: "Add an MCP server", icon: "plus", keywords: "new", run: () => navigate("mcp", { kind: "add-server" }) },
-      { label: "Settings", icon: "settings", keywords: "preferences theme updates backups trash folders", run: () => navigate("settings") },
-      { label: "Reload configs", icon: "refresh", hint: shortcut("R"), keywords: "refresh", run: refresh },
-      { label: `Switch to the ${nextTheme} theme`, icon: THEME_ICONS[nextTheme], keywords: "theme dark light", run: () => setTheme(nextTheme) },
+      { label: t.mcp.addTitle, icon: "plus", keywords: t.nav.keywords.add, run: () => navigate("mcp", { kind: "add-server" }) },
+      { label: t.settings.title, icon: "settings", keywords: t.nav.keywords.settings, run: () => navigate("settings") },
+      { label: t.nav.reload, icon: "refresh", hint: shortcut("R"), keywords: t.nav.keywords.reload, run: refresh },
+      { label: t.nav.switchTheme[nextTheme], icon: THEME_ICONS[nextTheme], keywords: t.nav.keywords.theme, run: () => setTheme(nextTheme) },
     );
     for (const info of agents.filter((info) => info.rulesPath)) {
       list.push({
-        label: `Edit ${info.name} rules`,
+        label: t.nav.editRules(info.name),
         icon: "rules",
         keywords: info.rulesPath ?? "",
         run: () => navigate("rules", { kind: "rules", agent: info.agent }),
@@ -237,18 +246,18 @@ function App() {
     }
     const rows = byName(listing);
     for (const name of rows.keys()) {
-      list.push({ label: name, icon: "plug", hint: "MCP server", run: () => navigate("mcp", { kind: "server", name }) });
+      list.push({ label: name, icon: "plug", hint: t.nav.server, run: () => navigate("mcp", { kind: "server", name }) });
     }
     for (const name of skillNames) {
-      list.push({ label: name, icon: "skills", hint: "Skill", run: () => navigate("skills", { kind: "skill", name }) });
+      list.push({ label: name, icon: "skills", hint: t.nav.skill, run: () => navigate("skills", { kind: "skill", name }) });
     }
     for (const [name, copies] of rows) {
       const [source] = copies.values();
       for (const copy of copies.values()) {
         list.push({
-          label: `Edit ${name} in ${nameOf(copy.agent)}`,
+          label: t.serverForm.editTitle(name, nameOf(copy.agent)),
           icon: "plug",
-          keywords: "change settings",
+          keywords: t.nav.keywords.edit,
           run: () => navigate("mcp", { kind: "edit-server", name, agent: copy.agent }),
         });
       }
@@ -257,9 +266,9 @@ function App() {
         if (!info.installed || copies.has(info.agent)) continue;
         if (info.agent === "codex" && source.transport.kind === "sse") continue;
         list.push({
-          label: `Copy ${name} to ${info.name}`,
+          label: t.nav.copyTo(name, info.name),
           icon: "plus",
-          keywords: "add",
+          keywords: t.nav.keywords.add,
           run: () => copyServer(name, source.agent, info.agent),
         });
       }
@@ -269,7 +278,7 @@ function App() {
 
   return (
     <div className="layout">
-      <nav className="sidebar" aria-label="Main">
+      <nav className="sidebar" aria-label={t.nav.main}>
         <div className="brand">
           <span className="logo" aria-hidden="true">
             <svg viewBox="0 0 24 24" width="18" height="18">
@@ -278,24 +287,24 @@ function App() {
           </span>
           <div>
             <strong>AgentDeck</strong>
-            <small>{version ? `v${version}` : "Control center"}</small>
+            <small>{version ? `v${version}` : t.nav.tagline}</small>
           </div>
         </div>
 
         {SECTIONS.map((section) => (
           <div key={section.title ?? "main"} className="nav-section">
-            {section.title && <span className="nav-title">{section.title}</span>}
+            {section.title && <span className="nav-title">{t.nav[section.title]}</span>}
             {section.pages.map((item) => {
               const badge = badges[item.id];
               return (
-                <Tooltip key={item.id} text={item.label} disabled={!narrow}>
+                <Tooltip key={item.id} text={t.nav[item.id]} disabled={!narrow}>
                   <button
                     className={`nav-item ${item.id === page ? "active" : ""}`}
                     aria-current={item.id === page ? "page" : undefined}
                     onClick={() => navigate(item.id)}
                   >
                     <Icon name={item.icon} />
-                    <span>{item.label}</span>
+                    <span>{t.nav[item.id]}</span>
                     {badge && (
                       <span className={`badge ${badge.danger ? "badge-danger" : ""}`}>{badge.value}</span>
                     )}
@@ -315,8 +324,8 @@ function App() {
                   info.hasConfig
                     ? info.mcpConfigPath
                     : info.installed
-                      ? `Installed, no ${info.mcpConfigPath} yet`
-                      : "Not found on this computer"
+                      ? t.nav.noConfig(info.mcpConfigPath)
+                      : t.nav.notFound
                 }
               >
                 <span className={`dot ${info.installed ? "dot-on" : ""}`} />
@@ -325,30 +334,30 @@ function App() {
             ))}
           </ul>
           <div className="footer-actions">
-            <Tooltip text={`Search and commands (${shortcut("K")})`}>
+            <Tooltip text={`${t.nav.search} (${shortcut("K")})`}>
               <button
                 className="icon-button"
                 onClick={() => setPalette(true)}
-                aria-label="Search and commands"
+                aria-label={t.nav.search}
               >
                 <Icon name="search" />
               </button>
             </Tooltip>
-            <Tooltip text={`Reload configs (${shortcut("R")})`}>
+            <Tooltip text={`${t.nav.reload} (${shortcut("R")})`}>
               <button
                 className="icon-button"
                 onClick={refresh}
-                aria-label="Reload configs"
+                aria-label={t.nav.reload}
               >
                 <Icon name="refresh" />
               </button>
             </Tooltip>
-            <Tooltip text="Settings">
+            <Tooltip text={t.settings.title}>
               <button
                 className={`icon-button ${page === "settings" ? "active" : ""}`}
                 aria-current={page === "settings" ? "page" : undefined}
                 onClick={() => navigate("settings")}
-                aria-label="Settings"
+                aria-label={t.settings.title}
               >
                 <Icon name="settings" />
               </button>
@@ -378,6 +387,8 @@ function App() {
               version={version}
               theme={theme}
               setTheme={setTheme}
+              language={language}
+              setLanguage={changeLanguage}
               onChange={refresh}
             />
           )}
@@ -388,11 +399,11 @@ function App() {
 
       {leaving && (
         <ConfirmDialog
-          title="Unsaved changes"
+          title={t.common.unsaved}
           onCancel={() => setLeaving(null)}
           choices={[
             {
-              label: "Discard",
+              label: t.common.discard,
               tone: "danger",
               onSelect: () => {
                 setLeaving(null);
@@ -400,7 +411,7 @@ function App() {
               },
             },
             {
-              label: "Save",
+              label: t.common.save,
               tone: "primary",
               onSelect: async () => {
                 const saved = (await guard.current?.save()) ?? true;
@@ -410,7 +421,7 @@ function App() {
             },
           ]}
         >
-          Your changes to the {leaving.what} are not saved.
+          {t.common.notSaved(leaving.what)}
         </ConfirmDialog>
       )}
     </div>
