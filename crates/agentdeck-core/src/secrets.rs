@@ -432,6 +432,74 @@ pub fn find_launcher() -> Option<std::path::PathBuf> {
         .find(|path| path.is_file())
 }
 
+/// A protected server that can no longer start, because the `agentdeck`
+/// launcher its agent runs is gone: the app was moved, uninstalled, or run
+/// from a disk image that is no longer mounted.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Stranded {
+    pub agent: Agent,
+    pub server: String,
+    /// The missing launcher, as written in the config.
+    pub launcher: String,
+}
+
+/// Whether the agent can find `command`: a path must point to a file, and a
+/// bare name must be on the `PATH`.
+fn launcher_exists(command: &str) -> bool {
+    let path = Path::new(command);
+    if path.components().count() > 1 {
+        return path.is_file();
+    }
+    let with_suffix = format!("{command}{}", std::env::consts::EXE_SUFFIX);
+    std::env::var_os("PATH").is_some_and(|paths| {
+        std::env::split_paths(&paths)
+            .any(|dir| dir.join(command).is_file() || dir.join(&with_suffix).is_file())
+    })
+}
+
+/// Lists the protected servers whose launcher is missing. Configs that cannot
+/// be read are skipped: [`inventory`] reports them.
+pub fn stranded(home: &Path) -> Vec<Stranded> {
+    let mut found = Vec::new();
+    for agent in Agent::ALL {
+        for (server, spec) in mcp::read_specs(agent, home).unwrap_or_default() {
+            if let Transport::Stdio { command, args } = &spec.transport
+                && unwrap(command, args).is_some()
+                && !launcher_exists(command)
+            {
+                found.push(Stranded {
+                    agent,
+                    server,
+                    launcher: command.clone(),
+                });
+            }
+        }
+    }
+    found
+}
+
+/// Points every stranded server at `launcher`, keeping its keychain ids,
+/// command, variables and settings. Returns the servers it repaired.
+pub fn repair(home: &Path, launcher: &Path) -> Result<Vec<Stranded>> {
+    let stranded = stranded(home);
+    let launcher = launcher.to_string_lossy();
+    for server in &stranded {
+        let spec = server_spec(server.agent, home, &server.server)?;
+        if let Transport::Stdio { args, .. } = &spec.transport {
+            mcp::set_launch(
+                server.agent,
+                home,
+                &server.server,
+                &launcher,
+                args,
+                &spec.env,
+            )?;
+        }
+    }
+    Ok(stranded)
+}
+
 fn server_spec(agent: Agent, home: &Path, server: &str) -> Result<ServerSpec> {
     mcp::read_specs(agent, home)?
         .remove(server)
@@ -553,6 +621,45 @@ mod tests {
             }
         );
         assert!(vault.0.borrow().is_empty());
+    }
+
+    #[test]
+    fn a_missing_launcher_is_found_and_repaired() {
+        let home = setup();
+        let home = home.path();
+        let vault = MemoryVault::default();
+        let gone = home.join("Volumes/AgentDeck/agentdeck");
+        protect(&vault, home, Agent::ClaudeCode, "github", &gone).unwrap();
+        protect(&vault, home, Agent::Cursor, "gh", &gone).unwrap();
+        let before = mcp::read_specs(Agent::ClaudeCode, home).unwrap()["github"].clone();
+
+        let found = stranded(home);
+        assert_eq!(found.len(), 2);
+        assert_eq!(found[0].launcher, gone.to_string_lossy());
+
+        let installed = home.join("bin/agentdeck");
+        fs::create_dir_all(installed.parent().unwrap()).unwrap();
+        fs::write(&installed, "").unwrap();
+        assert_eq!(repair(home, &installed).unwrap().len(), 2);
+        assert!(stranded(home).is_empty());
+
+        let after = &mcp::read_specs(Agent::ClaudeCode, home).unwrap()["github"];
+        let (Transport::Stdio { command, args }, Transport::Stdio { args: old_args, .. }) =
+            (&after.transport, &before.transport)
+        else {
+            panic!()
+        };
+        assert_eq!(command, &installed.to_string_lossy());
+        assert_eq!(args, old_args);
+        assert_eq!(after.env, before.env);
+        let config = fs::read_to_string(home.join(".claude.json")).unwrap();
+        assert!(config.contains(r#""timeout": 30"#));
+    }
+
+    #[test]
+    fn a_launcher_on_the_path_is_not_stranded() {
+        assert!(!launcher_exists("agentdeck-surely-not-installed"));
+        assert!(launcher_exists("sh") || cfg!(windows));
     }
 
     #[test]

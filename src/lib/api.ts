@@ -63,5 +63,8 @@ export const protectServer = (agent: Agent, server: string) =>
 export const unprotectServer = (agent: Agent, server: string) =>
   invoke<number>("unprotect_server", { agent, server });
 
+/** Points protected servers whose launcher is missing at the current one. Returns how many. */
+export const repairLaunchers = () => invoke<number>("repair_launchers");
+
 /** Reverts the change that returned `id`. Each change can be undone once. */
 export const undoChange = (id: number) => invoke<void>("undo_change", { id });

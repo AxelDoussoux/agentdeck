@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { Empty, Icon, Notice, PageHeader } from "../components/ui";
+import { LauncherRepair } from "../components/LauncherRepair";
 import { useToast } from "../components/Toasts";
 import { listSecrets, protectServer, undoChange, unprotectServer } from "../lib/api";
 import type { Agent, AgentInfo, SecretListing, SecretRef } from "../lib/types";
@@ -76,6 +77,16 @@ export function SecretsPage({ agents, onChange }: { agents: AgentInfo[]; onChang
           install the tool with <code>cargo install --path crates/agentdeck-cli</code>.
         </Notice>
       )}
+      {listing && (
+        <LauncherRepair
+          agents={agents}
+          listing={listing}
+          onRepaired={() => {
+            load();
+            onChange();
+          }}
+        />
+      )}
       {listing?.errors.map((text) => (
         <Notice key={text} tone="error">{text}</Notice>
       ))}
@@ -116,12 +127,18 @@ export function SecretsPage({ agents, onChange }: { agents: AgentInfo[]; onChang
                 const { agent, server } = secrets[0];
                 const canProtect = secrets.some((s) => s.protectable);
                 const protectedCount = secrets.filter((s) => s.vaultId).length;
+                const stranded = listing?.stranded.some((s) => s.agent === agent && s.server === server);
                 return secrets.map((secret, index) => (
                   <tr key={`${key}/${secret.kind}/${secret.key}`}>
                     {index === 0 && (
                       <td rowSpan={secrets.length}>
                         <strong>{server}</strong>
                         <small>{nameOf(agent)}</small>
+                        {stranded && (
+                          <span className="pill pill-danger" title="The agentdeck launcher this server starts through is missing">
+                            <Icon name="alert" size={12} /> Won't start
+                          </span>
+                        )}
                       </td>
                     )}
                     <td>
