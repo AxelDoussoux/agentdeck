@@ -52,6 +52,10 @@ pub enum Error {
     NotStdio { agent: Agent, name: String },
     #[error("\"{name}\" is not a valid skill name")]
     InvalidSkillName { name: String },
+    #[error(
+        "\"{name}\" cannot name a new skill: use lowercase letters, digits and single hyphens, at most 64 characters"
+    )]
+    NewSkillName { name: String },
     #[error("no skill at {path}")]
     SkillNotFound { path: PathBuf },
     #[error("a skill already exists at {path}")]

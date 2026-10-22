@@ -133,6 +133,13 @@ export interface Skill {
   hash: string;
 }
 
+/** A file in a skill folder. */
+export interface SkillFile {
+  /** Inside the folder, with `/` between folders. */
+  path: string;
+  size: number;
+}
+
 /** A skill folder in `~/.agentdeck/trash`. */
 export interface TrashedSkill {
   id: string;
