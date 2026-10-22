@@ -29,9 +29,14 @@ jobs:
       - uses: actions/checkout@v4
       - name: Install Linux dependencies
         if: runner.os == 'Linux'
+        # A stuck mirror fails the job in minutes instead of holding it for hours.
+        timeout-minutes: 10
         run: |
-          sudo apt-get update
-          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf
+          # man-db rebuilds its index after each install, which can take minutes.
+          sudo rm -f /var/lib/man-db/auto-update
+          sudo apt-get update -o Acquire::Retries=3 -o Acquire::http::Timeout=30
+          sudo apt-get install -y -o Acquire::Retries=3 -o Acquire::http::Timeout=30 \
+            libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: ${{ matrix.target }}

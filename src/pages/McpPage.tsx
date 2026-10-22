@@ -3,6 +3,7 @@ import type { Focus } from "../App";
 import { AgentMark, Empty, Icon, Notice, PageHeader } from "../components/ui";
 import { Drawer } from "../components/Drawer";
 import { RowMenu, type MenuItem } from "../components/RowMenu";
+import { ServerForm, type ServerDraft } from "../components/ServerForm";
 import { useToast } from "../components/Toasts";
 import {
   addMcpServer,
@@ -14,18 +15,8 @@ import {
   serverVersions,
   undoChange,
 } from "../lib/api";
-import { splitCommand } from "../lib/command";
 import { byName, changes, describe, differences, WITH_OPTIONS } from "../lib/servers";
-import type {
-  Agent,
-  AgentInfo,
-  McpListing,
-  McpServer,
-  ServerOptions,
-  ServerSpec,
-  ServerVersion,
-  Transport,
-} from "../lib/types";
+import type { Agent, AgentInfo, McpListing, McpServer, ServerSpec, ServerVersion } from "../lib/types";
 
 interface Props {
   agents: AgentInfo[];
@@ -168,7 +159,7 @@ export function McpPage({ agents, listing, onChange, focus }: Props) {
   }
 
   async function add(draft: ServerDraft) {
-    const { agent, name, transport, env, headers, options } = draft;
+    const { agent, name, transport, env, headers, options, alsoTo } = draft;
     // The form checked that new variables have values.
     const spec: ServerSpec = {
       transport,
@@ -176,7 +167,15 @@ export function McpPage({ agents, listing, onChange, focus }: Props) {
       headers: headers as Record<string, string>,
       options,
     };
-    if (await run(() => addMcpServer(agent, name, spec), `Added ${name} to ${nameOf(agent)}.`)) setAdding(false);
+    const targets = [agent, ...alsoTo];
+    const ok = await runAll(
+      targets.map((target) => async () => ({ undo: await addMcpServer(target, name, spec) })),
+      (count) => `Added ${name} to ${targets.slice(0, count).map(nameOf).join(", ")}.`,
+    );
+    if (ok) {
+      setAdding(false);
+      open(name);
+    }
   }
 
   async function edit(draft: ServerDraft) {
@@ -200,7 +199,7 @@ export function McpPage({ agents, listing, onChange, focus }: Props) {
         title="MCP servers"
         description="Each row is a server, each column an agent. Add a server to another agent in one click: its settings and secrets are copied for you."
         actions={
-          <button className="primary" onClick={() => setAdding(!adding)}>
+          <button className="primary" onClick={() => setAdding(true)}>
             <Icon name="plus" /> Add server
           </button>
         }
@@ -209,11 +208,27 @@ export function McpPage({ agents, listing, onChange, focus }: Props) {
         <Notice key={message} tone="error">{message}</Notice>
       ))}
 
-      {adding && <ServerForm agents={agents} onCancel={() => setAdding(false)} onSubmit={add} />}
+      {adding && (
+        <Drawer
+          title="Add an MCP server"
+          subtitle="To one agent or several at once."
+          tabs={[{ id: "form", label: "Server" }]}
+          tab="form"
+          onTab={() => undefined}
+          onClose={() => setAdding(false)}
+        >
+          <ServerForm
+            agents={agents}
+            has={(agent, name) => rows.get(name)?.has(agent) ?? false}
+            onCancel={() => setAdding(false)}
+            onSubmit={add}
+          />
+        </Drawer>
+      )}
 
       {rows.size === 0 ? (
         <Empty icon="plug" title="No MCP server configured yet">
-          Add one above, or install one in any agent: it shows up here.
+          Add one with the button above, or install one in any agent: it shows up here.
         </Empty>
       ) : (
         <div className="table-card">
@@ -580,217 +595,6 @@ function Facts({ server }: { server: McpServer }) {
         </>
       )}
     </dl>
-  );
-}
-
-/** What the form submits: values are `null` for variables kept as they are. */
-export interface ServerDraft {
-  agent: Agent;
-  name: string;
-  transport: Transport;
-  env: Record<string, string | null>;
-  headers: Record<string, string | null>;
-  options: ServerOptions;
-  /** Other agents to give the same settings, when editing. */
-  alsoTo: Agent[];
-}
-
-/** Reads `NAME=value` lines. A name alone keeps its current value (`null`). */
-function parseVariables(text: string): Record<string, string | null> {
-  const variables: Record<string, string | null> = {};
-  for (const line of text.split("\n")) {
-    const index = line.indexOf("=");
-    const key = (index < 0 ? line : line.slice(0, index)).trim();
-    if (key) variables[key] = index < 0 ? null : line.slice(index + 1).trim();
-  }
-  return variables;
-}
-
-const list = (text: string) => {
-  const items = text.split(",").map((item) => item.trim()).filter(Boolean);
-  return items.length > 0 ? items : null;
-};
-
-interface FormProps {
-  agents: AgentInfo[];
-  /** The server to edit, and the other agents that have it. Absent to add one. */
-  editing?: { server: McpServer; others: Agent[] };
-  onSubmit: (draft: ServerDraft) => Promise<void>;
-  onCancel: () => void;
-}
-
-function ServerForm({ agents, editing, onSubmit, onCancel }: FormProps) {
-  const initial = editing?.server;
-  // New servers go to an agent on this computer, unless none was found.
-  const offered = agents.some((info) => info.installed) ? agents.filter((info) => info.installed) : agents;
-  const [agent, setAgent] = useState<Agent>(initial?.agent ?? offered[0]?.agent ?? "claude-code");
-  const [name, setName] = useState(initial?.name ?? "");
-  const [kind, setKind] = useState<Transport["kind"]>(initial?.transport.kind ?? "stdio");
-  const [target, setTarget] = useState(initial ? describe(initial.transport) : "");
-  const [variables, setVariables] = useState(
-    initial ? [...initial.envKeys, ...initial.headerKeys].join("\n") : "",
-  );
-  const [cwd, setCwd] = useState(initial?.options.cwd ?? "");
-  const [timeoutText, setTimeoutText] = useState(
-    initial?.options.timeoutMs ? String(initial.options.timeoutMs / 1000) : "",
-  );
-  const [includeTools, setIncludeTools] = useState(initial?.options.includeTools?.join(", ") ?? "");
-  const [excludeTools, setExcludeTools] = useState(initial?.options.excludeTools?.join(", ") ?? "");
-  const [disabled, setDisabled] = useState(initial?.options.disabled ?? false);
-  const [alsoTo, setAlsoTo] = useState<Agent[]>([]);
-  const [error, setError] = useState<string | null>(null);
-  const withOptions = WITH_OPTIONS.includes(agent);
-
-  async function submit(event: React.FormEvent) {
-    event.preventDefault();
-    const [command = "", ...args] = splitCommand(target);
-    const transport: Transport =
-      kind === "stdio" ? { kind, command, args } : { kind, url: target.trim() };
-    const parsed = parseVariables(variables);
-    const known = new Set(initial ? [...initial.envKeys, ...initial.headerKeys] : []);
-    const unset = Object.keys(parsed).filter((key) => parsed[key] === null && !known.has(key));
-    if (unset.length > 0) {
-      setError(`Give ${unset.join(", ")} a value, as NAME=value.`);
-      return;
-    }
-    const seconds = Number(timeoutText);
-    if (timeoutText.trim() && !(seconds > 0)) {
-      setError("The timeout is a number of seconds.");
-      return;
-    }
-    setError(null);
-    // The form closes on success and keeps its fields on failure.
-    await onSubmit({
-      agent,
-      name: name.trim(),
-      transport,
-      env: kind === "stdio" ? parsed : {},
-      headers: kind === "stdio" ? {} : parsed,
-      options: {
-        cwd: withOptions && kind === "stdio" && cwd.trim() ? cwd.trim() : null,
-        timeoutMs: withOptions && timeoutText.trim() ? Math.round(seconds * 1000) : null,
-        includeTools: withOptions ? list(includeTools) : null,
-        excludeTools: withOptions ? list(excludeTools) : null,
-        disabled: agent === "codex" && disabled,
-      },
-      alsoTo,
-    });
-  }
-
-  const nameOf = (other: Agent) => agents.find((info) => info.agent === other)?.name ?? other;
-
-  return (
-    <form className="card form" onSubmit={submit}>
-      <h3>{initial ? `Edit ${initial.name} in ${nameOf(initial.agent)}` : "New MCP server"}</h3>
-      {error && <Notice tone="error">{error}</Notice>}
-      <div className="fields">
-        <label>
-          Agent
-          <select value={agent} disabled={!!initial} onChange={(e) => setAgent(e.target.value as Agent)}>
-            {(initial ? agents : offered).map((info) => (
-              <option key={info.agent} value={info.agent}>
-                {info.name}
-                {!info.hasConfig && info.installed && " (creates its config)"}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label>
-          Name
-          <input required disabled={!!initial} value={name} onChange={(e) => setName(e.target.value)} placeholder="github" />
-        </label>
-        <label>
-          Transport
-          <select value={kind} onChange={(e) => setKind(e.target.value as Transport["kind"])}>
-            <option value="stdio">Local command</option>
-            <option value="http">HTTP</option>
-            <option value="sse">SSE (legacy)</option>
-          </select>
-        </label>
-      </div>
-      <label>
-        {kind === "stdio" ? "Command" : "URL"}
-        <input
-          required
-          value={target}
-          onChange={(e) => setTarget(e.target.value)}
-          placeholder={kind === "stdio" ? "npx -y @modelcontextprotocol/server-github" : "https://example.com/mcp"}
-        />
-        {kind === "stdio" && (
-          <small className="hint">Put quotes around paths or arguments that contain spaces.</small>
-        )}
-      </label>
-      <label>
-        {kind === "stdio" ? "Environment variables" : "Headers"}
-        <textarea
-          rows={3}
-          spellCheck={false}
-          placeholder="GITHUB_TOKEN=ghp_…"
-          value={variables}
-          onChange={(e) => setVariables(e.target.value)}
-        />
-        <small className="hint">
-          One NAME=value per line.
-          {initial && " Values are never shown: a name alone keeps its current value. Delete a line to remove it."}
-        </small>
-      </label>
-
-      {withOptions && (
-        <details className="advanced" open={Boolean(cwd || timeoutText || includeTools || excludeTools || disabled)}>
-          <summary>Advanced settings</summary>
-          <div className="fields">
-            {kind === "stdio" && (
-              <label>
-                Working directory
-                <input value={cwd} onChange={(e) => setCwd(e.target.value)} placeholder="Default" />
-              </label>
-            )}
-            <label>
-              Tool timeout (seconds)
-              <input inputMode="decimal" value={timeoutText} onChange={(e) => setTimeoutText(e.target.value)} placeholder="Default" />
-            </label>
-            <label>
-              Only these tools
-              <input value={includeTools} onChange={(e) => setIncludeTools(e.target.value)} placeholder="All, or tool_a, tool_b" />
-            </label>
-            <label>
-              Never these tools
-              <input value={excludeTools} onChange={(e) => setExcludeTools(e.target.value)} placeholder="None" />
-            </label>
-          </div>
-          {agent === "codex" && (
-            <label className="check">
-              <input type="checkbox" checked={disabled} onChange={(e) => setDisabled(e.target.checked)} />
-              Turned off: Codex keeps the server but does not start it
-            </label>
-          )}
-        </details>
-      )}
-
-      {editing && editing.others.length > 0 && (
-        <fieldset className="also">
-          <legend>Also apply to</legend>
-          {editing.others.map((other) => (
-            <label key={other} className="check">
-              <input
-                type="checkbox"
-                checked={alsoTo.includes(other)}
-                onChange={(e) =>
-                  setAlsoTo(e.target.checked ? [...alsoTo, other] : alsoTo.filter((a) => a !== other))
-                }
-              />
-              {nameOf(other)}
-            </label>
-          ))}
-          <small className="hint">Their settings for {initial?.name} are replaced with these, secrets included.</small>
-        </fieldset>
-      )}
-
-      <div className="form-actions">
-        <button type="submit" className="primary">{initial ? "Save" : "Add server"}</button>
-        <button type="button" onClick={onCancel}>Cancel</button>
-      </div>
-    </form>
   );
 }
 

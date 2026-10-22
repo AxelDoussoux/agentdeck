@@ -444,6 +444,11 @@ textarea {
   resize: vertical;
 }
 
+::placeholder {
+  color: var(--faint);
+  opacity: 1;
+}
+
 .segmented {
   display: inline-flex;
   padding: 3px;
@@ -1641,6 +1646,132 @@ button.cell-differs:hover {
   flex-basis: 100%;
 }
 
+.form .check-note {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.form .rows {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  border: none;
+}
+
+.form .rows legend {
+  margin-bottom: 5px;
+  padding: 0;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.row-field {
+  display: flex;
+  align-self: stretch;
+  gap: 6px;
+}
+
+.row-field input {
+  flex: 1;
+  min-width: 0;
+  font-family: var(--mono);
+  font-size: 12px;
+}
+
+.row-field .variable-key {
+  flex: 0 1 40%;
+}
+
+.row-field .icon-button {
+  flex-shrink: 0;
+  height: auto;
+  min-height: 32px;
+}
+
+.catalog {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: 6px;
+}
+
+.catalog-item {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: flex-start;
+  gap: 2px;
+  padding: 8px 10px;
+  text-align: left;
+}
+
+.catalog-item small {
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.35;
+}
+
+.catalog-item.active {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.start-from {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.start-from > header {
+  margin-bottom: 0;
+}
+
+.start-from > .hint {
+  margin: 0;
+}
+
+.paste-json summary {
+  cursor: pointer;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.paste-json[open] {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.paste-json textarea {
+  width: 100%;
+  margin-top: 8px;
+  font: 12px/1.5 var(--mono);
+}
+
+.paste-json .form-actions {
+  align-items: center;
+}
+
+.paste-json .form-actions button {
+  flex-shrink: 0;
+}
+
+.imported {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+.imported button[aria-pressed="true"] {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
 .repair > span {
   color: var(--text);
 }
@@ -2309,6 +2440,15 @@ th button.sort {
 
 .skill-files .hint {
   flex-shrink: 0;
+}
+
+.command-change {
+  margin-top: 12px;
+}
+
+.command-change code {
+  font-size: 12px;
+  overflow-wrap: anywhere;
 }
 
 .drawer-footer {
