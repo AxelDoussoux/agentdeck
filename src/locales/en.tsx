@@ -162,6 +162,23 @@ export const en = {
     differences: "Differences",
     backups: "Backups",
     addEverywhere: "Add to every agent",
+    unsynced: (n: number) => `Not in sync (${n})`,
+    unsyncedTip: "Show only the servers missing from an installed agent, or set up differently",
+    allInSync: "Every server is in sync",
+    allInSyncHint: "Each installed agent has every server, set up the same way.",
+    showAll: "Show all servers",
+    sync: "Sync everywhere",
+    syncTip: "Add each server to the installed agents that do not have it",
+    syncTitle: "Add the missing servers to every installed agent?",
+    syncConfirm: (n: number) => `Add ${count(n, "copy", "copies")}`,
+    syncLine: (name: ReactNode, from: string, to: string): ReactNode => (
+      <>
+        {name} from {from}, to {to}
+      </>
+    ),
+    syncHint: "Settings and secrets are copied without being shown. One Undo reverts them all.",
+    syncDiffering: (names: string) => `Copies that differ, such as ${names}, are left as they are.`,
+    synced: (n: number) => `Added ${count(n, "copy", "copies")} of servers.`,
     editIn: (agent: string) => `Edit in ${agent}…`,
     editMenu: "Edit…",
     removeFrom: (agent: string) => `Remove from ${agent}`,

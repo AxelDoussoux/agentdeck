@@ -351,6 +351,13 @@ small {
   width: 220px;
 }
 
+/* A button that stays pressed while its filter is on. */
+button.toggle[aria-pressed="true"] {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
 .section-title {
   margin: 28px 0 12px;
   font-size: 15px;

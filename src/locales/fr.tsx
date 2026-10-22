@@ -186,6 +186,23 @@ export const fr: Messages = {
     differences: "Différences",
     backups: "Sauvegardes",
     addEverywhere: "Ajouter à tous les agents",
+    unsynced: (n: number) => `Non synchronisés (${n})`,
+    unsyncedTip: "N’afficher que les serveurs absents d’un agent installé, ou configurés différemment",
+    allInSync: "Tous les serveurs sont synchronisés",
+    allInSyncHint: "Chaque agent installé a tous les serveurs, configurés de la même façon.",
+    showAll: "Afficher tous les serveurs",
+    sync: "Tout synchroniser",
+    syncTip: "Ajouter chaque serveur aux agents installés qui ne l’ont pas",
+    syncTitle: "Ajouter les serveurs manquants à tous les agents installés ?",
+    syncConfirm: (n: number) => `Ajouter ${count(n, "copie", "copies")}`,
+    syncLine: (name: ReactNode, from: string, to: string): ReactNode => (
+      <>
+        {name} de {from}, vers {to}
+      </>
+    ),
+    syncHint: "Les réglages et les secrets sont copiés sans être affichés. Un seul Annuler les retire tous.",
+    syncDiffering: (names: string) => `Les copies différentes, comme ${names}, restent telles quelles.`,
+    synced: (n: number) => `${count(n, "copie de serveur ajoutée", "copies de serveurs ajoutées")}.`,
     editIn: (agent: string) => `Modifier dans ${agent}…`,
     editMenu: "Modifier…",
     removeFrom: (agent: string) => `Retirer de ${agent}`,
