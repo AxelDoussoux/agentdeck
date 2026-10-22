@@ -402,6 +402,31 @@ pub fn protect(
     server: &str,
     launcher: &Path,
 ) -> Result<()> {
+    let plan = plan_protect(home, agent, server, launcher)?;
+    if plan.credentials.is_empty() {
+        return Ok(());
+    }
+    for (key, value) in &plan.credentials {
+        vault.set(&vault_id(agent, server, key), value)?;
+    }
+    let Transport::Stdio { command, args } = &plan.after else {
+        unreachable!("protected servers are local");
+    };
+    mcp::set_launch(agent, home, server, command, args, &plan.settings)
+}
+
+/// What protecting a server changes, before anything is written.
+struct ProtectPlan {
+    before: Transport,
+    /// How the agent starts the server once protected.
+    after: Transport,
+    /// The variables that move to the vault, with their values.
+    credentials: BTreeMap<String, String>,
+    /// The variables that stay in the config.
+    settings: BTreeMap<String, String>,
+}
+
+fn plan_protect(home: &Path, agent: Agent, server: &str, launcher: &Path) -> Result<ProtectPlan> {
     let spec = server_spec(agent, home, server)?;
     let Transport::Stdio { command, args } = &spec.transport else {
         return Err(Error::NotStdio {
@@ -419,17 +444,47 @@ pub fn protect(
         .env
         .into_iter()
         .partition(|(key, value)| marks.is_secret(key, value));
-    if credentials.is_empty() {
-        return Ok(());
+    for key in credentials.keys() {
+        secrets.insert(key.clone(), vault_id(agent, server, key));
     }
-    for (key, value) in &credentials {
-        let id = vault_id(agent, server, key);
-        vault.set(&id, value)?;
-        secrets.insert(key.clone(), id);
-    }
-    let launcher = launcher.to_string_lossy();
-    let args = exec_args(&secrets, &command, &args);
-    mcp::set_launch(agent, home, server, &launcher, &args, &settings)
+    let after = Transport::Stdio {
+        command: launcher.to_string_lossy().into_owned(),
+        args: exec_args(&secrets, &command, &args),
+    };
+    Ok(ProtectPlan {
+        before: spec.transport,
+        after,
+        credentials,
+        settings,
+    })
+}
+
+/// How protecting a server would change the way its agent starts it, for
+/// the user to check first. No secret value is in it.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ProtectPreview {
+    pub before: Transport,
+    pub after: Transport,
+    /// The variables that move to the keychain.
+    pub moved: Vec<String>,
+    /// The variables that stay in the config.
+    pub kept: Vec<String>,
+}
+
+pub fn preview_protect(
+    home: &Path,
+    agent: Agent,
+    server: &str,
+    launcher: &Path,
+) -> Result<ProtectPreview> {
+    let plan = plan_protect(home, agent, server, launcher)?;
+    Ok(ProtectPreview {
+        before: plan.before,
+        after: plan.after,
+        moved: plan.credentials.into_keys().collect(),
+        kept: plan.settings.into_keys().collect(),
+    })
 }
 
 /// Puts the secrets of a protected server back in plain text and removes them
@@ -802,6 +857,54 @@ mod tests {
         unprotect(&vault, home, Agent::ClaudeCode, "pg").unwrap();
         let spec = &mcp::read_specs(Agent::ClaudeCode, home).unwrap()["pg"];
         assert_eq!(spec.env.len(), 2);
+    }
+
+    #[test]
+    fn the_preview_shows_what_protect_writes() {
+        let home = tempfile::tempdir().unwrap();
+        let home = home.path();
+        fs::write(
+            home.join(".claude.json"),
+            r#"{"mcpServers": {"pg": {"command": "npx", "args": ["server-postgres"], "env": {"DATABASE_URL": "postgres://u:pw@db/app", "NODE_ENV": "production"}}}}"#,
+        )
+        .unwrap();
+        let launcher = Path::new("/opt/agentdeck");
+        let preview = preview_protect(home, Agent::ClaudeCode, "pg", launcher).unwrap();
+        assert_eq!(preview.moved, ["DATABASE_URL"]);
+        assert_eq!(preview.kept, ["NODE_ENV"]);
+        assert_eq!(
+            preview.after,
+            Transport::Stdio {
+                command: "/opt/agentdeck".into(),
+                args: [
+                    "exec",
+                    "--secret",
+                    "DATABASE_URL=claude-code/pg/DATABASE_URL",
+                    "--",
+                    "npx",
+                    "server-postgres"
+                ]
+                .map(String::from)
+                .to_vec(),
+            }
+        );
+        // Previewing writes nothing.
+        let spec = &mcp::read_specs(Agent::ClaudeCode, home).unwrap()["pg"];
+        assert_eq!(spec.transport, preview.before);
+
+        protect(
+            &MemoryVault::default(),
+            home,
+            Agent::ClaudeCode,
+            "pg",
+            launcher,
+        )
+        .unwrap();
+        let spec = &mcp::read_specs(Agent::ClaudeCode, home).unwrap()["pg"];
+        assert_eq!(spec.transport, preview.after);
+        // No secret value in what the UI gets.
+        let json = serde_json::to_string(&preview).unwrap();
+        assert!(!json.contains("pw@db"));
     }
 
     #[test]
