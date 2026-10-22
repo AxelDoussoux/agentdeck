@@ -74,7 +74,7 @@ agentdeck skills list
 agentdeck skills copy pdf --from claude-code --to codex gemini
 agentdeck skills remove pdf --from shared   # moved to ~/.agentdeck/trash
 agentdeck secrets list
-agentdeck secrets protect claude-code github   # env vars move to the keychain
+agentdeck secrets protect claude-code github   # credentials move to the keychain
 agentdeck secrets unprotect claude-code github
 agentdeck usage --days 30
 ```
@@ -93,8 +93,11 @@ Skills are read from `~/.claude/skills` (Claude Code), `~/.agents/skills`
 and `~/.cursor/skills`. Copying a skill for Codex writes it to the shared
 folder. Removing a skill moves its folder to `~/.agentdeck/trash`.
 
-Protecting a local MCP server stores its environment variables in the system
-keychain (Credential Manager, macOS Keychain or Secret Service) and rewrites
+Protecting a local MCP server stores the environment variables that look like
+credentials (by name, such as `GITHUB_TOKEN` or `apiKey`, or by value, such as
+`ghp_…` or a URL with a password) in the system keychain (Credential Manager,
+macOS Keychain or Secret Service). Settings such as `NODE_ENV` stay in the
+config and are not counted as secrets. AgentDeck then rewrites
 its command to `agentdeck exec --secret KEY=ID -- <original command>`, which
 reads them back when the agent starts the server. The app ships the
 `agentdeck` CLI next to its own executable and uses that copy (from an

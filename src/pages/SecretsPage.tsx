@@ -41,7 +41,8 @@ export function SecretsPage({ agents, onChange }: { agents: AgentInfo[]; onChang
     const key = `${secret.agent}/${secret.server}`;
     groups.set(key, [...(groups.get(key) ?? []), secret]);
   }
-  const plainCount = listing?.secrets.filter((s) => !s.vaultId).length ?? 0;
+  const plainCount = listing?.secrets.filter((s) => s.likely && !s.vaultId).length ?? 0;
+  const vaultCount = listing?.secrets.filter((s) => s.vaultId).length ?? 0;
 
   return (
     <>
@@ -77,7 +78,7 @@ export function SecretsPage({ agents, onChange }: { agents: AgentInfo[]; onChang
           </div>
           <div className="stat">
             <span className="label">In the keychain</span>
-            <span className="value ok-text">{listing.secrets.length - plainCount}</span>
+            <span className="value ok-text">{vaultCount}</span>
           </div>
         </div>
       )}
@@ -119,13 +120,15 @@ export function SecretsPage({ agents, onChange }: { agents: AgentInfo[]; onChang
                     <td>
                       {secret.vaultId ? (
                         <span className="pill pill-ok"><Icon name="shield" size={12} /> Keychain</span>
-                      ) : (
+                      ) : secret.likely ? (
                         <span className="pill pill-danger"><Icon name="alert" size={12} /> Plain text</span>
+                      ) : (
+                        <span className="pill" title="Does not look like a credential, so it stays in the config">Setting</span>
                       )}
-                      {secret.sameValueElsewhere > 0 && (
+                      {secret.likely && secret.sameValueElsewhere > 0 && (
                         <small>Same value in {secret.sameValueElsewhere} other place(s)</small>
                       )}
-                      {!secret.vaultId && !secret.protectable && (
+                      {!secret.vaultId && secret.likely && !secret.protectable && (
                         <small>Headers of remote servers stay in the config for now</small>
                       )}
                     </td>

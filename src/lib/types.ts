@@ -95,6 +95,8 @@ export interface SecretRef {
   key: string;
   vaultId: string | null;
   sameValueElsewhere: number;
+  /** Looks like a credential; the others are settings such as NODE_ENV. */
+  likely: boolean;
   protectable: boolean;
 }
 
