@@ -161,3 +161,22 @@ export interface SecretListing {
   launcher: string | null;
   stranded: Stranded[];
 }
+
+/** Where an agent's files are, and whether a variable moved them. */
+export interface AgentFolder {
+  agent: Agent;
+  path: string;
+  variable: string | null;
+  moved: boolean;
+}
+
+/** AgentDeck's own files, for the Settings page. */
+export interface AppSettings {
+  folders: AgentFolder[];
+  launcher: string | null;
+  backups: string;
+  backupCount: number;
+  backupsKept: number;
+  trash: string;
+  trashCount: number;
+}

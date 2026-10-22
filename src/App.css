@@ -1893,3 +1893,68 @@ th button.sort {
     animation: none;
   }
 }
+
+/* Settings */
+.settings-section {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-bottom: 16px;
+}
+
+.settings-section h2 {
+  margin: 0 0 6px;
+  font-size: 15px;
+}
+
+.settings-section > .hint {
+  margin: 0 0 6px;
+}
+
+.setting-row {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 10px 0;
+  border-top: 1px solid var(--border);
+}
+
+.settings-section h2 + .setting-row,
+.settings-section .hint + .setting-row {
+  border-top: 0;
+}
+
+.setting-label {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+
+.setting-label code {
+  overflow-wrap: anywhere;
+  font-size: 12px;
+}
+
+.setting-label small {
+  color: var(--muted);
+}
+
+.setting-agent {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 600;
+}
+
+.setting-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.icon-button.active {
+  background: var(--accent-soft);
+  color: var(--accent);
+}

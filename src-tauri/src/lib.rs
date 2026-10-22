@@ -7,7 +7,7 @@ use agentdeck_core::rules::{self, Rules};
 use agentdeck_core::secrets::{self, Keychain, SecretRef};
 use agentdeck_core::skills::{self, Location, Skill};
 use agentdeck_core::usage::{self, UsageReport};
-use agentdeck_core::{Agent, AgentInfo, Error, McpServer, ServerSpec, agent, mcp};
+use agentdeck_core::{Agent, AgentInfo, Error, McpServer, ServerSpec, agent, config_file, mcp};
 use tauri::{Manager, State};
 
 mod watch;
@@ -165,6 +165,88 @@ fn open_config(app: tauri::AppHandle, agent: Agent, reveal: bool) -> Result<(), 
 struct McpListing {
     servers: Vec<McpServer>,
     errors: Vec<String>,
+}
+
+/// Where an agent's files are, and whether a variable moved them.
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+struct AgentFolder {
+    agent: Agent,
+    path: String,
+    variable: Option<&'static str>,
+    moved: bool,
+}
+
+/// What the Settings page shows about AgentDeck's own files.
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+struct AppSettings {
+    folders: Vec<AgentFolder>,
+    launcher: Option<String>,
+    backups: String,
+    backup_count: usize,
+    backups_kept: usize,
+    trash: String,
+    trash_count: usize,
+}
+
+#[tauri::command]
+fn app_settings() -> Result<AppSettings, String> {
+    let home = home()?;
+    let folders = Agent::ALL
+        .into_iter()
+        .map(|agent| {
+            let variable = agent.folder_variable();
+            AgentFolder {
+                agent,
+                path: agent.folder(&home).display().to_string(),
+                variable,
+                moved: variable
+                    .and_then(std::env::var_os)
+                    .is_some_and(|value| !value.is_empty()),
+            }
+        })
+        .collect();
+    Ok(AppSettings {
+        folders,
+        launcher: launcher().map(|path| path.display().to_string()),
+        backups: config_file::backups_root(&home).display().to_string(),
+        backup_count: config_file::backup_count(&home),
+        backups_kept: config_file::BACKUPS_KEPT,
+        trash: skills::trash_dir(&home).display().to_string(),
+        trash_count: skills::trashed(&home).len(),
+    })
+}
+
+/// A folder the Settings page can show in the file manager.
+#[derive(serde::Deserialize)]
+#[serde(rename_all = "kebab-case")]
+enum AppFolder {
+    Backups,
+    Trash,
+    Agent(Agent),
+}
+
+#[tauri::command]
+fn open_folder(app: tauri::AppHandle, folder: AppFolder) -> Result<(), String> {
+    use tauri_plugin_opener::OpenerExt;
+    let home = home()?;
+    let path = match folder {
+        AppFolder::Backups => config_file::backups_root(&home),
+        AppFolder::Trash => skills::trash_dir(&home),
+        AppFolder::Agent(agent) => agent.folder(&home),
+    };
+    if !path.is_dir() {
+        return Err(format!("{} does not exist yet.", path.display()));
+    }
+    app.opener()
+        .open_path(path.to_string_lossy(), None::<&str>)
+        .map_err(|err| err.to_string())
+}
+
+#[tauri::command]
+fn empty_skill_trash() -> Result<usize, String> {
+    skills::empty_trash(&home()?).map_err(|err| err.to_string())
 }
 
 #[tauri::command]
@@ -435,7 +517,10 @@ pub fn run() {
             unprotect_server,
             repair_launchers,
             usage_report,
-            undo_change
+            undo_change,
+            app_settings,
+            open_folder,
+            empty_skill_trash
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

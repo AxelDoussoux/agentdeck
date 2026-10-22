@@ -39,6 +39,8 @@ shows them side by side, and syncs them in one click.
   a server, a skill or an agent's rules, or to copy a server to another agent.
   `Ctrl+1` to `Ctrl+6` switch pages, `Ctrl+R` reloads the configs and `Ctrl+S`
   saves rules.
+- **Settings.** Theme, update checks, the folder used for each agent, the
+  launcher of protected servers, backups and the skills trash, in one place.
 - **CLI.** Everything is also available from the `agentdeck` command line.
 
 | MCP servers | Secrets |

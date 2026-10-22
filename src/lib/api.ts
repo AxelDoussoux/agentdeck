@@ -2,6 +2,7 @@ import { invoke } from "@tauri-apps/api/core";
 import type {
   Agent,
   AgentInfo,
+  AppSettings,
   McpListing,
   Rules,
   SecretListing,
@@ -79,3 +80,10 @@ export const repairLaunchers = () => invoke<number>("repair_launchers");
 
 /** Reverts the change that returned `id`. Each change can be undone once. */
 export const undoChange = (id: number) => invoke<void>("undo_change", { id });
+
+export const appSettings = () => invoke<AppSettings>("app_settings");
+
+/** Shows one of AgentDeck's folders, or an agent's, in the file manager. */
+export const openFolder = (folder: "backups" | "trash" | { agent: Agent }) => invoke<void>("open_folder", { folder });
+
+export const emptySkillTrash = () => invoke<number>("empty_skill_trash");
