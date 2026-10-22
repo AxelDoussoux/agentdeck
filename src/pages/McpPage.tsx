@@ -3,7 +3,7 @@ import { AgentMark, Empty, Icon, Notice, PageHeader } from "../components/ui";
 import { ConfirmDialog } from "../components/ConfirmDialog";
 import { RowMenu, type MenuItem } from "../components/RowMenu";
 import { useToast } from "../components/Toasts";
-import { addMcpServer, copyMcpServer, removeMcpServer, undoChange } from "../lib/api";
+import { addMcpServer, copyMcpServer, editMcpServer, removeMcpServer, undoChange } from "../lib/api";
 import { joinCommand, splitCommand } from "../lib/command";
 import type { Agent, AgentInfo, McpListing, McpServer, ServerOptions, ServerSpec, Transport } from "../lib/types";
 
@@ -86,7 +86,8 @@ interface Props {
 
 export function McpPage({ agents, listing, onChange }: Props) {
   const notify = useToast();
-  const [adding, setAdding] = useState(false);
+  /** The form shown: `true` to add a server, or the server to edit. */
+  const [form, setForm] = useState<true | { agent: Agent; name: string } | null>(null);
   const [aligning, setAligning] = useState<{ name: string; agent: Agent } | null>(null);
 
   // One row per server name, one column per agent.
@@ -117,27 +118,32 @@ export function McpPage({ agents, listing, onChange }: Props) {
   }
 
   /**
-   * Copies `name` from `from` to every agent in `targets`, with one toast and
-   * one Undo for all. With `overwrite`, replaces the copies they have.
+   * Runs `steps` in order, stopping at the first error, then shows one toast
+   * whose Undo reverts every step that ran. `done` gets how many ran.
+   * Resolves to whether they all ran.
    */
-  async function copyMany(name: string, from: Agent, targets: Agent[], overwrite: boolean) {
+  async function runAll(
+    steps: (() => Promise<{ undo: number; lost?: string[] }>)[],
+    done: (count: number) => string,
+  ): Promise<boolean> {
     const ids: number[] = [];
     const lost = new Set<string>();
+    let ok = true;
     try {
-      for (const agent of targets) {
-        const result = await copyMcpServer(name, from, agent, overwrite);
+      for (const step of steps) {
+        const result = await step();
         ids.push(result.undo);
-        result.lost.forEach((setting) => lost.add(setting));
+        result.lost?.forEach((setting) => lost.add(setting));
       }
     } catch (err) {
       notify({ tone: "error", text: String(err) });
+      ok = false;
     }
     if (ids.length > 0) {
-      const done = targets.slice(0, ids.length).map(nameOf).join(", ");
       const left = lost.size > 0 ? ` Not carried over: ${[...lost].join(", ")}.` : "";
       notify({
         tone: "success",
-        text: (overwrite ? `${done} now use the ${name} settings of ${nameOf(from)}.` : `Added ${name} to ${done}.`) + left,
+        text: done(ids.length) + left,
         undo: async () => {
           for (const id of ids.reverse()) await undoChange(id);
           await onChange();
@@ -145,6 +151,42 @@ export function McpPage({ agents, listing, onChange }: Props) {
       });
     }
     await onChange();
+    return ok;
+  }
+
+  /** Copies `name` from `from` to `targets`. With `overwrite`, replaces the copies they have. */
+  function copyMany(name: string, from: Agent, targets: Agent[], overwrite: boolean) {
+    return runAll(
+      targets.map((agent) => () => copyMcpServer(name, from, agent, overwrite)),
+      (count) => {
+        const done = targets.slice(0, count).map(nameOf).join(", ");
+        return overwrite ? `${done} now use the ${name} settings of ${nameOf(from)}.` : `Added ${name} to ${done}.`;
+      },
+    );
+  }
+
+  async function save(draft: ServerDraft) {
+    const { agent, name, transport, env, headers, options, alsoTo } = draft;
+    let ok: boolean;
+    if (form === true) {
+      // The form checked that new variables have values.
+      const spec: ServerSpec = {
+        transport,
+        env: env as Record<string, string>,
+        headers: headers as Record<string, string>,
+        options,
+      };
+      ok = await run(() => addMcpServer(agent, name, spec), `Added ${name} to ${nameOf(agent)}.`);
+    } else {
+      ok = await runAll(
+        [
+          async () => ({ undo: await editMcpServer(agent, name, { transport, env, headers, options }) }),
+          ...alsoTo.map((other) => () => copyMcpServer(name, agent, other, true)),
+        ],
+        (count) => `Saved ${name} in ${[agent, ...alsoTo].slice(0, count).map(nameOf).join(", ")}.`,
+      );
+    }
+    if (ok) setForm(null);
   }
 
   const nameOf = (agent: Agent) => agents.find((a) => a.agent === agent)?.name ?? agent;
@@ -155,7 +197,7 @@ export function McpPage({ agents, listing, onChange }: Props) {
         title="MCP servers"
         description="Each row is a server, each column an agent. Add a server to another agent in one click: its settings and secrets are copied for you."
         actions={
-          <button className="primary" onClick={() => setAdding(!adding)}>
+          <button className="primary" onClick={() => setForm(form === true ? null : true)}>
             <Icon name="plus" /> Add server
           </button>
         }
@@ -164,13 +206,13 @@ export function McpPage({ agents, listing, onChange }: Props) {
         <Notice key={message} tone="error">{message}</Notice>
       ))}
 
-      {adding && (
-        <AddServerForm
+      {form && (form === true || editing(form)) && (
+        <ServerForm
+          key={form === true ? "new" : `${form.agent}/${form.name}`}
           agents={agents}
-          onCancel={() => setAdding(false)}
-          onAdd={async (agent, name, spec) => {
-            if (await run(() => addMcpServer(agent, name, spec), `Added ${name} to ${nameOf(agent)}.`)) setAdding(false);
-          }}
+          editing={editing(form)}
+          onCancel={() => setForm(null)}
+          onSubmit={save}
         />
       )}
 
@@ -216,6 +258,13 @@ export function McpPage({ agents, listing, onChange }: Props) {
                         },
                       ]
                     : []),
+                  ...[...byAgent.keys()].map((agent) => ({
+                    label: byAgent.size > 1 ? `Edit in ${nameOf(agent)}…` : "Edit…",
+                    onSelect: () => {
+                      setForm({ agent, name });
+                      window.scrollTo({ top: 0, behavior: "smooth" });
+                    },
+                  })),
                   ...[...byAgent.keys()].map((agent) => ({
                     label: `Remove from ${nameOf(agent)}`,
                     tone: "danger" as const,
@@ -298,6 +347,14 @@ export function McpPage({ agents, listing, onChange }: Props) {
     </>
   );
 
+  function editing(target: true | { agent: Agent; name: string }) {
+    if (target === true) return undefined;
+    const byAgent = rows.get(target.name);
+    const server = byAgent?.get(target.agent);
+    if (!byAgent || !server) return undefined;
+    return { server, others: [...byAgent.keys()].filter((other) => other !== target.agent) };
+  }
+
   function alignDialog(name: string, agent: Agent) {
     const byAgent = rows.get(name);
     const server = byAgent?.get(agent);
@@ -339,49 +396,108 @@ export function McpPage({ agents, listing, onChange }: Props) {
   }
 }
 
-function parsePairs(text: string): Record<string, string> {
-  const pairs: Record<string, string> = {};
+/** What the form submits: values are `null` for variables kept as they are. */
+export interface ServerDraft {
+  agent: Agent;
+  name: string;
+  transport: Transport;
+  env: Record<string, string | null>;
+  headers: Record<string, string | null>;
+  options: ServerOptions;
+  /** Other agents to give the same settings, when editing. */
+  alsoTo: Agent[];
+}
+
+/** Reads `NAME=value` lines. A name alone keeps its current value (`null`). */
+function parseVariables(text: string): Record<string, string | null> {
+  const variables: Record<string, string | null> = {};
   for (const line of text.split("\n")) {
     const index = line.indexOf("=");
-    if (index > 0) pairs[line.slice(0, index).trim()] = line.slice(index + 1).trim();
+    const key = (index < 0 ? line : line.slice(0, index)).trim();
+    if (key) variables[key] = index < 0 ? null : line.slice(index + 1).trim();
   }
-  return pairs;
+  return variables;
 }
+
+const list = (text: string) => {
+  const items = text.split(",").map((item) => item.trim()).filter(Boolean);
+  return items.length > 0 ? items : null;
+};
 
 interface FormProps {
   agents: AgentInfo[];
-  onAdd: (agent: Agent, name: string, spec: ServerSpec) => Promise<void>;
+  /** The server to edit, and the other agents that have it. Absent to add one. */
+  editing?: { server: McpServer; others: Agent[] };
+  onSubmit: (draft: ServerDraft) => Promise<void>;
   onCancel: () => void;
 }
 
-function AddServerForm({ agents, onAdd, onCancel }: FormProps) {
-  const [agent, setAgent] = useState<Agent>("claude-code");
-  const [name, setName] = useState("");
-  const [kind, setKind] = useState<Transport["kind"]>("stdio");
-  const [target, setTarget] = useState("");
-  const [secrets, setSecrets] = useState("");
+function ServerForm({ agents, editing, onSubmit, onCancel }: FormProps) {
+  const initial = editing?.server;
+  const [agent, setAgent] = useState<Agent>(initial?.agent ?? "claude-code");
+  const [name, setName] = useState(initial?.name ?? "");
+  const [kind, setKind] = useState<Transport["kind"]>(initial?.transport.kind ?? "stdio");
+  const [target, setTarget] = useState(initial ? describe(initial.transport) : "");
+  const [variables, setVariables] = useState(
+    initial ? [...initial.envKeys, ...initial.headerKeys].join("\n") : "",
+  );
+  const [cwd, setCwd] = useState(initial?.options.cwd ?? "");
+  const [timeoutText, setTimeoutText] = useState(
+    initial?.options.timeoutMs ? String(initial.options.timeoutMs / 1000) : "",
+  );
+  const [includeTools, setIncludeTools] = useState(initial?.options.includeTools?.join(", ") ?? "");
+  const [excludeTools, setExcludeTools] = useState(initial?.options.excludeTools?.join(", ") ?? "");
+  const [disabled, setDisabled] = useState(initial?.options.disabled ?? false);
+  const [alsoTo, setAlsoTo] = useState<Agent[]>([]);
+  const [error, setError] = useState<string | null>(null);
+  const withOptions = WITH_OPTIONS.includes(agent);
 
   async function submit(event: React.FormEvent) {
     event.preventDefault();
     const [command = "", ...args] = splitCommand(target);
     const transport: Transport =
       kind === "stdio" ? { kind, command, args } : { kind, url: target.trim() };
-    const pairs = parsePairs(secrets);
+    const parsed = parseVariables(variables);
+    const known = new Set(initial ? [...initial.envKeys, ...initial.headerKeys] : []);
+    const unset = Object.keys(parsed).filter((key) => parsed[key] === null && !known.has(key));
+    if (unset.length > 0) {
+      setError(`Give ${unset.join(", ")} a value, as NAME=value.`);
+      return;
+    }
+    const seconds = Number(timeoutText);
+    if (timeoutText.trim() && !(seconds > 0)) {
+      setError("The timeout is a number of seconds.");
+      return;
+    }
+    setError(null);
     // The form closes on success and keeps its fields on failure.
-    await onAdd(agent, name.trim(), {
+    await onSubmit({
+      agent,
+      name: name.trim(),
       transport,
-      env: kind === "stdio" ? pairs : {},
-      headers: kind === "stdio" ? {} : pairs,
+      env: kind === "stdio" ? parsed : {},
+      headers: kind === "stdio" ? {} : parsed,
+      options: {
+        cwd: withOptions && kind === "stdio" && cwd.trim() ? cwd.trim() : null,
+        timeoutMs: withOptions && timeoutText.trim() ? Math.round(seconds * 1000) : null,
+        includeTools: withOptions ? list(includeTools) : null,
+        excludeTools: withOptions ? list(excludeTools) : null,
+        disabled: agent === "codex" && disabled,
+      },
+      alsoTo,
     });
   }
 
+  const nameOf = (other: Agent) => agents.find((info) => info.agent === other)?.name ?? other;
+
   return (
     <form className="card form" onSubmit={submit}>
-      <h3>New MCP server</h3>
+      <h3>{initial ? `Edit ${initial.name} in ${nameOf(initial.agent)}` : "New MCP server"}</h3>
+      {error && <Notice tone="error">{error}</Notice>}
       <div className="fields">
         <label>
           Agent
-          <select value={agent} onChange={(e) => setAgent(e.target.value as Agent)}>
+          <select value={agent} disabled={!!initial} onChange={(e) => setAgent(e.target.value as Agent)}>
             {agents.map((info) => (
               <option key={info.agent} value={info.agent}>{info.name}</option>
             ))}
@@ -389,7 +505,7 @@ function AddServerForm({ agents, onAdd, onCancel }: FormProps) {
         </label>
         <label>
           Name
-          <input required value={name} onChange={(e) => setName(e.target.value)} placeholder="github" />
+          <input required disabled={!!initial} value={name} onChange={(e) => setName(e.target.value)} placeholder="github" />
         </label>
         <label>
           Transport
@@ -414,10 +530,72 @@ function AddServerForm({ agents, onAdd, onCancel }: FormProps) {
       </label>
       <label>
         {kind === "stdio" ? "Environment variables" : "Headers"}
-        <textarea rows={3} placeholder="GITHUB_TOKEN=ghp_…" value={secrets} onChange={(e) => setSecrets(e.target.value)} />
+        <textarea
+          rows={3}
+          spellCheck={false}
+          placeholder="GITHUB_TOKEN=ghp_…"
+          value={variables}
+          onChange={(e) => setVariables(e.target.value)}
+        />
+        <small className="hint">
+          One NAME=value per line.
+          {initial && " Values are never shown: a name alone keeps its current value. Delete a line to remove it."}
+        </small>
       </label>
+
+      {withOptions && (
+        <details className="advanced" open={Boolean(cwd || timeoutText || includeTools || excludeTools || disabled)}>
+          <summary>Advanced settings</summary>
+          <div className="fields">
+            {kind === "stdio" && (
+              <label>
+                Working directory
+                <input value={cwd} onChange={(e) => setCwd(e.target.value)} placeholder="Default" />
+              </label>
+            )}
+            <label>
+              Tool timeout (seconds)
+              <input inputMode="decimal" value={timeoutText} onChange={(e) => setTimeoutText(e.target.value)} placeholder="Default" />
+            </label>
+            <label>
+              Only these tools
+              <input value={includeTools} onChange={(e) => setIncludeTools(e.target.value)} placeholder="All, or tool_a, tool_b" />
+            </label>
+            <label>
+              Never these tools
+              <input value={excludeTools} onChange={(e) => setExcludeTools(e.target.value)} placeholder="None" />
+            </label>
+          </div>
+          {agent === "codex" && (
+            <label className="check">
+              <input type="checkbox" checked={disabled} onChange={(e) => setDisabled(e.target.checked)} />
+              Turned off: Codex keeps the server but does not start it
+            </label>
+          )}
+        </details>
+      )}
+
+      {editing && editing.others.length > 0 && (
+        <fieldset className="also">
+          <legend>Also apply to</legend>
+          {editing.others.map((other) => (
+            <label key={other} className="check">
+              <input
+                type="checkbox"
+                checked={alsoTo.includes(other)}
+                onChange={(e) =>
+                  setAlsoTo(e.target.checked ? [...alsoTo, other] : alsoTo.filter((a) => a !== other))
+                }
+              />
+              {nameOf(other)}
+            </label>
+          ))}
+          <small className="hint">Their settings for {initial?.name} are replaced with these, secrets included.</small>
+        </fieldset>
+      )}
+
       <div className="form-actions">
-        <button type="submit" className="primary">Add server</button>
+        <button type="submit" className="primary">{initial ? "Save" : "Add server"}</button>
         <button type="button" onClick={onCancel}>Cancel</button>
       </div>
     </form>

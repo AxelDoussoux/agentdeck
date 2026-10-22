@@ -173,6 +173,19 @@ fn add_mcp_server(
 }
 
 #[tauri::command]
+fn edit_mcp_server(
+    undo: State<UndoStore>,
+    agent: Agent,
+    name: String,
+    edit: mcp::ServerEdit,
+) -> Result<u64, String> {
+    undoable_mcp(&undo, agent, &name, |home| {
+        mcp::update(agent, home, &name, &edit)
+    })
+    .map(|(id, ())| id)
+}
+
+#[tauri::command]
 fn remove_mcp_server(undo: State<UndoStore>, agent: Agent, name: String) -> Result<u64, String> {
     undoable_mcp(&undo, agent, &name, |home| mcp::remove(agent, home, &name)).map(|(id, ())| id)
 }
@@ -350,6 +363,7 @@ pub fn run() {
             add_mcp_server,
             remove_mcp_server,
             copy_mcp_server,
+            edit_mcp_server,
             list_rules,
             save_rules,
             list_skills,

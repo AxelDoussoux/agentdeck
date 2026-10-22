@@ -5,6 +5,7 @@ import type {
   McpListing,
   Rules,
   SecretListing,
+  ServerEdit,
   ServerSpec,
   SkillListing,
   SkillLocation,
@@ -20,6 +21,10 @@ export const listMcpServers = () => invoke<McpListing>("list_mcp_servers");
 
 export const addMcpServer = (agent: Agent, name: string, spec: ServerSpec) =>
   invoke<number>("add_mcp_server", { agent, name, spec });
+
+/** Changes a server. A `null` value keeps that variable's current value. */
+export const editMcpServer = (agent: Agent, name: string, edit: ServerEdit) =>
+  invoke<number>("edit_mcp_server", { agent, name, edit });
 
 export const removeMcpServer = (agent: Agent, name: string) =>
   invoke<number>("remove_mcp_server", { agent, name });

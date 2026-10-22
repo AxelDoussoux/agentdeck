@@ -74,6 +74,20 @@ pub struct ServerSpec {
     pub options: ServerOptions,
 }
 
+/// Changes to an existing server, from the edit form. Values are write-only:
+/// `None` keeps the current value of a variable, so the UI never needs it.
+/// Variables left out are removed.
+#[derive(Debug, Clone, Deserialize)]
+pub struct ServerEdit {
+    pub transport: Transport,
+    #[serde(default)]
+    pub env: BTreeMap<String, Option<String>>,
+    #[serde(default)]
+    pub headers: BTreeMap<String, Option<String>>,
+    #[serde(default)]
+    pub options: ServerOptions,
+}
+
 /// Settings of a server beyond how it is reached and its variables. Not every
 /// agent has them: see [`untranslated`].
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -369,6 +383,39 @@ pub fn add(
             overwrite,
         },
     )
+}
+
+/// Applies `edit` to the server `name` of `agent`. The settings of its entry
+/// that AgentDeck does not manage are kept.
+pub fn update(agent: Agent, home: &Path, name: &str, edit: &ServerEdit) -> Result<()> {
+    let current = get(agent, home, name)?.ok_or_else(|| Error::NotFound {
+        agent,
+        name: name.to_owned(),
+    })?;
+    let resolve = |wanted: &BTreeMap<String, Option<String>>,
+                   current: &BTreeMap<String, String>|
+     -> Result<BTreeMap<String, String>> {
+        wanted
+            .iter()
+            .map(|(key, value)| {
+                let value = value
+                    .as_ref()
+                    .or_else(|| current.get(key))
+                    .ok_or_else(|| Error::MissingValue { key: key.clone() })?;
+                Ok((key.clone(), value.clone()))
+            })
+            .collect()
+    };
+    let spec = ServerSpec {
+        transport: edit.transport.clone(),
+        env: resolve(&edit.env, &current.env)?,
+        headers: resolve(&edit.headers, &current.headers)?,
+        options: ServerOptions {
+            extra: current.options.extra,
+            ..edit.options.clone()
+        },
+    };
+    add(agent, home, name, &spec, true)
 }
 
 /// Removes an MCP server from `agent`.
@@ -996,6 +1043,59 @@ command = \"x\"
         remove(Agent::Codex, home, "docs").unwrap();
         add(Agent::Codex, home, "docs", &before, false).unwrap();
         assert_eq!(get(Agent::Codex, home, "docs").unwrap().unwrap(), before);
+    }
+
+    #[test]
+    fn an_edit_keeps_unchanged_values_without_knowing_them() {
+        let home = tempfile::tempdir().unwrap();
+        let home = home.path();
+        write(home, ".codex/config.toml", CODEX_DOCS);
+        let path = ".codex/config.toml";
+        fs::write(
+            home.join(path),
+            read(home, path).replace(
+                "cwd = ",
+                "env = { TOKEN = \"secret\", OLD = \"x\" }\ncwd = ",
+            ),
+        )
+        .unwrap();
+
+        let edit = ServerEdit {
+            transport: Transport::Stdio {
+                command: "uvx".into(),
+                args: vec!["docs-mcp@2".into()],
+            },
+            env: BTreeMap::from([("TOKEN".into(), None), ("NEW".into(), Some("y".into()))]),
+            headers: BTreeMap::new(),
+            options: ServerOptions {
+                timeout_ms: Some(60_000),
+                ..ServerOptions::default()
+            },
+        };
+        update(Agent::Codex, home, "docs", &edit).unwrap();
+
+        let spec = get(Agent::Codex, home, "docs").unwrap().unwrap();
+        assert_eq!(
+            spec.env,
+            BTreeMap::from([
+                ("NEW".into(), "y".into()),
+                ("TOKEN".into(), "secret".into())
+            ])
+        );
+        assert_eq!(spec.options.timeout_ms, Some(60_000));
+        assert_eq!(spec.options.cwd, None);
+        assert!(!spec.options.disabled);
+        let codex = read(home, path);
+        assert!(codex.contains("startup_timeout_sec = 20"));
+        // Keys keep their order.
+        assert!(codex.find("command").unwrap() < codex.find("startup_timeout_sec").unwrap());
+
+        let missing = ServerEdit {
+            env: BTreeMap::from([("UNKNOWN".into(), None)]),
+            ..edit
+        };
+        let err = update(Agent::Codex, home, "docs", &missing).unwrap_err();
+        assert!(matches!(err, Error::MissingValue { .. }));
     }
 
     #[test]

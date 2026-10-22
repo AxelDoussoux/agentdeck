@@ -48,6 +48,14 @@ export interface ServerSpec {
   options?: Partial<ServerOptions>;
 }
 
+/** Changes to a server: a `null` value keeps the current one, unseen. */
+export interface ServerEdit {
+  transport: Transport;
+  env: Record<string, string | null>;
+  headers: Record<string, string | null>;
+  options: Partial<ServerOptions>;
+}
+
 export interface Rules {
   agent: Agent;
   content: string | null;

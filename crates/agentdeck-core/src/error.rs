@@ -36,6 +36,8 @@ pub enum Error {
         name: String,
         source: serde_json::Error,
     },
+    #[error("{key} has no value: type one, or remove it")]
+    MissingValue { key: String },
     #[error("unexpected structure in {path}: {reason}")]
     Invalid { path: PathBuf, reason: &'static str },
     #[error("{} has no MCP server named \"{name}\"", agent.display_name())]
