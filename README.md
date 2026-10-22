@@ -25,8 +25,9 @@ shows them side by side, and syncs them in one click.
   preserves comments in Codex's TOML. Click a server to open its details:
   what differs between agents, and its earlier versions, which you can put
   back one server at a time.
-- **Rules.** Edit `CLAUDE.md`, `AGENTS.md` and `GEMINI.md` side by side and
-  copy them from one agent to the others.
+- **Rules.** Edit `CLAUDE.md`, `AGENTS.md` and `GEMINI.md` in a Markdown
+  editor with a live preview, see which agents have the same rules, and copy
+  them from one agent to the others after reviewing the differences.
 - **Skills.** See which agents load each Agent Skill, read its `SKILL.md`
   rendered with the files it bundles, start a new one from a template, and
   share a skill with another agent without duplicating folders needlessly.
