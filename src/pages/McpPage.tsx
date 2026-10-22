@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import type { Focus } from "../App";
 import { AgentMark, Empty, Icon, Notice, PageHeader } from "../components/ui";
+import { ConfirmDialog } from "../components/ConfirmDialog";
 import { Drawer } from "../components/Drawer";
 import { RowMenu, type MenuItem } from "../components/RowMenu";
 import { ServerForm, type ServerDraft } from "../components/ServerForm";
@@ -18,7 +19,7 @@ import {
   testMcpServer,
   undoChange,
 } from "../lib/api";
-import { byName, changes, describe, differences, WITH_OPTIONS } from "../lib/servers";
+import { byName, changes, describe, differences, drifting, WITH_OPTIONS } from "../lib/servers";
 import { moveInGrid } from "../lib/grid";
 import { matches } from "../lib/search";
 import type { Agent, AgentInfo, McpListing, McpServer, ServerSpec, ServerVersion } from "../lib/types";
@@ -47,6 +48,9 @@ export function McpPage({ agents, listing, onChange, focus }: Props) {
   const [opened, setOpened] = useState<Opened | null>(null);
   const [highlighted, setHighlighted] = useState<string | null>(null);
   const [query, setQuery] = useState("");
+  // Only the servers missing from an installed agent or set up differently.
+  const [unsynced, setUnsynced] = useState(false);
+  const [confirmSync, setConfirmSync] = useState(false);
   const [versions, setVersions] = useState<Map<Agent, ServerVersion[]>>(new Map());
   // Server tests by `agent/name`, kept while the page is open.
   const [tests, setTests] = useState<Record<string, TestState>>({});
@@ -69,6 +73,7 @@ export function McpPage({ agents, listing, onChange, focus }: Props) {
     if (focus?.kind !== "server") return;
     // The server may be filtered out of the grid.
     setQuery("");
+    setUnsynced(false);
     setOpened({ name: focus.name, tab: "details" });
     setHighlighted(focus.name);
     document.getElementById(rowId(focus.name))?.scrollIntoView({ block: "center", behavior: "smooth" });
@@ -78,9 +83,23 @@ export function McpPage({ agents, listing, onChange, focus }: Props) {
 
   // One row per server name, one column per agent.
   const rows = byName(listing);
-  const shown = [...rows].filter(([name, byAgent]) =>
+  // What syncing adds: each server, from its first copy, to the installed
+  // agents that can run it and do not have it. Copies that differ stay as they are.
+  const gaps = [...rows]
+    .map(([name, byAgent]) => {
+      const [source] = byAgent.values();
+      const targets = agents
+        .filter(({ agent, installed }) => installed && !byAgent.has(agent) && supports(source, agent))
+        .map(({ agent }) => agent);
+      return { name, from: source.agent, targets };
+    })
+    .filter((gap) => gap.targets.length > 0);
+  const differing = new Set(drifting(listing));
+  const outOfSync = new Set([...differing, ...gaps.map((gap) => gap.name)]);
+  const searched = [...rows].filter(([name, byAgent]) =>
     matches(query, [name, ...[...byAgent.values()].map((server) => describe(server.transport))]),
   );
+  const shown = unsynced ? searched.filter(([name]) => outOfSync.has(name)) : searched;
 
   // The drawer closes once no agent has the server any more.
   useEffect(() => {
@@ -201,6 +220,13 @@ export function McpPage({ agents, listing, onChange, focus }: Props) {
     }
   }
 
+  function syncEverywhere() {
+    const steps = gaps.flatMap(({ name, from, targets }) =>
+      targets.map((agent) => () => copyMcpServer(name, from, agent, false)),
+    );
+    return runAll(steps, (count) => t.mcp.synced(count));
+  }
+
   async function edit(draft: ServerDraft) {
     const { agent, name, transport, env, headers, options, alsoTo } = draft;
     const ok = await runAll(
@@ -233,6 +259,24 @@ export function McpPage({ agents, listing, onChange, focus }: Props) {
                 onChange={(e) => setQuery(e.target.value)}
               />
             )}
+            {rows.size > 0 && (
+              <Tooltip text={t.mcp.unsyncedTip}>
+                <button
+                  className="toggle"
+                  aria-pressed={unsynced}
+                  onClick={() => setUnsynced((on) => !on)}
+                >
+                  {t.mcp.unsynced(outOfSync.size)}
+                </button>
+              </Tooltip>
+            )}
+            {gaps.length > 0 && (
+              <Tooltip text={t.mcp.syncTip}>
+                <button onClick={() => setConfirmSync(true)}>
+                  <Icon name="refresh" /> {t.mcp.sync}
+                </button>
+              </Tooltip>
+            )}
             <button className="primary" onClick={() => setAdding(true)}>
               <Icon name="plus" /> {t.mcp.add}
             </button>
@@ -263,9 +307,46 @@ export function McpPage({ agents, listing, onChange, focus }: Props) {
         </Drawer>
       )}
 
+      {confirmSync && (
+        <ConfirmDialog
+          wide
+          title={t.mcp.syncTitle}
+          onCancel={() => setConfirmSync(false)}
+          choices={[
+            {
+              label: t.mcp.syncConfirm(gaps.reduce((sum, gap) => sum + gap.targets.length, 0)),
+              tone: "primary",
+              onSelect: () => {
+                setConfirmSync(false);
+                syncEverywhere();
+              },
+            },
+          ]}
+        >
+          <ul className="differences">
+            {gaps.map(({ name, from, targets }) => (
+              <li key={name}>
+                {t.mcp.syncLine(<strong>{name}</strong>, nameOf(from), formatList(targets.map(nameOf)))}
+              </li>
+            ))}
+          </ul>
+          <p>
+            {t.mcp.syncHint}
+            {differing.size > 0 && ` ${t.mcp.syncDiffering(formatList([...differing]))}`}
+          </p>
+        </ConfirmDialog>
+      )}
+
       {rows.size === 0 ? (
         <Empty icon="plug" title={t.mcp.emptyTitle}>
           {t.mcp.empty}
+        </Empty>
+      ) : shown.length === 0 && searched.length > 0 ? (
+        <Empty icon="check" title={t.mcp.allInSync}>
+          {t.mcp.allInSyncHint}{" "}
+          <button className="link" onClick={() => setUnsynced(false)}>
+            {t.mcp.showAll}
+          </button>
         </Empty>
       ) : shown.length === 0 ? (
         <Empty icon="plug" title={t.mcp.noMatch(query.trim())}>

@@ -20,7 +20,9 @@ shows them side by side, and syncs them in one click.
 
 - **MCP servers.** See every server across every agent in one grid. Copy a
   server to another agent in one click, with its settings and secrets
-  translated to that agent's format. Add a server to several agents at once,
+  translated to that agent's format, or give every installed agent the
+  servers it misses at once. Show only the servers that are not in sync.
+  Add a server to several agents at once,
   starting from a common one (GitHub, Context7, Playwright, Linear…) or from
   JSON pasted from a README. Add, edit or remove servers safely:
   secrets stay hidden while you edit, and each write keeps a backup and
