@@ -1599,3 +1599,23 @@ button.cell-differs:hover {
   margin-top: 4px;
   color: var(--muted);
 }
+
+.sessions-bar {
+  margin: 28px 0 12px;
+}
+
+.sessions-bar .section-title {
+  margin: 0;
+}
+
+.sessions-bar input {
+  width: min(320px, 100%);
+}
+
+.more {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  margin-top: 12px;
+}
