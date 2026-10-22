@@ -10,6 +10,8 @@ use agentdeck_core::usage::{self, UsageReport};
 use agentdeck_core::{Agent, AgentInfo, Error, McpServer, ServerSpec, agent, mcp};
 use tauri::{Manager, State};
 
+mod watch;
+
 fn home() -> Result<PathBuf, String> {
     agent::home_dir().map_err(|err| err.to_string())
 }
@@ -388,6 +390,12 @@ pub fn run() {
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_process::init())
         .manage(UndoStore::default())
+        .setup(|app| {
+            if let Ok(home) = agent::home_dir() {
+                watch::start(app.handle().clone(), home);
+            }
+            Ok(())
+        })
         .invoke_handler(tauri::generate_handler![
             list_agents,
             open_config,

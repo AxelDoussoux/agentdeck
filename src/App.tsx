@@ -4,6 +4,7 @@ import { getCurrentWindow } from "@tauri-apps/api/window";
 import { ConfirmDialog } from "./components/ConfirmDialog";
 import { Icon, type IconName } from "./components/ui";
 import { listAgents, listMcpServers, listSecrets } from "./lib/api";
+import { useFilesChanged } from "./lib/watch";
 import type { AgentInfo, McpListing, SecretListing } from "./lib/types";
 import { HistoryPage } from "./pages/HistoryPage";
 import { McpPage } from "./pages/McpPage";
@@ -77,6 +78,8 @@ function App() {
     // Only feeds the sidebar badge and the overview; the Secrets page loads its own.
     listSecrets().then(setSecrets, () => setSecrets(null));
   }
+
+  useFilesChanged("mcp", refresh);
 
   useEffect(() => {
     refresh();
