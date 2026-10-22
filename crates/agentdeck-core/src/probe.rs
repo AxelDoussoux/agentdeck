@@ -267,6 +267,8 @@ struct Local {
     child: Child,
     stdin: Option<ChildStdin>,
     lines: Receiver<String>,
+    /// Closed when the server's stderr is read to the end.
+    stderr_read: Receiver<()>,
 }
 
 impl Local {
@@ -318,7 +320,10 @@ impl Local {
         });
         let stderr = child.stderr.take().expect("piped stderr");
         let log = Arc::clone(log);
+        let (stderr_done, stderr_read) = mpsc::channel::<()>();
         thread::spawn(move || {
+            // Dropped at the end of the thread, which tells `stop` the log is complete.
+            let _done = stderr_done;
             let mut reader = BufReader::new(stderr);
             let mut buffer = [0u8; 4096];
             while let Ok(read) = reader.read(&mut buffer) {
@@ -341,6 +346,7 @@ impl Local {
             stdin: child.stdin.take(),
             child,
             lines,
+            stderr_read,
         })
     }
 
@@ -377,14 +383,21 @@ impl Local {
     fn stop(mut self) {
         drop(self.stdin.take());
         let until = Instant::now() + Duration::from_secs(1);
+        let mut exited = false;
         while Instant::now() < until {
             if let Ok(Some(_)) = self.child.try_wait() {
-                return;
+                exited = true;
+                break;
             }
             thread::sleep(Duration::from_millis(25));
         }
-        let _ = self.child.kill();
-        let _ = self.child.wait();
+        if !exited {
+            let _ = self.child.kill();
+            let _ = self.child.wait();
+        }
+        // The last lines of stderr can still be on their way. A process the
+        // server started may hold stderr open, so this waits only a moment.
+        let _ = self.stderr_read.recv_timeout(Duration::from_millis(500));
     }
 }
 
