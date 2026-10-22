@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { relaunch } from "@tauri-apps/plugin-process";
 import { check, type Update } from "@tauri-apps/plugin-updater";
 import { Icon } from "./components/ui";
+import { t } from "./lib/i18n";
 
 /** Offers to install a new release, checked once at startup. */
 export function UpdateBanner() {
@@ -18,12 +19,12 @@ export function UpdateBanner() {
   async function install() {
     if (!update) return;
     try {
-      setStatus("Downloading…");
+      setStatus(t.update.downloading);
       await update.downloadAndInstall();
-      setStatus("Restarting…");
+      setStatus(t.update.restarting);
       await relaunch();
     } catch (err) {
-      setStatus(`Update failed: ${err}`);
+      setStatus(t.update.failed(String(err)));
     }
   }
 
@@ -31,14 +32,14 @@ export function UpdateBanner() {
     <div className="update">
       <Icon name="download" />
       <span className="update-text">
-        AgentDeck {update.version} is available (you have {update.currentVersion}).
+        {t.update.available(update.version, update.currentVersion)}
       </span>
       {status ? (
         <span className="hint">{status}</span>
       ) : (
         <span className="actions">
-          <button className="primary small" onClick={install}>Install and restart</button>
-          <button className="small" onClick={() => setUpdate(null)}>Later</button>
+          <button className="primary small" onClick={install}>{t.update.install}</button>
+          <button className="small" onClick={() => setUpdate(null)}>{t.update.later}</button>
         </span>
       )}
     </div>

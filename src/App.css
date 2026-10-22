@@ -951,7 +951,13 @@ textarea {
 
 .agent-actions {
   display: flex;
+  flex-wrap: wrap;
   gap: 8px;
+}
+
+/* Longer labels, as in French, go to the next line whole. */
+.agent-actions button {
+  white-space: nowrap;
 }
 
 .agent-card dd button.link {

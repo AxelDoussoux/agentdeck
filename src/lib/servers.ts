@@ -1,5 +1,6 @@
 import { joinCommand } from "./command";
 import type { Agent, McpListing, McpServer, ServerOptions, Transport } from "./types";
+import { formatNumber, t } from "./i18n";
 
 // What MCP servers run, and how copies of one server differ between agents.
 
@@ -41,12 +42,13 @@ function launch(server: McpServer): { target: string; values: Map<string, string
 export const WITH_OPTIONS: Agent[] = ["codex", "gemini"];
 
 function describeOptions(options: ServerOptions): Map<string, string> {
-  const tools = (list: string[] | null) => (list ? list.join(", ") || "none" : "all");
+  const words = t.servers;
+  const tools = (list: string[] | null) => (list ? list.join(", ") || words.none : words.all);
   return new Map([
-    ["Working directory", options.cwd ?? "not set"],
-    ["Timeout", options.timeoutMs === null ? "default" : `${options.timeoutMs / 1000} s`],
-    ["Allowed tools", tools(options.includeTools)],
-    ["Blocked tools", options.excludeTools?.join(", ") || "none"],
+    [words.cwd, options.cwd ?? words.notSet],
+    [words.timeout, options.timeoutMs === null ? words.default : `${formatNumber(options.timeoutMs / 1000)}\u00a0s`],
+    [words.allowedTools, tools(options.includeTools)],
+    [words.blockedTools, options.excludeTools?.join(", ") || words.none],
   ]);
 }
 
@@ -56,16 +58,16 @@ function describeOptions(options: ServerOptions): Map<string, string> {
  * compared, nor settings one of the two agents does not have.
  */
 export function differences(copy: McpServer, reference: McpServer, referenceName: string): string[] {
-  return compare(copy, reference, "here", `in ${referenceName}`);
+  return compare(copy, reference, t.servers.here, t.servers.inAgent(referenceName));
 }
 
 /** What differs between an earlier version of a server and the server now. */
 export function changes(earlier: McpServer, now: McpServer): string[] {
-  const found = compare(earlier, now, "then", "now");
+  const found = compare(earlier, now, t.servers.then, t.servers.now);
   // The comparison sees through `agentdeck exec`, so name that change itself.
   const [before, after] = [inKeychain(earlier), inKeychain(now)];
-  if (before && !after) found.push("Its secrets were in the keychain then.");
-  if (after && !before) found.push("Its secrets were in the config file then.");
+  if (before && !after) found.push(t.servers.wasInKeychain);
+  if (after && !before) found.push(t.servers.wasInFile);
   return found;
 }
 
@@ -78,17 +80,18 @@ function inKeychain(server: McpServer): boolean {
 function compare(copy: McpServer, reference: McpServer, here: string, there: string): string[] {
   const [x, y] = [launch(copy), launch(reference)];
   const found: string[] = [];
-  if (x.target !== y.target) found.push(`Runs ${x.target} ${here}, ${y.target} ${there}.`);
+  const words = t.servers;
+  if (x.target !== y.target) found.push(words.runs(x.target, here, y.target, there));
   for (const key of [...new Set([...x.values.keys(), ...y.values.keys()])].sort()) {
     const [mine, theirs] = [x.values.get(key), y.values.get(key)];
-    if (!y.values.has(key)) found.push(`${key} is set ${here}, not ${there}.`);
-    else if (!x.values.has(key)) found.push(`${key} is set ${there}, not ${here}.`);
-    else if (mine && theirs && mine !== theirs) found.push(`${key} has another value than ${there}.`);
+    if (!y.values.has(key)) found.push(words.setOnly(key, here, there));
+    else if (!x.values.has(key)) found.push(words.setOnly(key, there, here));
+    else if (mine && theirs && mine !== theirs) found.push(words.otherValue(key, there));
   }
   if (WITH_OPTIONS.includes(copy.agent) && WITH_OPTIONS.includes(reference.agent)) {
     const theirs = describeOptions(reference.options);
     for (const [label, value] of describeOptions(copy.options)) {
-      if (value !== theirs.get(label)) found.push(`${label}: ${value} ${here}, ${theirs.get(label)} ${there}.`);
+      if (value !== theirs.get(label)) found.push(words.option(label, value, here, theirs.get(label)!, there));
     }
   }
   return found;

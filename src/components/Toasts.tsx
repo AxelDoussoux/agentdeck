@@ -2,6 +2,7 @@ import { createContext, useCallback, useContext, useEffect, useRef, useState, ty
 import { createPortal } from "react-dom";
 import { Icon } from "./ui";
 import { Tooltip } from "./Tooltip";
+import { t } from "../lib/i18n";
 
 interface Toast {
   tone: "success" | "error";
@@ -61,14 +62,14 @@ export function ToastProvider({ children }: { children: ReactNode }) {
     update(toast.id, { busy: true });
     try {
       await toast.undo!();
-      update(toast.id, { tone: "success", text: "Undone.", undo: undefined, busy: false });
+      update(toast.id, { tone: "success", text: t.toast.undone, undo: undefined, busy: false });
     } catch (err) {
-      update(toast.id, { tone: "error", text: `Could not undo: ${err}`, undo: undefined, busy: false });
+      update(toast.id, { tone: "error", text: t.toast.undoFailed(String(err)), undo: undefined, busy: false });
     }
   }
 
   const region = (
-    <div className="toasts" role="region" aria-label="Notifications" aria-live="polite">
+    <div className="toasts" role="region" aria-label={t.toast.region} aria-live="polite">
       {toasts.map((toast) => (
         <ToastItem key={toast.id} toast={toast} onUndo={() => undo(toast)} onClose={() => dismiss(toast.id)} />
       ))}
@@ -114,11 +115,11 @@ function ToastItem({ toast, onUndo, onClose }: ItemProps) {
       <span className="toast-text">{toast.text}</span>
       {toast.undo && (
         <button className="small" disabled={toast.busy} onClick={onUndo}>
-          <Icon name="undo" size={14} /> {toast.busy ? "Undoing…" : "Undo"}
+          <Icon name="undo" size={14} /> {toast.busy ? t.toast.undoing : t.toast.undo}
         </button>
       )}
-      <Tooltip text="Dismiss">
-        <button className="icon-button" aria-label="Dismiss" onClick={onClose}>
+      <Tooltip text={t.toast.dismiss}>
+        <button className="icon-button" aria-label={t.toast.dismiss} onClick={onClose}>
           <Icon name="close" size={14} />
         </button>
       </Tooltip>

@@ -4,6 +4,7 @@ import { Drawer } from "../components/Drawer";
 import { useToast } from "../components/Toasts";
 import { AgentMark, Empty, Notice, PageHeader } from "../components/ui";
 import { exportSessionsCsv, usageReport } from "../lib/api";
+import { formatDateTime, formatDay, formatNumber, t } from "../lib/i18n";
 import { dateOf, datesBetween, formatCost, lastDays, localDate, localDays } from "../lib/usage";
 import type { Agent, AgentInfo, ReadProgress, Session, Tokens, UsageReport } from "../lib/types";
 
@@ -11,7 +12,7 @@ const PERIODS = [7, 30, 90] as const;
 type Period = (typeof PERIODS)[number] | "custom";
 
 type View = "sessions" | "projects" | "models";
-const VIEWS: Record<View, string> = { sessions: "Sessions", projects: "Projects", models: "Models" };
+const VIEWS: View[] = ["sessions", "projects", "models"];
 
 type SortKey = "date" | "tokens" | "cost";
 
@@ -60,16 +61,21 @@ function storedBudget(): number | null {
 /** Sessions shown at first, and added by each "Show more". */
 const PAGE = 100;
 
-const totalTokens = (t: Tokens) =>
-  t.input + t.output + t.cacheRead + t.cacheWrite5m + t.cacheWrite1h;
+const totalTokens = (tokens: Tokens) =>
+  tokens.input + tokens.output + tokens.cacheRead + tokens.cacheWrite5m + tokens.cacheWrite1h;
 
+const ONE_DECIMAL = { minimumFractionDigits: 1, maximumFractionDigits: 1 };
+
+/** "1.2M", "34.5k", "980", or "1,2 M" in French. */
 function formatTokens(count: number): string {
-  if (count >= 1e6) return `${(count / 1e6).toFixed(1)}M`;
-  if (count >= 1e3) return `${(count / 1e3).toFixed(1)}k`;
-  return String(count);
+  if (count >= 1e6) return `${formatNumber(count / 1e6, ONE_DECIMAL)}${t.history.million}`;
+  if (count >= 1e3) return `${formatNumber(count / 1e3, ONE_DECIMAL)}${t.history.thousand}`;
+  return formatNumber(count);
 }
 
-const sessionCount = (count: number) => `${count.toLocaleString()} session${count === 1 ? "" : "s"}`;
+/** A `YYYY-MM-DD` local date, such as "Oct 22, 2026". */
+const formatDate = (date: string) =>
+  formatDay(new Date(`${date}T00:00`), { year: "numeric", month: "short", day: "numeric" });
 
 const basename = (path: string | null) => path?.split(/[\\/]/).filter(Boolean).pop() ?? "";
 
@@ -143,8 +149,8 @@ export function HistoryPage({ agents }: { agents: AgentInfo[] }) {
   });
   const groups =
     view === "projects"
-      ? group(found, (s) => s.project ?? "", (key) => basename(key) || "No project")
-      : group(found, (s) => s.models.join(", "), (key) => key || "Unknown model");
+      ? group(found, (s) => s.project ?? "", (key) => basename(key) || t.history.noProject)
+      : group(found, (s) => s.models.join(", "), (key) => key || t.history.unknownModel);
 
   // The budget covers every agent since the first of the month.
   const monthStart = `${localDate(new Date()).slice(0, 8)}01`;
@@ -205,7 +211,7 @@ export function HistoryPage({ agents }: { agents: AgentInfo[] }) {
     setExporting(true);
     try {
       const path = await exportSessionsCsv(exported, `agentdeck-sessions-${since}-to-${until}.csv`);
-      if (path) notify({ tone: "success", text: `Exported ${sessionCount(exported.length)} to ${basename(path)}.` });
+      if (path) notify({ tone: "success", text: t.history.exported(exported.length, basename(path)) });
     } catch (err) {
       notify({ tone: "error", text: String(err) });
     } finally {
@@ -216,24 +222,24 @@ export function HistoryPage({ agents }: { agents: AgentInfo[] }) {
   return (
     <>
       <PageHeader
-        title="History & costs"
-        description="Read from Claude Code and Codex session logs on this computer. Costs are estimated at API list prices: a Claude or ChatGPT subscription is billed differently. Cursor and Gemini CLI keep no usage logs locally."
+        title={t.nav.history}
+        description={t.history.description}
         actions={
           <>
             <button
               disabled={sorted.length === 0 || exporting}
-              title={sorted.length ? `Save the ${sessionCount(sorted.length)} shown below as CSV` : "No session to export"}
+              title={sorted.length ? t.history.exportTip(sorted.length) : t.history.nothingToExport}
               onClick={exportCsv}
             >
-              Export CSV
+              {t.history.exportCsv}
             </button>
-            <button onClick={load}>Reload logs</button>
+            <button onClick={load}>{t.history.reload}</button>
           </>
         }
       />
 
       <div className="toolbar toolbar-top">
-        <div className="segmented" role="group" aria-label="Period">
+        <div className="segmented" role="group" aria-label={t.history.period}>
           {PERIODS.map((option) => (
             <button
               key={option}
@@ -241,7 +247,7 @@ export function HistoryPage({ agents }: { agents: AgentInfo[] }) {
               aria-pressed={option === period}
               onClick={() => setPeriod(option)}
             >
-              {option} days
+              {t.history.days(option)}
             </button>
           ))}
           <button
@@ -249,22 +255,22 @@ export function HistoryPage({ agents }: { agents: AgentInfo[] }) {
             aria-pressed={period === "custom"}
             onClick={() => setPeriod("custom")}
           >
-            Custom
+            {t.history.custom}
           </button>
         </div>
         {period === "custom" && (
           <span className="date-range">
             <input
               type="date"
-              aria-label="From"
+              aria-label={t.history.from}
               value={since}
               max={until}
               onChange={(e) => e.target.value && setRange({ ...range, from: e.target.value })}
             />
-            <span className="hint">to</span>
+            <span className="hint">{t.history.to}</span>
             <input
               type="date"
-              aria-label="To"
+              aria-label={t.history.until}
               value={until}
               min={since}
               max={localDate(new Date())}
@@ -273,11 +279,11 @@ export function HistoryPage({ agents }: { agents: AgentInfo[] }) {
           </span>
         )}
         <select
-          aria-label="Agent"
+          aria-label={t.history.agent}
           value={filter}
           onChange={(e) => setFilter(e.target.value as Agent | "all")}
         >
-          <option value="all">All agents</option>
+          <option value="all">{t.history.allAgents}</option>
           {loggedAgents.map((agent) => (
             <option key={agent} value={agent}>{nameOf(agent)}</option>
           ))}
@@ -289,7 +295,7 @@ export function HistoryPage({ agents }: { agents: AgentInfo[] }) {
         <Notice key={message} tone="error">{message}</Notice>
       ))}
       {!report && !error && (
-        <div className="skeleton" aria-busy="true" aria-label="Reading session logs">
+        <div className="skeleton" aria-busy="true" aria-label={t.history.reading}>
           <div className="stats">
             {[0, 1, 2].map((i) => (
               <div key={i} className="card stat skeleton-block" />
@@ -304,11 +310,9 @@ export function HistoryPage({ agents }: { agents: AgentInfo[] }) {
         <>
           <div className="stats">
             <div className="stat">
-              <span className="label">Estimated cost</span>
+              <span className="label">{t.history.estimatedCost}</span>
               <span className="value">{formatCost(periodCost)}</span>
-              <span className="hint">
-                {sessions.length} sessions in {dates.length} {dates.length === 1 ? "day" : "days"}
-              </span>
+              <span className="hint">{t.history.sessionsInDays(sessions.length, dates.length)}</span>
             </div>
             {[...byAgent].map(([agent, stats]) => (
               <div key={agent} className="stat">
@@ -316,22 +320,20 @@ export function HistoryPage({ agents }: { agents: AgentInfo[] }) {
                   <AgentMark agent={agent} size={18} /> {nameOf(agent)}
                 </span>
                 <span className="value">{formatCost(stats.cost)}</span>
-                <span className="hint">
-                  {formatTokens(stats.tokens)} tokens · {stats.sessions} sessions
-                </span>
+                <span className="hint">{t.history.agentStats(formatTokens(stats.tokens), stats.sessions)}</span>
               </div>
             ))}
             <div className="stat budget">
-              <span className="label">This month</span>
+              <span className="label">{t.history.thisMonth}</span>
               <span className="value">
                 {formatCost(monthCost)}
-                {budget && <small> of {formatCost(budget)}</small>}
+                {budget && <small> {t.history.of(formatCost(budget))}</small>}
               </span>
               {budget && (
                 <span
                   className={`meter ${budgetShare >= 1 ? "meter-danger" : budgetShare >= 0.8 ? "meter-warn" : ""}`}
                   role="meter"
-                  aria-label="Monthly budget used"
+                  aria-label={t.history.budgetUsed}
                   aria-valuemin={0}
                   aria-valuemax={budget}
                   aria-valuenow={Math.round(monthCost * 100) / 100}
@@ -353,17 +355,17 @@ export function HistoryPage({ agents }: { agents: AgentInfo[] }) {
                     min="0"
                     step="1"
                     autoFocus
-                    aria-label="Monthly budget in dollars"
-                    placeholder="Budget in $"
+                    aria-label={t.history.budgetLabel}
+                    placeholder={t.history.budgetPlaceholder}
                     defaultValue={budget ?? ""}
                   />
                   <button className="small" type="submit">
-                    Save
+                    {t.common.save}
                   </button>
                 </form>
               ) : (
                 <button className="link hint" onClick={() => setEditingBudget(true)}>
-                  {budget ? "Change budget" : "Set a monthly budget"}
+                  {budget ? t.history.changeBudget : t.history.setBudget}
                 </button>
               )}
             </div>
@@ -372,14 +374,14 @@ export function HistoryPage({ agents }: { agents: AgentInfo[] }) {
           {budget && budgetShare >= 0.8 && (
             <Notice tone={budgetShare >= 1 ? "error" : "warning"}>
               {budgetShare >= 1
-                ? `This month's estimated cost, ${formatCost(monthCost)}, is over your ${formatCost(budget)} budget.`
-                : `This month's estimated cost has reached ${Math.round(budgetShare * 100)}% of your ${formatCost(budget)} budget.`}
+                ? t.history.overBudget(formatCost(monthCost), formatCost(budget))
+                : t.history.nearBudget(formatNumber(budgetShare, { style: "percent" }), formatCost(budget))}
             </Notice>
           )}
 
           <section className="card chart-card">
             <header className="card-header">
-              <h3>Cost per day</h3>
+              <h3>{t.history.costPerDay}</h3>
               <span className="legend">
                 {chartAgents.map((agent) => (
                   <span key={agent}>
@@ -392,39 +394,39 @@ export function HistoryPage({ agents }: { agents: AgentInfo[] }) {
           </section>
 
           <div className="toolbar sessions-bar">
-            <div className="segmented" role="group" aria-label="Group by">
-              {(Object.keys(VIEWS) as View[]).map((option) => (
+            <div className="segmented" role="group" aria-label={t.history.groupBy}>
+              {VIEWS.map((option) => (
                 <button
                   key={option}
                   className={option === view ? "active" : undefined}
                   aria-pressed={option === view}
                   onClick={() => setView(option)}
                 >
-                  {VIEWS[option]}
+                  {t.history.views[option]}
                 </button>
               ))}
             </div>
             <span className="spacer" />
             <input
               type="search"
-              placeholder="Search titles, projects, models"
-              aria-label="Search sessions"
+              placeholder={t.history.searchPlaceholder}
+              aria-label={t.history.search}
               value={query}
               onChange={(e) => setQuery(e.target.value)}
             />
           </div>
           {found.length === 0 ? (
-            <Empty icon="chart" title={sessions.length === 0 ? "No session in this period" : "No session matches"} />
+            <Empty icon="chart" title={sessions.length === 0 ? t.history.noSession : t.history.noMatch} />
           ) : view !== "sessions" ? (
             <div className="table-card">
               <table className="sessions">
                 <thead>
                   <tr>
-                    <th>{view === "projects" ? "Project" : "Models"}</th>
-                    <th className="number">Sessions</th>
-                    <th className="nowrap">Last used</th>
-                    <th className="number">Tokens</th>
-                    <th className="number">Cost</th>
+                    <th>{view === "projects" ? t.history.project : t.history.models}</th>
+                    <th className="number">{t.history.views.sessions}</th>
+                    <th className="nowrap">{t.history.lastUsed}</th>
+                    <th className="number">{t.history.tokens}</th>
+                    <th className="number">{t.history.cost}</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -433,8 +435,8 @@ export function HistoryPage({ agents }: { agents: AgentInfo[] }) {
                       <td title={entry.key || undefined}>
                         {view === "projects" ? <strong>{entry.label}</strong> : <code>{entry.label}</code>}
                       </td>
-                      <td className="number">{entry.sessions}</td>
-                      <td className="nowrap">{entry.last}</td>
+                      <td className="number">{formatNumber(entry.sessions)}</td>
+                      <td className="nowrap">{entry.last && formatDate(entry.last)}</td>
                       <td className="number">{formatTokens(entry.tokens)}</td>
                       <td className="number">{formatCost(entry.cost)}</td>
                     </tr>
@@ -447,23 +449,23 @@ export function HistoryPage({ agents }: { agents: AgentInfo[] }) {
               <table className="sessions">
                 <thead>
                   <tr>
-                    {sortHeader("date", "Date")}
-                    <th>Session</th>
-                    <th>Model</th>
-                    {sortHeader("tokens", "Tokens", "number")}
-                    {sortHeader("cost", "Cost", "number")}
+                    {sortHeader("date", t.history.date)}
+                    <th>{t.history.session}</th>
+                    <th>{t.history.model}</th>
+                    {sortHeader("tokens", t.history.tokens, "number")}
+                    {sortHeader("cost", t.history.cost, "number")}
                   </tr>
                 </thead>
                 <tbody>
                   {sorted.slice(0, shown).map((session) => (
                     <tr key={`${session.agent}/${session.id}`} className={session === opened ? "highlight" : undefined}>
-                      <td className="nowrap">{session.endedAt && dateOf(session.endedAt)}</td>
+                      <td className="nowrap">{session.endedAt && formatDate(dateOf(session.endedAt))}</td>
                       <td>
                         <span className="session-title">
                           <AgentMark agent={session.agent} size={20} />
                           <span>
                             <button className="link" onClick={() => setOpened(session)}>
-                              <strong>{session.title ?? "Untitled session"}</strong>
+                              <strong>{session.title ?? t.history.untitled}</strong>
                             </button>
                             <small>{basename(session.project)}</small>
                           </span>
@@ -475,7 +477,7 @@ export function HistoryPage({ agents }: { agents: AgentInfo[] }) {
                         className="number"
                         title={
                           session.unpricedTokens > 0
-                            ? `${formatTokens(session.unpricedTokens)} tokens from models without a known price are not counted`
+                            ? t.history.unpriced(formatTokens(session.unpricedTokens))
                             : undefined
                         }
                       >
@@ -490,11 +492,9 @@ export function HistoryPage({ agents }: { agents: AgentInfo[] }) {
           )}
           {view === "sessions" && found.length > shown && (
             <div className="more">
-              <span className="hint">
-                Showing {shown} of {found.length} sessions
-              </span>
+              <span className="hint">{t.history.showing(shown, found.length)}</span>
               <button className="small" onClick={() => setShown(shown + PAGE)}>
-                Show {Math.min(PAGE, found.length - shown)} more
+                {t.history.showMore(Math.min(PAGE, found.length - shown))}
               </button>
             </div>
           )}
@@ -517,25 +517,18 @@ export function HistoryPage({ agents }: { agents: AgentInfo[] }) {
   );
 }
 
-/** The kinds of tokens, in the order of the bar. */
-const TOKEN_KINDS: { key: keyof Tokens; label: string }[] = [
-  { key: "input", label: "Input" },
-  { key: "cacheRead", label: "Cache read" },
-  { key: "cacheWrite5m", label: "Cache write (5 min)" },
-  { key: "cacheWrite1h", label: "Cache write (1 h)" },
-  { key: "output", label: "Output" },
-];
+/** The kinds of tokens, in the order of the bar; labels are in `t.history.tokenKinds`. */
+const TOKEN_KINDS: (keyof Tokens)[] = ["input", "cacheRead", "cacheWrite5m", "cacheWrite1h", "output"];
 
-const formatMoment = (timestamp: string | null) =>
-  timestamp ? new Date(timestamp).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" }) : "Unknown";
+const formatMoment = (timestamp: string | null) => (timestamp ? formatDateTime(timestamp) : t.history.unknown);
 
 function formatDuration(start: string | null, end: string | null): string | null {
   if (!start || !end) return null;
   const minutes = Math.round((Date.parse(end) - Date.parse(start)) / 60000);
   if (!(minutes >= 0)) return null;
-  if (minutes < 60) return `${minutes} min`;
+  if (minutes < 60) return t.history.minutes(minutes);
   const hours = Math.floor(minutes / 60);
-  return hours < 48 ? `${hours} h ${minutes % 60} min` : `${Math.round(hours / 24)} days`;
+  return hours < 48 ? t.history.hours(hours, minutes % 60) : t.history.daysLong(Math.round(hours / 24));
 }
 
 /** The command that reopens a session in its agent. */
@@ -562,47 +555,47 @@ function SessionDrawer({ session, agentName, onClose, onProject }: SessionProps)
   async function copyResume() {
     try {
       await navigator.clipboard.writeText(resumeCommand(session));
-      notify({ tone: "success", text: "Copied the command." });
+      notify({ tone: "success", text: t.history.copiedCommand });
     } catch (err) {
-      notify({ tone: "error", text: `Could not copy: ${err}` });
+      notify({ tone: "error", text: t.secrets.copyFailed(String(err)) });
     }
   }
 
   return (
     <Drawer
-      title={session.title ?? "Untitled session"}
+      title={session.title ?? t.history.untitled}
       subtitle={
         <span className="with-mark">
           <AgentMark agent={session.agent} size={16} /> {agentName}
           {project && ` · ${project}`}
         </span>
       }
-      tabs={[{ id: "details", label: "Details" }]}
+      tabs={[{ id: "details", label: t.mcp.details }]}
       tab="details"
       onTab={() => {}}
       onClose={onClose}
     >
       <dl className="facts">
-        <dt>Started</dt>
+        <dt>{t.history.started}</dt>
         <dd>{formatMoment(session.startedAt)}</dd>
-        <dt>Ended</dt>
+        <dt>{t.history.ended}</dt>
         <dd>
           {formatMoment(session.endedAt)}
           {duration && <span className="hint"> · {duration}</span>}
         </dd>
         {session.project && (
           <>
-            <dt>Folder</dt>
+            <dt>{t.skills.folder}</dt>
             <dd>
               <code>{session.project}</code>
             </dd>
           </>
         )}
-        <dt>{session.models.length > 1 ? "Models" : "Model"}</dt>
+        <dt>{session.models.length > 1 ? t.history.models : t.history.model}</dt>
         <dd>
-          <code>{session.models.join(", ") || "Unknown"}</code>
+          <code>{session.models.join(", ") || t.history.unknown}</code>
         </dd>
-        <dt>Session</dt>
+        <dt>{t.history.session}</dt>
         <dd>
           <code>{session.id}</code>
         </dd>
@@ -610,60 +603,57 @@ function SessionDrawer({ session, agentName, onClose, onProject }: SessionProps)
 
       <section className="drawer-section">
         <header>
-          <strong>Tokens</strong>
+          <strong>{t.history.tokens}</strong>
           <span>{formatTokens(total)}</span>
         </header>
         {total > 0 && (
           <div className="token-bar" aria-hidden="true">
-            {TOKEN_KINDS.filter(({ key }) => tokens[key] > 0).map(({ key }) => (
+            {TOKEN_KINDS.filter((key) => tokens[key] > 0).map((key) => (
               <i key={key} className={`token-${key}`} style={{ width: `${(tokens[key] / total) * 100}%` }} />
             ))}
           </div>
         )}
         <ul className="token-list">
-          {TOKEN_KINDS.filter(({ key }) => tokens[key] > 0).map(({ key, label }) => (
+          {TOKEN_KINDS.filter((key) => tokens[key] > 0).map((key) => (
             <li key={key}>
               <i className={`swatch token-${key}`} />
-              <span>{label}</span>
+              <span>{t.history.tokenKinds[key]}</span>
               <span className="number">{formatTokens(tokens[key])}</span>
-              <span className="number hint">{Math.round((tokens[key] / total) * 100)}%</span>
+              <span className="number hint">{formatNumber(tokens[key] / total, { style: "percent" })}</span>
             </li>
           ))}
         </ul>
         {read > 0 && (
-          <p className="hint">
-            Cache hit rate: {Math.round((tokens.cacheRead / read) * 100)}% of the input was read from the cache.
-          </p>
+          <p className="hint">{t.history.cacheHit(formatNumber(tokens.cacheRead / read, { style: "percent" }))}</p>
         )}
       </section>
 
       <section className="drawer-section">
         <header>
-          <strong>Estimated cost</strong>
+          <strong>{t.history.estimatedCost}</strong>
           <span>{formatCost(session.costUsd)}</span>
         </header>
         <p className="hint">
-          At API list prices.
-          {session.unpricedTokens > 0 &&
-            ` ${formatTokens(session.unpricedTokens)} tokens from models without a known price are not counted.`}
+          {t.history.listPrices}
+          {session.unpricedTokens > 0 && ` ${t.history.unpriced(formatTokens(session.unpricedTokens))}.`}
         </p>
       </section>
 
       <section className="drawer-section">
         <header>
-          <strong>Resume</strong>
+          <strong>{t.history.resume}</strong>
           <button className="small" onClick={copyResume}>
-            Copy
+            {t.secrets.copy}
           </button>
         </header>
         <code className="command">{resumeCommand(session)}</code>
-        {session.project && <p className="hint">Run it in {session.project} to continue this session.</p>}
+        {session.project && <p className="hint">{t.history.runIn(session.project)}</p>}
       </section>
 
       {project && (
         <div className="drawer-footer">
           <button className="small" onClick={() => onProject(project)}>
-            Show the sessions of {project}
+            {t.history.sessionsOf(project)}
           </button>
         </div>
       )}
@@ -673,14 +663,14 @@ function SessionDrawer({ session, agentName, onClose, onProject }: SessionProps)
 
 /** How far the reading of the session logs is, once there are files to count. */
 function ReadingProgress({ progress }: { progress: ReadProgress | null }) {
-  if (!progress?.total) return <p className="hint">Reading session logs…</p>;
+  if (!progress?.total) return <p className="hint">{t.history.reading}…</p>;
   const { done, total } = progress;
   return (
     <div className="reading">
       <span
         className="meter"
         role="progressbar"
-        aria-label="Session logs read"
+        aria-label={t.history.logsRead}
         aria-valuemin={0}
         aria-valuemax={total}
         aria-valuenow={done}
@@ -688,7 +678,7 @@ function ReadingProgress({ progress }: { progress: ReadProgress | null }) {
         <i style={{ width: `${(done / total) * 100}%` }} />
       </span>
       <p className="hint">
-        Reading session logs: {done.toLocaleString()} of {total.toLocaleString()} files
+        {t.history.readingFiles(formatNumber(done), formatNumber(total))}
         {done === total ? "" : "…"}
       </p>
     </div>

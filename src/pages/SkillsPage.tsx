@@ -22,6 +22,7 @@ import { moveInGrid } from "../lib/grid";
 import { matches } from "../lib/search";
 import { useFilesChanged } from "../lib/watch";
 import type { Agent, AgentInfo, Skill, SkillFile, SkillListing, SkillLocation, TrashedSkill } from "../lib/types";
+import { formatDateTime, formatList, formatNumber, t } from "../lib/i18n";
 
 const LOCATION_LABELS: Record<SkillLocation, string> = {
   "claude-code": "~/.claude/skills",
@@ -32,28 +33,23 @@ const LOCATION_LABELS: Record<SkillLocation, string> = {
 };
 
 /** Short names for the grid, where the full path is the cell's tooltip. */
-const SHORT_LABELS: Record<SkillLocation, string> = {
-  "claude-code": "Claude",
-  shared: "shared",
-  codex: "Codex",
-  gemini: "Gemini",
-  cursor: "Cursor",
-};
+const shortLabel = (location: SkillLocation): string =>
+  location === "shared" ? t.skills.shared : { "claude-code": "Claude", codex: "Codex", gemini: "Gemini", cursor: "Cursor" }[location];
 
 /** The agents that load each folder, as the core lists them. */
-const FOLDER_READERS: Record<SkillLocation, string> = {
-  "claude-code": "Claude Code and Cursor",
-  shared: "Codex, Gemini CLI and Cursor",
-  codex: "Codex and Cursor",
-  gemini: "Gemini CLI",
-  cursor: "Cursor",
+const FOLDER_READERS: Record<SkillLocation, string[]> = {
+  "claude-code": ["Claude Code", "Cursor"],
+  shared: ["Codex", "Gemini CLI", "Cursor"],
+  codex: ["Codex", "Cursor"],
+  gemini: ["Gemini CLI"],
+  cursor: ["Cursor"],
 };
 
-const formatSize = (bytes: number) =>
-  bytes < 1024 ? `${bytes} B` : bytes < 1024 * 1024 ? `${(bytes / 1024).toFixed(1)} KB` : `${(bytes / 1024 / 1024).toFixed(1)} MB`;
-
-const formatDate = (ms: number) =>
-  new Date(ms).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" });
+const formatSize = (bytes: number) => {
+  const [value, unit] =
+    bytes < 1024 ? [bytes, t.skills.bytes] : bytes < 1024 * 1024 ? [bytes / 1024, t.skills.kb] : [bytes / 1024 / 1024, t.skills.mb];
+  return `${formatNumber(value, { maximumFractionDigits: bytes < 1024 ? 0 : 1 })}\u00a0${unit}`;
+};
 
 type SkillTab = "details" | "differences" | "backups";
 
@@ -148,7 +144,7 @@ export function SkillsPage({ agents, focus }: { agents: AgentInfo[]; focus?: Foc
 
   async function create(location: SkillLocation, name: string, description: string) {
     await createSkill(location, name, description);
-    notify({ tone: "success", text: `Created ${name} in ${LOCATION_LABELS[location]}. Fill in its SKILL.md.` });
+    notify({ tone: "success", text: t.skills.created(name, LOCATION_LABELS[location]) });
     setCreating(false);
     setCreated(name);
     await load();
@@ -170,7 +166,7 @@ export function SkillsPage({ agents, focus }: { agents: AgentInfo[]; focus?: Foc
     const where = LOCATION_LABELS[skill.location];
     try {
       await restoreSkill(skill.id, overwrite);
-      notify({ tone: "success", text: `Restored ${skill.name} to ${where}.` });
+      notify({ tone: "success", text: t.skills.restored(skill.name, where) });
       setPendingRestore(null);
       await load();
     } catch (err) {
@@ -188,25 +184,25 @@ export function SkillsPage({ agents, focus }: { agents: AgentInfo[]; focus?: Foc
   return (
     <>
       <PageHeader
-        title="Skills"
-        description="Folders with a SKILL.md that agents load on demand. Codex, Gemini CLI and Cursor share ~/.agents/skills, and Cursor also reads the Claude Code and Codex folders, so one copy can reach several agents."
+        title={t.skills.title}
+        description={t.skills.description}
         actions={
           <>
             {byName.size > 0 && (
               <input
                 type="search"
                 className="header-search"
-                placeholder="Search skills"
-                aria-label="Search skills by name or description"
+                placeholder={t.skills.search}
+                aria-label={t.skills.searchLabel}
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
               />
             )}
             <button aria-pressed={showTrash} onClick={() => setShowTrash(!showTrash)}>
-              Trash{listing.trash.length > 0 && ` (${listing.trash.length})`}
+              {t.skills.trash}{listing.trash.length > 0 && ` (${listing.trash.length})`}
             </button>
             <button className="primary" onClick={() => setCreating(!creating)}>
-              <Icon name="plus" /> New skill
+              <Icon name="plus" /> {t.skills.newSkill}
             </button>
           </>
         }
@@ -226,11 +222,11 @@ export function SkillsPage({ agents, focus }: { agents: AgentInfo[]; focus?: Foc
       {showTrash && (
         <section className="card">
           <header className="detail-header">
-            <h3>Trash</h3>
-            <span className="hint">Skills removed or replaced from AgentDeck, in ~/.agentdeck/trash</span>
+            <h3>{t.skills.trash}</h3>
+            <span className="hint">{t.skills.trashHint}</span>
           </header>
           {listing.trash.length === 0 ? (
-            <p className="hint">The trash is empty.</p>
+            <p className="hint">{t.skills.trashEmpty}</p>
           ) : (
             <ul className="copies">
               {listing.trash.map((skill) => (
@@ -238,11 +234,11 @@ export function SkillsPage({ agents, focus }: { agents: AgentInfo[]; focus?: Foc
                   <div>
                     <strong>{skill.name}</strong>
                     <span className="hint">
-                      From {LOCATION_LABELS[skill.location]} · removed {formatDate(skill.removedMs)}
+                      {t.skills.fromRemoved(LOCATION_LABELS[skill.location], formatDateTime(skill.removedMs))}
                     </span>
                   </div>
                   <button className="small" onClick={() => restore(skill)}>
-                    Restore
+                    {t.skills.restore}
                   </button>
                 </li>
               ))}
@@ -252,14 +248,14 @@ export function SkillsPage({ agents, focus }: { agents: AgentInfo[]; focus?: Foc
       )}
 
       {byName.size === 0 ? (
-        <Empty icon="skills" title="No skill installed yet">
-          Skills you add to any agent's skills folder show up here.
+        <Empty icon="skills" title={t.skills.emptyTitle}>
+          {t.skills.empty}
         </Empty>
       ) : shown.length === 0 ? (
-        <Empty icon="skills" title={`No skill matches “${query.trim()}”`}>
-          Search looks at names and descriptions.{" "}
+        <Empty icon="skills" title={t.skills.noMatch(query.trim())}>
+          {t.skills.searchHint}{" "}
           <button className="link" onClick={() => setQuery("")}>
-            Clear the search
+            {t.common.clearSearch}
           </button>
         </Empty>
       ) : (
@@ -267,7 +263,7 @@ export function SkillsPage({ agents, focus }: { agents: AgentInfo[]; focus?: Foc
           <table className="matrix" onKeyDown={moveInGrid}>
             <thead>
               <tr>
-                <th>Skill</th>
+                <th>{t.skills.skill}</th>
                 {agents.map((info) => (
                   <th key={info.agent} className="agent-col">
                     <span className="th-agent">
@@ -290,32 +286,32 @@ export function SkillsPage({ agents, focus }: { agents: AgentInfo[]; focus?: Foc
                       {source.description && <small className="clamp">{source.description}</small>}
                       {differ(found) && (
                         <button className="link differ-note" onClick={() => open(name, "differences")}>
-                          <Icon name="differs" size={12} /> Copies differ
+                          <Icon name="differs" size={12} /> {t.skills.copiesDiffer}
                         </button>
                       )}
                     </td>
                     {agents.map(({ agent }) => {
                       const via = found.find((skill) => skill.readers.includes(agent));
                       return via ? (
-                        <td key={agent} className="agent-col" title={`Loaded from ${via.path}`}>
+                        <td key={agent} className="agent-col" title={t.skills.loadedFrom(via.path)}>
                           <span className="cell cell-on">
                             <Icon name={via.location === "shared" ? "share" : "folder"} size={14} />{" "}
-                            {SHORT_LABELS[via.location]}
+                            {shortLabel(via.location)}
                           </span>
                         </td>
                       ) : (
                         <td key={agent} className="agent-col">
-                          <Tooltip text={`Copies ${source.path}, the copy edited last`}>
+                          <Tooltip text={t.skills.copyTip(source.path)}>
                             <button
                               className="cell cell-add"
                               onClick={() =>
                                 run(async () => {
                                   await copySkill(name, source.location, agent);
-                                  return `Copied "${name}" for ${nameOf(agent)}.`;
+                                  return t.skills.copied(name, nameOf(agent));
                                 })
                               }
                             >
-                              <Icon name="plus" size={14} /> Add
+                              <Icon name="plus" size={14} /> {t.mcp.addCell}
                             </button>
                           </Tooltip>
                         </td>
@@ -334,13 +330,13 @@ export function SkillsPage({ agents, focus }: { agents: AgentInfo[]; focus?: Foc
           title={selected}
           subtitle={newest(copies).description ?? undefined}
           tabs={[
-            { id: "details", label: "Details" },
+            { id: "details", label: t.mcp.details },
             {
               id: "differences",
-              label: "Differences",
+              label: t.mcp.differences,
               count: copies.filter((skill) => skill.hash !== newest(copies).hash).length,
             },
-            { id: "backups", label: "Backups", count: trashed.length },
+            { id: "backups", label: t.mcp.backups, count: trashed.length },
           ]}
           tab={tab}
           onTab={setTab}
@@ -354,27 +350,28 @@ export function SkillsPage({ agents, focus }: { agents: AgentInfo[]; focus?: Foc
                   return (
                     <li key={skill.location} className={skill.location === previewed ? "active" : undefined}>
                       <div>
-                        <Tooltip text="Show this copy">
+                        <Tooltip text={t.skills.showCopy}>
                           <button className="link" onClick={() => show(skill.name, skill.location)}>
                             <code>{skill.path}</code>
                           </button>
                         </Tooltip>
                         <span className="hint">
-                          Loaded by {skill.readers.map(nameOf).join(", ") || "no agent"} · edited{" "}
-                          {formatDate(skill.modifiedMs)}
-                          {copies.length > 1 && skill === newest(copies) && " · newest"}
-                          {others.length > 0 &&
-                            ` · differs from ${others.length === 1 ? "the other copy" : `${others.length} copies`}`}
+                          {t.skills.copyFacts(
+                            skill.readers.length > 0 ? formatList(skill.readers.map(nameOf)) : null,
+                            formatDateTime(skill.modifiedMs),
+                          )}
+                          {copies.length > 1 && skill === newest(copies) && ` · ${t.skills.newest}`}
+                          {others.length > 0 && ` · ${t.skills.differsFrom(others.length)}`}
                         </span>
                       </div>
                       <span className="copy-actions">
                         {others.length > 0 && (
                           <button className="small" onClick={() => setPendingSpread(skill.location)}>
-                            Use everywhere
+                            {t.skills.useEverywhere}
                           </button>
                         )}
                         <button className="small" onClick={() => setPendingRemoval(skill.location)}>
-                          Remove
+                          {t.mcp.remove}
                         </button>
                       </span>
                     </li>
@@ -384,12 +381,12 @@ export function SkillsPage({ agents, focus }: { agents: AgentInfo[]; focus?: Foc
               <div className="drawer-section">
                 <header>
                   <strong>SKILL.md</strong>
-                  <div className="segmented" role="group" aria-label="How to show SKILL.md">
+                  <div className="segmented" role="group" aria-label={t.skills.howToShow}>
                     <button aria-pressed={!source} className={source ? undefined : "active"} onClick={() => setSource(false)}>
-                      Preview
+                      {t.skills.preview}
                     </button>
                     <button aria-pressed={source} className={source ? "active" : undefined} onClick={() => setSource(true)}>
-                      Source
+                      {t.skills.source}
                     </button>
                   </div>
                 </header>
@@ -399,7 +396,7 @@ export function SkillsPage({ agents, focus }: { agents: AgentInfo[]; focus?: Foc
                 <div className="drawer-section">
                   <header>
                     <strong>
-                      Files{files && files.length > 0 && <span className="tab-count">{files.length}</span>}
+                      {t.skills.files}{files && files.length > 0 && <span className="tab-count">{files.length}</span>}
                     </strong>
                     <button
                       className="small"
@@ -409,11 +406,11 @@ export function SkillsPage({ agents, focus }: { agents: AgentInfo[]; focus?: Foc
                         )
                       }
                     >
-                      <Icon name="folder" size={14} /> Show in folder
+                      <Icon name="folder" size={14} /> {t.skills.showInFolder}
                     </button>
                   </header>
                   {files === null ? (
-                    <p className="hint">Reading the folder…</p>
+                    <p className="hint">{t.skills.readingFolder}</p>
                   ) : (
                     <ul className="skill-files">
                       {files.map((file) => (
@@ -422,7 +419,7 @@ export function SkillsPage({ agents, focus }: { agents: AgentInfo[]; focus?: Foc
                           <span className="hint">{formatSize(file.size)}</span>
                         </li>
                       ))}
-                      {files.length >= 500 && <li className="hint">Only the first 500 files are listed.</li>}
+                      {files.length >= 500 && <li className="hint">{t.skills.first500}</li>}
                     </ul>
                   )}
                 </div>
@@ -434,19 +431,17 @@ export function SkillsPage({ agents, focus }: { agents: AgentInfo[]; focus?: Foc
 
           {tab === "backups" &&
             (trashed.length === 0 ? (
-              <p className="hint">
-                No removed or replaced copy of {selected}. AgentDeck moves them to ~/.agentdeck/trash.
-              </p>
+              <p className="hint">{t.skills.noBackups(selected)}</p>
             ) : (
               <ul className="copies">
                 {trashed.map((skill) => (
                   <li key={skill.id}>
                     <div>
                       <strong>{LOCATION_LABELS[skill.location]}</strong>
-                      <span className="hint">Removed {formatDate(skill.removedMs)}</span>
+                      <span className="hint">{t.skills.removedOn(formatDateTime(skill.removedMs))}</span>
                     </div>
                     <button className="small" onClick={() => restore(skill)}>
-                      Restore
+                      {t.skills.restore}
                     </button>
                   </li>
                 ))}
@@ -463,31 +458,30 @@ export function SkillsPage({ agents, focus }: { agents: AgentInfo[]; focus?: Foc
             return (
               <ConfirmDialog
                 key={skill.location}
-                title={`Use this copy of ${skill.name} everywhere?`}
+                title={t.skills.spreadTitle(skill.name)}
                 onCancel={() => setPendingSpread(null)}
                 choices={[
                   {
-                    label: `Replace ${replaced.length === 1 ? "1 copy" : `${replaced.length} copies`}`,
+                    label: t.skills.replaceCopies(replaced.length),
                     tone: "danger",
                     onSelect: () =>
                       run(async () => {
                         for (const other of replaced) await replaceSkill(skill.name, skill.location, other.location);
-                        return replaced.length === 1
-                          ? `Replaced 1 copy of ${skill.name}. The old one is in the trash.`
-                          : `Replaced ${replaced.length} copies of ${skill.name}. The old ones are in the trash.`;
+                        return t.skills.replaced(replaced.length, skill.name);
                       }),
                   },
                 ]}
               >
                 <p>
-                  The copy in <code>{LOCATION_LABELS[skill.location]}</code> replaces the one in{" "}
-                  {replaced.map((other, i) => (
-                    <span key={other.location}>
-                      {i > 0 && ", "}
-                      <code>{LOCATION_LABELS[other.location]}</code>
-                    </span>
-                  ))}
-                  . The replaced folders move to the trash, where you can restore them.
+                  {t.skills.spreadBody(
+                    <code>{LOCATION_LABELS[skill.location]}</code>,
+                    replaced.map((other, i) => (
+                      <span key={other.location}>
+                        {i > 0 && ", "}
+                        <code>{LOCATION_LABELS[other.location]}</code>
+                      </span>
+                    )),
+                  )}
                 </p>
               </ConfirmDialog>
             );
@@ -495,20 +489,22 @@ export function SkillsPage({ agents, focus }: { agents: AgentInfo[]; focus?: Foc
 
       {pendingRestore && (
         <ConfirmDialog
-          title={`Replace the current ${pendingRestore.name}?`}
+          title={t.skills.restoreTitle(pendingRestore.name)}
           onCancel={() => setPendingRestore(null)}
           choices={[
             {
-              label: "Restore and replace",
+              label: t.skills.restoreReplace,
               tone: "danger",
               onSelect: () => restore(pendingRestore, true),
             },
           ]}
         >
           <p>
-            <code>{LOCATION_LABELS[pendingRestore.location]}</code> already has a skill named{" "}
-            {pendingRestore.name}. It moves to the trash and the one removed on{" "}
-            {formatDate(pendingRestore.removedMs)} takes its place.
+            {t.skills.restoreBody(
+              <code>{LOCATION_LABELS[pendingRestore.location]}</code>,
+              pendingRestore.name,
+              formatDateTime(pendingRestore.removedMs),
+            )}
           </p>
         </ConfirmDialog>
       )}
@@ -519,25 +515,25 @@ export function SkillsPage({ agents, focus }: { agents: AgentInfo[]; focus?: Foc
           .map((skill) => (
             <ConfirmDialog
               key={skill.location}
-              title={`Remove ${skill.name}?`}
+              title={t.skills.removeTitle(skill.name)}
               onCancel={() => setPendingRemoval(null)}
               choices={[
                 {
-                  label: "Move to trash",
+                  label: t.skills.moveToTrash,
                   tone: "danger",
                   onSelect: () =>
                     run(async () => {
                       await removeSkill(skill.location, skill.name);
-                      return `Moved ${skill.name} to the trash.`;
+                      return t.skills.movedToTrash(skill.name);
                     }),
                 },
               ]}
             >
               <p>
-                {skill.readers.length > 0
-                  ? `${skill.readers.map(nameOf).join(", ")} will no longer load it from `
-                  : "Removes "}
-                <code>{skill.path}</code>. The folder moves to the trash, where you can restore it.
+                {t.skills.removeBody(
+                  skill.readers.length > 0 ? formatList(skill.readers.map(nameOf)) : null,
+                  <code>{skill.path}</code>,
+                )}
               </p>
             </ConfirmDialog>
           ))}
@@ -571,11 +567,11 @@ function NewSkillForm({ taken, onSubmit, onCancel }: NewSkillProps) {
 
   return (
     <form className="card form" onSubmit={submit}>
-      <h3>New skill</h3>
+      <h3>{t.skills.newSkill}</h3>
       {error && <Notice tone="error">{error}</Notice>}
       <div className="fields">
         <label>
-          Name
+          {t.skills.name}
           <input
             required
             autoFocus
@@ -586,13 +582,11 @@ function NewSkillForm({ taken, onSubmit, onCancel }: NewSkillProps) {
             aria-describedby="new-skill-name"
           />
           <small id="new-skill-name" className={(name !== "" && !valid) || exists ? "danger-text" : "hint"}>
-            {exists
-              ? `${LOCATION_LABELS[location]} already has a skill named ${name}.`
-              : "Lowercase letters, digits and single hyphens. It names the folder."}
+            {exists ? t.skills.nameTaken(LOCATION_LABELS[location], name) : t.skills.nameRule}
           </small>
         </label>
         <label>
-          Folder
+          {t.skills.folder}
           <select value={location} onChange={(e) => setLocation(e.target.value as SkillLocation)}>
             {(Object.keys(LOCATION_LABELS) as SkillLocation[]).map((option) => (
               <option key={option} value={option}>
@@ -600,23 +594,23 @@ function NewSkillForm({ taken, onSubmit, onCancel }: NewSkillProps) {
               </option>
             ))}
           </select>
-          <small className="hint">Loaded by {FOLDER_READERS[location]}</small>
+          <small className="hint">{t.skills.loadedBy(formatList(FOLDER_READERS[location]))}</small>
         </label>
       </div>
       <label>
-        Description
+        {t.skills.descriptionField}
         <input
           value={description}
           onChange={(e) => setDescription(e.target.value)}
-          placeholder="What the skill does, and when the agent should use it"
+          placeholder={t.skills.descriptionHint}
         />
       </label>
       <div className="form-actions">
         <button type="submit" className="primary" disabled={!valid || exists}>
-          Create
+          {t.skills.create}
         </button>
         <button type="button" onClick={onCancel}>
-          Cancel
+          {t.common.cancel}
         </button>
       </div>
     </form>
@@ -644,14 +638,14 @@ function SkillDifferences({ copies }: { copies: Skill[] }) {
     };
   }, [copies.map((skill) => `${skill.location}:${skill.hash}`).join()]);
 
-  if (others.length === 0) return <p className="hint">Every copy of {base.name} is the same.</p>;
+  if (others.length === 0) return <p className="hint">{t.skills.allSame(base.name)}</p>;
   const other = others.find((skill) => skill.location === compared) ?? others[0];
   const [before, after] = [texts[other.location], texts[base.location]];
 
   return (
     <>
       {others.length > 1 && (
-        <div className="segmented" role="group" aria-label="Copy to compare">
+        <div className="segmented" role="group" aria-label={t.skills.copyToCompare}>
           {others.map((skill) => (
             <button
               key={skill.location}
@@ -665,13 +659,12 @@ function SkillDifferences({ copies }: { copies: Skill[] }) {
         </div>
       )}
       <p className="hint">
-        What changes in SKILL.md from <code>{LOCATION_LABELS[other.location]}</code> to the newest copy, in{" "}
-        <code>{LOCATION_LABELS[base.location]}</code>.
+        {t.skills.diffHint(<code>{LOCATION_LABELS[other.location]}</code>, <code>{LOCATION_LABELS[base.location]}</code>)}
       </p>
       {before === undefined || after === undefined ? (
-        <p className="hint">Reading the copies…</p>
+        <p className="hint">{t.skills.readingCopies}</p>
       ) : before === after ? (
-        <p className="hint">SKILL.md is the same: other files in the folders differ.</p>
+        <p className="hint">{t.skills.sameSkillMd}</p>
       ) : (
         <DiffView before={before} after={after} />
       )}

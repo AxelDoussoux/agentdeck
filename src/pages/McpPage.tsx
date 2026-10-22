@@ -22,6 +22,7 @@ import { byName, changes, describe, differences, WITH_OPTIONS } from "../lib/ser
 import { moveInGrid } from "../lib/grid";
 import { matches } from "../lib/search";
 import type { Agent, AgentInfo, McpListing, McpServer, ServerSpec, ServerVersion } from "../lib/types";
+import { formatDateTime, formatList, formatNumber, t } from "../lib/i18n";
 
 interface Props {
   agents: AgentInfo[];
@@ -39,9 +40,6 @@ interface Opened {
   tab: ServerTab;
   editing?: Agent;
 }
-
-const formatDate = (ms: number) =>
-  new Date(ms).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" });
 
 export function McpPage({ agents, listing, onChange, focus }: Props) {
   const notify = useToast();
@@ -151,7 +149,7 @@ export function McpPage({ agents, listing, onChange, focus }: Props) {
       ok = false;
     }
     if (ids.length > 0) {
-      const left = lost.size > 0 ? ` Not carried over: ${[...lost].join(", ")}.` : "";
+      const left = lost.size > 0 ? ` ${t.mcp.notCarried(formatList([...lost]))}` : "";
       notify({
         tone: "success",
         text: done(ids.length) + left,
@@ -170,8 +168,8 @@ export function McpPage({ agents, listing, onChange, focus }: Props) {
     return runAll(
       targets.map((agent) => () => copyMcpServer(name, from, agent, overwrite)),
       (count) => {
-        const done = targets.slice(0, count).map(nameOf).join(", ");
-        return overwrite ? `${done} now use the ${name} settings of ${nameOf(from)}.` : `Added ${name} to ${done}.`;
+        const done = formatList(targets.slice(0, count).map(nameOf));
+        return overwrite ? t.mcp.nowUse(done, name, nameOf(from)) : t.mcp.added(name, done);
       },
     );
   }
@@ -179,7 +177,7 @@ export function McpPage({ agents, listing, onChange, focus }: Props) {
   function removeFrom(name: string, targets: Agent[]) {
     return runAll(
       targets.map((agent) => async () => ({ undo: await removeMcpServer(agent, name) })),
-      (count) => `Removed ${name} from ${targets.slice(0, count).map(nameOf).join(", ")}.`,
+      (count) => t.mcp.removed(name, formatList(targets.slice(0, count).map(nameOf))),
     );
   }
 
@@ -195,7 +193,7 @@ export function McpPage({ agents, listing, onChange, focus }: Props) {
     const targets = [agent, ...alsoTo];
     const ok = await runAll(
       targets.map((target) => async () => ({ undo: await addMcpServer(target, name, spec) })),
-      (count) => `Added ${name} to ${targets.slice(0, count).map(nameOf).join(", ")}.`,
+      (count) => t.mcp.added(name, formatList(targets.slice(0, count).map(nameOf))),
     );
     if (ok) {
       setAdding(false);
@@ -210,7 +208,7 @@ export function McpPage({ agents, listing, onChange, focus }: Props) {
         async () => ({ undo: await editMcpServer(agent, name, { transport, env, headers, options }) }),
         ...alsoTo.map((other) => () => copyMcpServer(name, agent, other, true)),
       ],
-      (count) => `Saved ${name} in ${[agent, ...alsoTo].slice(0, count).map(nameOf).join(", ")}.`,
+      (count) => t.mcp.saved(name, formatList([agent, ...alsoTo].slice(0, count).map(nameOf))),
     );
     if (ok) setOpened((current) => current && { ...current, editing: undefined });
   }
@@ -221,22 +219,22 @@ export function McpPage({ agents, listing, onChange, focus }: Props) {
   return (
     <>
       <PageHeader
-        title="MCP servers"
-        description="Each row is a server, each column an agent. Add a server to another agent in one click: its settings and secrets are copied for you."
+        title={t.mcp.title}
+        description={t.mcp.description}
         actions={
           <>
             {rows.size > 0 && (
               <input
                 type="search"
                 className="header-search"
-                placeholder="Search servers"
-                aria-label="Search servers by name, command or URL"
+                placeholder={t.mcp.search}
+                aria-label={t.mcp.searchLabel}
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
               />
             )}
             <button className="primary" onClick={() => setAdding(true)}>
-              <Icon name="plus" /> Add server
+              <Icon name="plus" /> {t.mcp.add}
             </button>
           </>
         }
@@ -247,9 +245,9 @@ export function McpPage({ agents, listing, onChange, focus }: Props) {
 
       {adding && (
         <Drawer
-          title="Add an MCP server"
-          subtitle="To one agent or several at once."
-          tabs={[{ id: "form", label: "Server" }]}
+          title={t.mcp.addTitle}
+          subtitle={t.mcp.addSubtitle}
+          tabs={[{ id: "form", label: t.mcp.server }]}
           tab="form"
           onTab={() => undefined}
           onClose={() => setAdding(false)}
@@ -264,14 +262,14 @@ export function McpPage({ agents, listing, onChange, focus }: Props) {
       )}
 
       {rows.size === 0 ? (
-        <Empty icon="plug" title="No MCP server configured yet">
-          Add one with the button above, or install one in any agent: it shows up here.
+        <Empty icon="plug" title={t.mcp.emptyTitle}>
+          {t.mcp.empty}
         </Empty>
       ) : shown.length === 0 ? (
-        <Empty icon="plug" title={`No server matches “${query.trim()}”`}>
-          Search looks at names, commands and URLs.{" "}
+        <Empty icon="plug" title={t.mcp.noMatch(query.trim())}>
+          {t.mcp.searchHint}{" "}
           <button className="link" onClick={() => setQuery("")}>
-            Clear the search
+            {t.common.clearSearch}
           </button>
         </Empty>
       ) : (
@@ -279,12 +277,12 @@ export function McpPage({ agents, listing, onChange, focus }: Props) {
           <table className="matrix" onKeyDown={moveInGrid}>
             <thead>
               <tr>
-                <th>Server</th>
+                <th>{t.mcp.server}</th>
                 {agents.map((info) => (
                   <th
                     key={info.agent}
                     className={`agent-col ${info.installed ? "" : "agent-off"}`}
-                    title={info.installed ? undefined : `${info.name} was not found on this computer`}
+                    title={info.installed ? undefined : t.common.notFound(info.name)}
                   >
                     <span className="th-agent">
                       <AgentMark agent={info.agent} size={20} />
@@ -293,7 +291,7 @@ export function McpPage({ agents, listing, onChange, focus }: Props) {
                   </th>
                 ))}
                 <th className="menu-col">
-                  <span className="sr-only">Actions</span>
+                  <span className="sr-only">{t.common.actions}</span>
                 </th>
               </tr>
             </thead>
@@ -303,23 +301,23 @@ export function McpPage({ agents, listing, onChange, focus }: Props) {
                 const secretKeys = [...source.envKeys, ...source.headerKeys];
                 const missing = agents.filter(({ agent }) => !byAgent.has(agent) && supports(source, agent));
                 const menu: MenuItem[] = [
-                  { label: "Details", onSelect: () => open(name) },
+                  { label: t.mcp.details, onSelect: () => open(name) },
                   ...(missing.length > 1
                     ? [
                         {
-                          label: "Add to every agent",
+                          label: t.mcp.addEverywhere,
                           onSelect: () => copyMany(name, source.agent, missing.map((info) => info.agent), false),
                         },
                       ]
                     : []),
                   ...[...byAgent.keys()].map((agent) => ({
-                    label: byAgent.size > 1 ? `Edit in ${nameOf(agent)}…` : "Edit…",
+                    label: byAgent.size > 1 ? t.mcp.editIn(nameOf(agent)) : t.mcp.editMenu,
                     onSelect: () => open(name, "details", agent),
                   })),
                   ...[...byAgent.keys()].map((agent) => ({
-                    label: `Remove from ${nameOf(agent)}`,
+                    label: t.mcp.removeFrom(nameOf(agent)),
                     tone: "danger" as const,
-                    onSelect: () => run(() => removeMcpServer(agent, name), `Removed ${name} from ${nameOf(agent)}.`),
+                    onSelect: () => run(() => removeMcpServer(agent, name), t.mcp.removed(name, nameOf(agent))),
                   })),
                 ];
                 return (
@@ -354,7 +352,7 @@ export function McpPage({ agents, listing, onChange, focus }: Props) {
                                 className="cell cell-differs"
                                 onClick={() => open(name, "differences")}
                               >
-                                <Icon name="differs" size={14} /> Different
+                                <Icon name="differs" size={14} /> {t.mcp.different}
                               </button>
                             </Tooltip>
                           </td>
@@ -364,7 +362,7 @@ export function McpPage({ agents, listing, onChange, focus }: Props) {
                         return (
                           <td key={agent} className={`agent-col ${off}`}>
                             <span className="cell cell-on">
-                              <Icon name="check" size={14} /> Installed
+                              <Icon name="check" size={14} /> {t.mcp.installed}
                             </span>
                           </td>
                         );
@@ -372,27 +370,27 @@ export function McpPage({ agents, listing, onChange, focus }: Props) {
                       if (!supports(source, agent)) {
                         return (
                           <td key={agent} className={`agent-col ${off}`}>
-                            <span className="cell cell-none" title="Codex does not support SSE servers">
-                              Not supported
+                            <span className="cell cell-none" title={t.mcp.noSse}>
+                              {t.mcp.unsupported}
                             </span>
                           </td>
                         );
                       }
                       return (
                         <td key={agent} className={`agent-col ${off}`}>
-                          <Tooltip text={`Copy ${name} from ${nameOf(source.agent)} to ${nameOf(agent)}`}>
+                          <Tooltip text={t.mcp.copyTip(name, nameOf(source.agent), nameOf(agent))}>
                             <button
                               className="cell cell-add"
                               onClick={() => copyMany(name, source.agent, [agent], false)}
                             >
-                              <Icon name="plus" size={14} /> Add
+                              <Icon name="plus" size={14} /> {t.mcp.addCell}
                             </button>
                           </Tooltip>
                         </td>
                       );
                     })}
                     <td className="menu-col">
-                      <RowMenu label={`Actions for ${name}`} items={menu} />
+                      <RowMenu label={t.common.actionsFor(name)} items={menu} />
                     </td>
                   </tr>
                 );
@@ -415,11 +413,11 @@ export function McpPage({ agents, listing, onChange, focus }: Props) {
     return (
       <Drawer
         title={name}
-        subtitle={`In ${copies.map((copy) => nameOf(copy.agent)).join(", ")}`}
+        subtitle={t.mcp.inAgents(formatList(copies.map((copy) => nameOf(copy.agent))))}
         tabs={[
-          { id: "details", label: "Details" },
-          { id: "differences", label: "Differences", count: drifting.length },
-          { id: "backups", label: "Backups", count: saved },
+          { id: "details", label: t.mcp.details },
+          { id: "differences", label: t.mcp.differences, count: drifting.length },
+          { id: "backups", label: t.mcp.backups, count: saved },
         ]}
         tab={tab}
         onTab={(next) => setOpened({ name, tab: next, editing })}
@@ -449,15 +447,15 @@ export function McpPage({ agents, listing, onChange, focus }: Props) {
                         disabled={tests[`${server.agent}/${name}`]?.running}
                         title={
                           server.transport.kind === "stdio"
-                            ? `Runs ${describe(server.transport)} on this computer, lists its tools, then stops it`
-                            : "Connects to the server and lists its tools"
+                            ? t.mcp.testLocal(describe(server.transport))
+                            : t.mcp.testRemote
                         }
                         onClick={() => test(server.agent, name)}
                       >
-                        {tests[`${server.agent}/${name}`]?.running ? "Testing…" : "Test"}
+                        {tests[`${server.agent}/${name}`]?.running ? t.mcp.testing : t.mcp.test}
                       </button>
                       <button className="small" onClick={() => setOpened({ name, tab, editing: server.agent })}>
-                        Edit
+                        {t.mcp.edit}
                       </button>
                       <button
                         className="small"
@@ -465,13 +463,13 @@ export function McpPage({ agents, listing, onChange, focus }: Props) {
                           openConfig(server.agent).catch((err) => notify({ tone: "error", text: String(err) }))
                         }
                       >
-                        Open file
+                        {t.mcp.openFile}
                       </button>
                       <button
                         className="small"
-                        onClick={() => run(() => removeMcpServer(server.agent, name), `Removed ${name} from ${nameOf(server.agent)}.`)}
+                        onClick={() => run(() => removeMcpServer(server.agent, name), t.mcp.removed(name, nameOf(server.agent)))}
                       >
-                        Remove
+                        {t.mcp.remove}
                       </button>
                     </span>
                   </header>
@@ -483,21 +481,21 @@ export function McpPage({ agents, listing, onChange, focus }: Props) {
             {missing.length > 0 && (
               <section className="drawer-section">
                 <header>
-                  <strong>Not in {missing.map((info) => info.name).join(", ")}</strong>
+                  <strong>{t.mcp.notIn(formatList(missing.map((info) => info.name)))}</strong>
                   <button
                     className="small"
                     onClick={() => copyMany(name, source.agent, missing.map((info) => info.agent), false)}
                   >
-                    <Icon name="plus" size={14} /> Add to {missing.length === 1 ? missing[0].name : "all"}
+                    <Icon name="plus" size={14} /> {missing.length === 1 ? t.mcp.addTo(missing[0].name) : t.mcp.addToAll}
                   </button>
                 </header>
-                <p className="hint">Copies the settings of {nameOf(source.agent)}, secrets included.</p>
+                <p className="hint">{t.mcp.copiesSettings(nameOf(source.agent))}</p>
               </section>
             )}
             {copies.length > 1 && (
               <div className="drawer-footer">
                 <button className="small danger" onClick={() => removeFrom(name, copies.map((copy) => copy.agent))}>
-                  Remove from every agent
+                  {t.mcp.removeEverywhere}
                 </button>
               </div>
             )}
@@ -507,9 +505,7 @@ export function McpPage({ agents, listing, onChange, focus }: Props) {
         {tab === "differences" &&
           (drifting.length === 0 ? (
             <p className="hint">
-              {copies.length === 1
-                ? `Only ${nameOf(source.agent)} has ${name}.`
-                : `Every agent runs ${name} the same way.`}
+              {copies.length === 1 ? t.mcp.onlyOne(nameOf(source.agent), name) : t.mcp.allSame(name)}
             </p>
           ) : (
             <>
@@ -530,24 +526,22 @@ export function McpPage({ agents, listing, onChange, focus }: Props) {
                     </ul>
                     <div className="copy-actions">
                       <button className="small" onClick={() => copyMany(name, server.agent, others, true)}>
-                        Use {nameOf(server.agent)}'s everywhere
+                        {t.mcp.useEverywhere(nameOf(server.agent))}
                       </button>
                       <button className="small primary" onClick={() => copyMany(name, source.agent, [server.agent], true)}>
-                        Use {nameOf(source.agent)}'s here
+                        {t.mcp.useHere(nameOf(source.agent))}
                       </button>
                     </div>
                   </section>
                 );
               })}
-              <p className="hint">Secrets are copied by AgentDeck without being shown. Each change can be undone.</p>
+              <p className="hint">{t.mcp.secretsCopied}</p>
             </>
           ))}
 
         {tab === "backups" &&
           (saved === 0 ? (
-            <p className="hint">
-              No earlier version yet. AgentDeck keeps a backup of each config file it changes, in ~/.agentdeck/backups.
-            </p>
+            <p className="hint">{t.mcp.noBackups}</p>
           ) : (
             <>
               {[...versions].map(([agent, list]) => (
@@ -562,30 +556,28 @@ export function McpPage({ agents, listing, onChange, focus }: Props) {
                     {list.map((version) => (
                       <li key={version.id}>
                         <div>
-                          <strong>Until {formatDate(version.replacedMs)}</strong>
+                          <strong>{t.mcp.until(formatDateTime(version.replacedMs))}</strong>
                           <span className="hint">{describeVersion(version, byAgent.get(agent))}</span>
                         </div>
                         <button
                           className="small"
                           disabled={version.current}
-                          title={version.current ? "This is how it is now" : undefined}
+                          title={version.current ? t.mcp.isNow : undefined}
                           onClick={() =>
                             run(
                               () => restoreServerVersion(agent, name, version.id),
-                              version.server
-                                ? `Put back ${name} in ${nameOf(agent)} as it was.`
-                                : `Removed ${name} from ${nameOf(agent)}, as it was.`,
+                              version.server ? t.mcp.putBack(name, nameOf(agent)) : t.mcp.removedAsItWas(name, nameOf(agent)),
                             )
                           }
                         >
-                          Restore
+                          {t.mcp.restore}
                         </button>
                       </li>
                     ))}
                   </ul>
                 </section>
               ))}
-              <p className="hint">Restoring changes only this server. Secrets stay hidden, and it can be undone.</p>
+              <p className="hint">{t.mcp.restoreHint}</p>
             </>
           ))}
       </Drawer>
@@ -598,11 +590,11 @@ const supports = (server: McpServer, agent: Agent) => !(agent === "codex" && ser
 
 /** How a version differs from the server now, or what it ran. */
 function describeVersion(version: ServerVersion, now: McpServer | undefined): string {
-  if (version.current) return "Same as now.";
-  if (!version.server) return "Not set up.";
-  if (!now) return `Ran ${describe(version.server.transport)}.`;
+  if (version.current) return t.mcp.sameAsNow;
+  if (!version.server) return t.mcp.notSetUp;
+  if (!now) return t.mcp.ran(describe(version.server.transport));
   const changed = changes(version.server, now);
-  return changed.length > 0 ? changed.join(" ") : "Other settings than now.";
+  return changed.length > 0 ? changed.join(" ") : t.mcp.otherSettings;
 }
 
 /** What a server runs and with which settings, without its secret values. */
@@ -611,17 +603,17 @@ function Facts({ server }: { server: McpServer }) {
   const keys = [...server.envKeys, ...server.headerKeys];
   return (
     <dl className="facts">
-      <dt>{transport.kind === "stdio" ? "Command" : transport.kind === "http" ? "HTTP URL" : "SSE URL"}</dt>
+      <dt>{transport.kind === "stdio" ? t.mcp.command : transport.kind === "http" ? t.mcp.httpUrl : t.mcp.sseUrl}</dt>
       <dd>
         <code>{describe(transport)}</code>
       </dd>
-      <dt>{transport.kind === "stdio" ? "Variables" : "Headers"}</dt>
-      <dd>{keys.length > 0 ? keys.join(", ") : "None"}</dd>
+      <dt>{transport.kind === "stdio" ? t.mcp.variables : t.mcp.headers}</dt>
+      <dd>{keys.length > 0 ? keys.join(", ") : t.common.none}</dd>
       {WITH_OPTIONS.includes(server.agent) && (
         <>
           {options.cwd && (
             <>
-              <dt>Working directory</dt>
+              <dt>{t.mcp.cwd}</dt>
               <dd>
                 <code>{options.cwd}</code>
               </dd>
@@ -629,26 +621,26 @@ function Facts({ server }: { server: McpServer }) {
           )}
           {options.timeoutMs !== null && (
             <>
-              <dt>Timeout</dt>
-              <dd>{options.timeoutMs / 1000} s</dd>
+              <dt>{t.mcp.timeout}</dt>
+              <dd>{`${formatNumber(options.timeoutMs / 1000)}\u00a0s`}</dd>
             </>
           )}
           {options.includeTools && (
             <>
-              <dt>Only these tools</dt>
-              <dd>{options.includeTools.join(", ") || "None"}</dd>
+              <dt>{t.mcp.onlyTools}</dt>
+              <dd>{options.includeTools.join(", ") || t.common.none}</dd>
             </>
           )}
           {options.excludeTools && options.excludeTools.length > 0 && (
             <>
-              <dt>Never these tools</dt>
+              <dt>{t.mcp.neverTools}</dt>
               <dd>{options.excludeTools.join(", ")}</dd>
             </>
           )}
           {options.disabled && (
             <>
-              <dt>State</dt>
-              <dd>Turned off</dd>
+              <dt>{t.mcp.state}</dt>
+              <dd>{t.mcp.off}</dd>
             </>
           )}
         </>

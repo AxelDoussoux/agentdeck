@@ -1,6 +1,15 @@
+import { formatNumber } from "./i18n";
 import type { HourUsage, UsageReport } from "./types";
 
-export const formatCost = (usd: number) => `$${usd.toFixed(usd < 10 ? 2 : 0)}`;
+/** Dollars, with cents below $10: "$4.20", "$37", or "4,20 $" in French. */
+export const formatCost = (usd: number) =>
+  formatNumber(usd, {
+    style: "currency",
+    currency: "USD",
+    currencyDisplay: "narrowSymbol",
+    minimumFractionDigits: usd < 10 ? 2 : 0,
+    maximumFractionDigits: usd < 10 ? 2 : 0,
+  });
 
 /** `YYYY-MM-DD` of a moment in the local time zone. */
 export function localDate(moment: Date): string {

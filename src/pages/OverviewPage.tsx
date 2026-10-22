@@ -3,6 +3,7 @@ import type { PageId } from "../App";
 import { useToast } from "../components/Toasts";
 import { AgentMark, Icon, PageHeader, type IconName } from "../components/ui";
 import { listRules, openConfig, repairLaunchers, usageReport } from "../lib/api";
+import { formatDay, formatList, t } from "../lib/i18n";
 import { drifting } from "../lib/servers";
 import type { AgentInfo, McpListing, Rules, SecretListing, UsageReport } from "../lib/types";
 import { formatCost, recentCost } from "../lib/usage";
@@ -41,11 +42,8 @@ function recentUsage(): Promise<UsageReport> {
 
 /** A short list of names, ending with how many more there are. */
 function names(list: string[], max = 3): string {
-  const shown = list.slice(0, max).join(", ");
-  return list.length > max ? `${shown} and ${list.length - max} more` : shown;
+  return list.length > max ? formatList([...list.slice(0, max), t.overview.more(list.length - max)]) : formatList(list);
 }
-
-const plural = (count: number, one: string, many: string) => `${count} ${count === 1 ? one : many}`;
 
 export function OverviewPage({ agents, listing, secrets, onNavigate, onChange }: Props) {
   const [rules, setRules] = useState<Rules[] | null>(null);
@@ -69,10 +67,7 @@ export function OverviewPage({ agents, listing, secrets, onNavigate, onChange }:
     setRepairing(true);
     try {
       const repaired = await repairLaunchers();
-      notify({
-        tone: "success",
-        text: `Repaired ${plural(repaired, "protected server", "protected servers")}. Restart the agents that use them.`,
-      });
+      notify({ tone: "success", text: t.launcher.repaired(repaired) });
     } catch (err) {
       notify({ tone: "error", text: String(err) });
     }
@@ -86,11 +81,11 @@ export function OverviewPage({ agents, listing, secrets, onNavigate, onChange }:
     checks.push({
       severity: "danger",
       icon: "alert",
-      title: `${plural(stranded.length, "protected server no longer starts", "protected servers no longer start")}`,
-      detail: `The agentdeck launcher they run is missing: ${names(stranded.map((s) => `${s.server} (${nameOf(s.agent)})`))}.`,
+      title: t.launcher.title(stranded.length),
+      detail: t.overview.launcherMissing(names(stranded.map((s) => `${s.server} (${nameOf(s.agent)})`))),
       action: (
         <button className="primary small" disabled={!secrets?.launcher || repairing} onClick={repair}>
-          {repairing ? "Repairing…" : "Repair"}
+          {repairing ? t.launcher.repairing : t.launcher.repair}
         </button>
       ),
     });
@@ -101,9 +96,9 @@ export function OverviewPage({ agents, listing, secrets, onNavigate, onChange }:
     checks.push({
       severity: "danger",
       icon: "shield",
-      title: `${plural(plain.length, "API key is", "API keys are")} stored in plain text`,
-      detail: `Any program that can read the configs can read ${plain.length === 1 ? "it" : "them"}: ${names([...new Set(plain.map((s) => s.server))])}.`,
-      action: go("secrets", "Move to keychain"),
+      title: t.overview.plainTitle(plain.length),
+      detail: t.overview.plainDetail(plain.length, names([...new Set(plain.map((s) => s.server))])),
+      action: go("secrets", t.overview.moveToKeychain),
     });
   }
 
@@ -112,9 +107,9 @@ export function OverviewPage({ agents, listing, secrets, onNavigate, onChange }:
     checks.push({
       severity: "warn",
       icon: "differs",
-      title: `${plural(different.length, "server differs", "servers differ")} between agents`,
-      detail: `Another command, variable or setting: ${names(different)}.`,
-      action: go("mcp", "Review"),
+      title: t.overview.differTitle(different.length),
+      detail: t.overview.differDetail(names(different)),
+      action: go("mcp", t.overview.review),
     });
   }
 
@@ -127,9 +122,9 @@ export function OverviewPage({ agents, listing, secrets, onNavigate, onChange }:
     checks.push({
       severity: "info",
       icon: "plug",
-      title: `${plural(partial.length, "server is", "servers are")} not on every agent`,
+      title: t.overview.partialTitle(partial.length),
       detail: names(partial),
-      action: go("mcp", "Copy"),
+      action: go("mcp", t.overview.copy),
     });
   }
 
@@ -139,9 +134,9 @@ export function OverviewPage({ agents, listing, secrets, onNavigate, onChange }:
     checks.push({
       severity: "info",
       icon: "rules",
-      title: "Rules differ between agents",
-      detail: `${names(written.map((r) => nameOf(r.agent)))} each load their own instructions.`,
-      action: go("rules", "Compare"),
+      title: t.overview.rulesTitle,
+      detail: t.overview.rulesDetail(names(written.map((r) => nameOf(r.agent)))),
+      action: go("rules", t.overview.compare),
     });
   }
   checks.sort((a, b) => ORDER.indexOf(a.severity) - ORDER.indexOf(b.severity));
@@ -152,10 +147,7 @@ export function OverviewPage({ agents, listing, secrets, onNavigate, onChange }:
 
   return (
     <>
-      <PageHeader
-        title="Overview"
-        description="Every AI coding agent on this computer, and what needs your attention."
-      />
+      <PageHeader title={t.nav.overview} description={t.overview.description} />
 
       <ul className="health">
         {checks.map((check) => (
@@ -176,11 +168,8 @@ export function OverviewPage({ agents, listing, secrets, onNavigate, onChange }:
               <Icon name="check" />
             </span>
             <span className="health-text">
-              <strong>Everything is in order</strong>
-              <span>
-                {plural(serverNames.length, "server is", "servers are")} the same on every agent and no
-                secret sits in plain text.
-              </span>
+              <strong>{t.overview.allGood}</strong>
+              <span>{t.overview.allGoodDetail(serverNames.length)}</span>
             </span>
           </li>
         )}
@@ -188,15 +177,15 @@ export function OverviewPage({ agents, listing, secrets, onNavigate, onChange }:
 
       <button className="card cost-card" onClick={() => onNavigate("history")}>
         <span className="cost-text">
-          <span className="label">Estimated cost, last 7 days</span>
+          <span className="label">{t.overview.weekCost}</span>
           <span className="value">{week ? formatCost(weekCost) : "…"}</span>
           <span className="hint">
-            {week && weekCost === 0 ? "No session logged this week" : "From Claude Code and Codex logs"}
+            {week && weekCost === 0 ? t.overview.noSession : t.overview.fromLogs}
           </span>
         </span>
         <span className="sparkline" aria-hidden="true">
           {(week ?? []).map((day) => (
-            <span key={day.date} title={`${day.date}: ${formatCost(day.cost)}`}>
+            <span key={day.date} title={`${formatDay(new Date(`${day.date}T00:00`), { weekday: "short", day: "numeric" })}: ${formatCost(day.cost)}`}>
               <i style={{ height: `${Math.max(4, (day.cost / maxDay) * 100)}%` }} />
             </span>
           ))}
@@ -204,7 +193,7 @@ export function OverviewPage({ agents, listing, secrets, onNavigate, onChange }:
         <Icon name="arrow" />
       </button>
 
-      <h2 className="section-title">Agents</h2>
+      <h2 className="section-title">{t.rules.agents}</h2>
       <div className="agent-grid">
         {agents.map((info) => {
           const servers = listing.servers.filter((s) => s.agent === info.agent).length;
@@ -217,24 +206,24 @@ export function OverviewPage({ agents, listing, secrets, onNavigate, onChange }:
                 <div>
                   <strong>{info.name}</strong>
                   <span className={`pill ${info.hasConfig ? "pill-ok" : ""}`}>
-                    {info.hasConfig ? "Detected" : info.installed ? "No config yet" : "Not found"}
+                    {info.hasConfig ? t.overview.detected : info.installed ? t.overview.noConfig : t.overview.notFound}
                   </span>
                 </div>
               </header>
               <dl>
                 <div>
-                  <dt>MCP servers</dt>
+                  <dt>{t.nav.mcp}</dt>
                   <dd>{servers}</dd>
                 </div>
                 <div>
-                  <dt>Rules</dt>
+                  <dt>{t.nav.rules}</dt>
                   <dd>
                     {info.rulesPath ? (
                       <button className="link" onClick={() => onNavigate("rules")}>
-                        Edit
+                        {t.mcp.edit}
                       </button>
                     ) : (
-                      "In app settings"
+                      t.overview.inAppSettings
                     )}
                   </dd>
                 </div>
@@ -242,10 +231,10 @@ export function OverviewPage({ agents, listing, secrets, onNavigate, onChange }:
               <code title={info.mcpConfigPath}>{info.mcpConfigPath}</code>
               <div className="agent-actions">
                 <button className="small" disabled={!info.hasConfig} onClick={() => open(false)}>
-                  Open config
+                  {t.overview.openConfig}
                 </button>
                 <button className="small" disabled={!info.hasConfig} onClick={() => open(true)}>
-                  Show in folder
+                  {t.skills.showInFolder}
                 </button>
               </div>
             </article>

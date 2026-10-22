@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { formatCost } from "../lib/usage";
 import type { Agent } from "../lib/types";
+import { formatDay, t } from "../lib/i18n";
 
 interface Props {
   /** Local dates, oldest first. */
@@ -20,8 +21,7 @@ function axisTop(max: number): number {
   return nice * 4;
 }
 
-const shortDate = (date: string) =>
-  new Date(`${date}T12:00:00`).toLocaleDateString(undefined, { month: "short", day: "numeric" });
+const shortDate = (date: string) => formatDay(new Date(`${date}T12:00:00`));
 
 /**
  * Bars of the cost per day, stacked by agent, over a value axis. Hovering a
@@ -60,7 +60,7 @@ export function CostChart({ dates, costs, agents, nameOf }: Props) {
         className="plot"
         tabIndex={0}
         role="group"
-        aria-label="Estimated cost per day. Use the arrow keys to read each day."
+        aria-label={t.chart.label}
         onKeyDown={onKeyDown}
         onFocus={() => setActive((current) => current ?? dates.length - 1)}
         onBlur={() => setActive(null)}
@@ -107,7 +107,7 @@ export function CostChart({ dates, costs, agents, nameOf }: Props) {
                   <i className={`swatch segment-${agent}`} /> {nameOf(agent)} {formatCost(detail!.get(agent)!)}
                 </span>
               ))}
-            {totals[active] === 0 && <span>No usage</span>}
+            {totals[active] === 0 && <span>{t.chart.noUsage}</span>}
           </div>
         )}
       </div>

@@ -2,11 +2,12 @@ import { openUrl } from "@tauri-apps/plugin-opener";
 import { useState, type ClipboardEvent, type FormEvent } from "react";
 import { Icon, Notice } from "./ui";
 import { Tooltip } from "./Tooltip";
-import { CATALOG, type CatalogServer } from "../lib/catalog";
+import { CATALOG, describeServer, type CatalogServer } from "../lib/catalog";
 import { splitCommand } from "../lib/command";
 import { parseServers, type ImportedServer } from "../lib/importServers";
 import { WITH_OPTIONS } from "../lib/servers";
 import type { Agent, AgentInfo, McpServer, ServerOptions, Transport } from "../lib/types";
+import { formatList, t } from "../lib/i18n";
 
 /** What the form submits: values are `null` for variables kept as they are. */
 export interface ServerDraft {
@@ -60,6 +61,7 @@ interface Props {
  * kept values are never shown.
  */
 export function ServerForm({ agents, editing, has = () => false, onSubmit, onCancel }: Props) {
+  const f = t.serverForm;
   const initial = editing?.server;
   // New servers go to agents on this computer, unless none was found.
   const offered = agents.some((info) => info.installed) ? agents.filter((info) => info.installed) : agents;
@@ -93,9 +95,9 @@ export function ServerForm({ agents, editing, has = () => false, onSubmit, onCan
   /** Why an agent cannot get this server, if it cannot. */
   const blocked = (agent: Agent) =>
     agent === "codex" && kind === "sse"
-      ? "Codex does not support SSE servers"
+      ? t.mcp.noSse
       : !initial && trimmedName && has(agent, trimmedName)
-        ? `Already has ${trimmedName}`
+        ? f.alreadyHas(trimmedName)
         : null;
   const chosen = initial ? [initial.agent] : targets.filter((agent) => !blocked(agent));
   const withOptions = chosen.filter((agent) => WITH_OPTIONS.includes(agent));
@@ -184,23 +186,23 @@ export function ServerForm({ agents, editing, has = () => false, onSubmit, onCan
       setError(message);
       return undefined;
     };
-    if (chosen.length === 0) return fail("Choose at least one agent.");
-    if (kind === "stdio" && !command.trim()) return fail("Give the command that starts the server.");
-    if (kind === "stdio" && args.some((arg) => arg === "")) return fail("Fill in or remove the empty argument.");
+    if (chosen.length === 0) return fail(f.chooseAgent);
+    if (kind === "stdio" && !command.trim()) return fail(f.giveCommand);
+    if (kind === "stdio" && args.some((arg) => arg === "")) return fail(f.emptyArgument);
     const rows = variables.filter((v) => v.key.trim() || v.value);
-    if (rows.some((v) => !v.key.trim())) return fail(`Give each ${isHeader ? "header" : "variable"} a name.`);
+    if (rows.some((v) => !v.key.trim())) return fail(isHeader ? f.nameEachHeader : f.nameEachVariable);
     const keys = rows.map((v) => v.key.trim());
     const repeated = keys.find((key, i) => keys.indexOf(key) !== i);
-    if (repeated) return fail(`${repeated} is set twice.`);
+    if (repeated) return fail(f.setTwice(repeated));
     const known = new Set(initial ? [...initial.envKeys, ...initial.headerKeys] : []);
     // An empty field keeps the value of a known variable; a new one needs a value.
     const values = Object.fromEntries(
       rows.map((v) => [v.key.trim(), v.value === null || (v.value === "" && known.has(v.key.trim())) ? null : v.value]),
     );
     const unset = Object.keys(values).filter((key) => values[key] === null && !known.has(key));
-    if (unset.length > 0) return fail(`Give ${unset.join(", ")} a value.`);
-    const seconds = Number(timeoutText);
-    if (timeoutText.trim() && !(seconds > 0)) return fail("The timeout is a number of seconds.");
+    if (unset.length > 0) return fail(f.giveValue(formatList(unset)));
+    const seconds = Number(timeoutText.replace(",", "."));
+    if (timeoutText.trim() && !(seconds > 0)) return fail(f.timeoutNumber);
     setError(null);
 
     const transport: Transport =
@@ -229,12 +231,12 @@ export function ServerForm({ agents, editing, has = () => false, onSubmit, onCan
 
   return (
     <form className={initial ? "card form" : "form"} onSubmit={submit}>
-      {initial && <h3>Edit {initial.name} in {nameOf(initial.agent)}</h3>}
+      {initial && <h3>{f.editTitle(initial.name, nameOf(initial.agent))}</h3>}
 
       {!initial && (
         <section className="drawer-section start-from">
           <header>
-            <strong>Start from a common server</strong>
+            <strong>{f.startFrom}</strong>
           </header>
           <div className="catalog">
             {CATALOG.map((server) => (
@@ -246,20 +248,20 @@ export function ServerForm({ agents, editing, has = () => false, onSubmit, onCan
                 onClick={() => pick(server)}
               >
                 <strong>{server.title}</strong>
-                <small>{server.summary}</small>
+                <small>{describeServer(server).summary}</small>
               </button>
             ))}
           </div>
           {picked && (
             <p className="hint">
-              {picked.note && `${picked.note} `}
+              {describeServer(picked).note && `${describeServer(picked).note} `}
               <button type="button" className="link" onClick={() => openUrl(picked.docs).catch(() => undefined)}>
-                Documentation
+                {f.docs}
               </button>
             </p>
           )}
           <details className="paste-json">
-            <summary>Or paste its JSON settings</summary>
+            <summary>{f.pasteJson}</summary>
             <textarea
               rows={5}
               spellCheck={false}
@@ -269,14 +271,14 @@ export function ServerForm({ agents, editing, has = () => false, onSubmit, onCan
             />
             <div className="form-actions">
               <button type="button" className="small" disabled={!pasted.trim()} onClick={importPasted}>
-                Fill in the form
+                {f.fillIn}
               </button>
-              <small className="hint">From a README, or the config of Claude Code, Cursor or Gemini CLI.</small>
+              <small className="hint">{f.pasteHint}</small>
             </div>
           </details>
           {imported.length > 1 && (
-            <div className="imported" role="group" aria-label="Servers in the pasted JSON">
-              <span className="hint">The JSON has {imported.length} servers:</span>
+            <div className="imported" role="group" aria-label={f.pastedServers}>
+              <span className="hint">{f.jsonHas(imported.length)}</span>
               {imported.map((server) => (
                 <button
                   key={server.name}
@@ -297,7 +299,7 @@ export function ServerForm({ agents, editing, has = () => false, onSubmit, onCan
 
       <div className="fields">
         <label>
-          Name
+          {t.skills.name}
           <input
             required
             disabled={!!initial}
@@ -308,18 +310,18 @@ export function ServerForm({ agents, editing, has = () => false, onSubmit, onCan
           />
         </label>
         <label>
-          Transport
+          {f.transport}
           <select value={kind} onChange={(e) => setKind(e.target.value as Transport["kind"])}>
-            <option value="stdio">Local command</option>
+            <option value="stdio">{f.local}</option>
             <option value="http">HTTP</option>
-            <option value="sse">SSE (legacy)</option>
+            <option value="sse">{f.sse}</option>
           </select>
         </label>
       </div>
 
       {!initial && (
         <fieldset className="also">
-          <legend>Add to</legend>
+          <legend>{f.addTo}</legend>
           {offered.map((info) => {
             const reason = blocked(info.agent);
             return (
@@ -338,7 +340,7 @@ export function ServerForm({ agents, editing, has = () => false, onSubmit, onCan
                 {reason ? (
                   <small className="check-note">{reason}</small>
                 ) : (
-                  !info.hasConfig && info.installed && <small className="check-note">creates its config</small>
+                  !info.hasConfig && info.installed && <small className="check-note">{f.createsConfig}</small>
                 )}
               </label>
             );
@@ -349,7 +351,7 @@ export function ServerForm({ agents, editing, has = () => false, onSubmit, onCan
       {kind === "stdio" ? (
         <>
           <label>
-            Command
+            {t.mcp.command}
             <input
               required
               value={command}
@@ -358,25 +360,25 @@ export function ServerForm({ agents, editing, has = () => false, onSubmit, onCan
               placeholder="npx"
               spellCheck={false}
             />
-            <small className="hint">Pasting a whole command line fills in the arguments too.</small>
+            <small className="hint">{f.pasteCommand}</small>
           </label>
           <fieldset className="rows">
-            <legend>Arguments</legend>
+            <legend>{f.arguments}</legend>
             {args.map((arg, i) => (
               <div key={i} className="row-field">
                 <input
                   autoFocus={grown && i === args.length - 1}
-                  aria-label={`Argument ${i + 1}`}
+                  aria-label={f.argument(i + 1)}
                   value={arg}
                   onChange={(e) => setArgs(args.map((a, j) => (j === i ? e.target.value : a)))}
-                  placeholder={i === 0 ? "-y" : "Argument"}
+                  placeholder={i === 0 ? "-y" : f.argumentPlaceholder}
                   spellCheck={false}
                 />
-                <Tooltip text={`Remove argument ${i + 1}`}>
+                <Tooltip text={f.removeArgument(i + 1)}>
                   <button
                     type="button"
                     className="icon-button"
-                    aria-label={`Remove argument ${i + 1}`}
+                    aria-label={f.removeArgument(i + 1)}
                     onClick={() => setArgs(args.filter((_, j) => j !== i))}
                   >
                     <Icon name="close" size={14} />
@@ -392,7 +394,7 @@ export function ServerForm({ agents, editing, has = () => false, onSubmit, onCan
                 setArgs([...args, ""]);
               }}
             >
-              <Icon name="plus" size={12} /> Add an argument
+              <Icon name="plus" size={12} /> {f.addArgument}
             </button>
           </fieldset>
         </>
@@ -411,12 +413,12 @@ export function ServerForm({ agents, editing, has = () => false, onSubmit, onCan
       )}
 
       <fieldset className="rows">
-        <legend>{isHeader ? "Headers" : "Environment variables"}</legend>
+        <legend>{isHeader ? t.mcp.headers : f.envVariables}</legend>
         {variables.map((v) => (
           <div key={v.id} className="row-field">
             <input
               autoFocus={grown && v === variables[variables.length - 1]}
-              aria-label="Name"
+              aria-label={t.skills.name}
               className="variable-key"
               value={v.key}
               disabled={v.value === null && !!initial}
@@ -425,19 +427,19 @@ export function ServerForm({ agents, editing, has = () => false, onSubmit, onCan
               spellCheck={false}
             />
             <input
-              aria-label={`Value of ${v.key || "this variable"}`}
+              aria-label={f.valueOf(v.key)}
               type={v.shown ? "text" : "password"}
               autoComplete="off"
               spellCheck={false}
               value={v.value ?? ""}
               onChange={(e) => setVariable(v.id, { value: e.target.value })}
-              placeholder={v.value === null ? "Unchanged, hidden" : (v.hint ?? "Value")}
+              placeholder={v.value === null ? f.unchanged : (v.hint ?? f.value)}
             />
-            <Tooltip text={v.shown ? "Hide the value" : "Show the value"}>
+            <Tooltip text={v.shown ? f.hideValue : f.showValue}>
               <button
                 type="button"
                 className="icon-button"
-                aria-label={v.shown ? "Hide the value" : "Show the value"}
+                aria-label={v.shown ? f.hideValue : f.showValue}
                 aria-pressed={v.shown}
                 disabled={v.value === null}
                 onClick={() => setVariable(v.id, { shown: !v.shown })}
@@ -445,11 +447,11 @@ export function ServerForm({ agents, editing, has = () => false, onSubmit, onCan
                 <Icon name={v.shown ? "eye-off" : "eye"} size={14} />
               </button>
             </Tooltip>
-            <Tooltip text={`Remove ${v.key || "this variable"}`}>
+            <Tooltip text={f.removeVariable(v.key)}>
               <button
                 type="button"
                 className="icon-button"
-                aria-label={`Remove ${v.key || "this variable"}`}
+                aria-label={f.removeVariable(v.key)}
                 onClick={() => setVariables(variables.filter((other) => other.id !== v.id))}
               >
                 <Icon name="close" size={14} />
@@ -465,43 +467,43 @@ export function ServerForm({ agents, editing, has = () => false, onSubmit, onCan
             setVariables([...variables, variable("", "")]);
           }}
         >
-          <Icon name="plus" size={12} /> Add {isHeader ? "a header" : "a variable"}
+          <Icon name="plus" size={12} /> {isHeader ? f.addHeader : f.addVariable}
         </button>
         {initial && variables.some((v) => v.value === null) && (
-          <small className="hint">Values are never shown. Type in a field to replace that value.</small>
+          <small className="hint">{f.neverShown}</small>
         )}
       </fieldset>
 
       {withOptions.length > 0 && (
         <details className="advanced" open={Boolean(cwd || timeoutText || includeTools || excludeTools || disabled)}>
-          <summary>Advanced settings</summary>
+          <summary>{f.advanced}</summary>
           {!initial && withOptions.length < chosen.length && (
-            <p className="hint">Only {withOptions.map(nameOf).join(" and ")} use these.</p>
+            <p className="hint">{f.onlyUse(formatList(withOptions.map(nameOf)))}</p>
           )}
           <div className="fields">
             {kind === "stdio" && (
               <label>
-                Working directory
-                <input value={cwd} onChange={(e) => setCwd(e.target.value)} placeholder="Default" />
+                {t.mcp.cwd}
+                <input value={cwd} onChange={(e) => setCwd(e.target.value)} placeholder={f.defaultValue} />
               </label>
             )}
             <label>
-              Tool timeout (seconds)
-              <input inputMode="decimal" value={timeoutText} onChange={(e) => setTimeoutText(e.target.value)} placeholder="Default" />
+              {f.timeout}
+              <input inputMode="decimal" value={timeoutText} onChange={(e) => setTimeoutText(e.target.value)} placeholder={f.defaultValue} />
             </label>
             <label>
-              Only these tools
-              <input value={includeTools} onChange={(e) => setIncludeTools(e.target.value)} placeholder="All, or tool_a, tool_b" />
+              {t.mcp.onlyTools}
+              <input value={includeTools} onChange={(e) => setIncludeTools(e.target.value)} placeholder={f.allTools} />
             </label>
             <label>
-              Never these tools
-              <input value={excludeTools} onChange={(e) => setExcludeTools(e.target.value)} placeholder="None" />
+              {t.mcp.neverTools}
+              <input value={excludeTools} onChange={(e) => setExcludeTools(e.target.value)} placeholder={t.common.none} />
             </label>
           </div>
           {chosen.includes("codex") && (
             <label className="check">
               <input type="checkbox" checked={disabled} onChange={(e) => setDisabled(e.target.checked)} />
-              Turned off: Codex keeps the server but does not start it
+              {f.turnedOff}
             </label>
           )}
         </details>
@@ -509,7 +511,7 @@ export function ServerForm({ agents, editing, has = () => false, onSubmit, onCan
 
       {editing && editing.others.length > 0 && (
         <fieldset className="also">
-          <legend>Also apply to</legend>
+          <legend>{f.alsoApply}</legend>
           {editing.others.map((other) => (
             <label key={other} className="check">
               <input
@@ -520,22 +522,22 @@ export function ServerForm({ agents, editing, has = () => false, onSubmit, onCan
               {nameOf(other)}
             </label>
           ))}
-          <small className="hint">Their settings for {initial?.name} are replaced with these, secrets included.</small>
+          <small className="hint">{f.replacedSettings(initial?.name ?? "")}</small>
         </fieldset>
       )}
 
       <div className="form-actions">
         <button type="submit" className="primary" disabled={saving}>
           {initial
-            ? "Save"
+            ? t.common.save
             : chosen.length > 1
-              ? `Add to ${chosen.length} agents`
+              ? f.addToAgents(chosen.length)
               : chosen.length === 1
-                ? `Add to ${nameOf(chosen[0])}`
-                : "Add server"}
+                ? t.mcp.addTo(nameOf(chosen[0]))
+                : t.mcp.add}
         </button>
         <button type="button" onClick={onCancel}>
-          Cancel
+          {t.common.cancel}
         </button>
       </div>
     </form>
