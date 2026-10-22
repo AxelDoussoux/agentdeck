@@ -1,13 +1,24 @@
 import { useEffect, useState } from "react";
+import type { UnsavedGuard } from "../App";
+import { ConfirmDialog } from "../components/ConfirmDialog";
 import { AgentMark, Icon, Notice, PageHeader } from "../components/ui";
 import { listRules, saveRules } from "../lib/api";
 import type { Agent, AgentInfo, Rules } from "../lib/types";
 
-export function RulesPage({ agents }: { agents: AgentInfo[] }) {
+const SAVE_SHORTCUT = /Mac|iPhone|iPad/.test(navigator.userAgent) ? "⌘S" : "Ctrl+S";
+
+interface Props {
+  agents: AgentInfo[];
+  /** Tells the app there are unsaved changes, so leaving the page asks first. */
+  setGuard: (guard: UnsavedGuard | null) => void;
+}
+
+export function RulesPage({ agents, setGuard }: Props) {
   const [rules, setRules] = useState<Rules[]>([]);
   const [selected, setSelected] = useState<Agent>("claude-code");
   const [draft, setDraft] = useState("");
   const [pendingCopy, setPendingCopy] = useState<Agent | null>(null);
+  const [pendingSelect, setPendingSelect] = useState<Agent | null>(null);
   const [message, setMessage] = useState<{ error: boolean; text: string } | null>(null);
 
   const saved = rules.find((r) => r.agent === selected)?.content ?? "";
@@ -29,27 +40,50 @@ export function RulesPage({ agents }: { agents: AgentInfo[] }) {
     load();
   }, []);
 
-  function select(agent: Agent) {
-    if (dirty) {
-      setMessage({ error: true, text: "Save or revert your changes first." });
+  function select(agent: Agent, force = false) {
+    if (agent === selected) return;
+    if (dirty && !force) {
+      setPendingSelect(agent);
       return;
     }
+    setPendingSelect(null);
     setSelected(agent);
     setDraft(rules.find((r) => r.agent === agent)?.content ?? "");
     setPendingCopy(null);
     setMessage(null);
   }
 
-  async function write(agent: Agent, content: string, done: string) {
+  async function write(agent: Agent, content: string, done: string): Promise<boolean> {
+    let ok = true;
     try {
       await saveRules(agent, content);
       setMessage({ error: false, text: done });
     } catch (err) {
       setMessage({ error: true, text: String(err) });
+      ok = false;
     }
     setPendingCopy(null);
-    await load(agent !== selected);
+    await load(agent !== selected || !ok);
+    return ok;
   }
+
+  const save = () => write(selected, draft, `Saved ${current?.name} rules.`);
+
+  useEffect(() => {
+    setGuard(dirty ? { what: `${current?.name} rules`, save } : null);
+  });
+  useEffect(() => () => setGuard(null), []);
+
+  useEffect(() => {
+    function onKey(event: KeyboardEvent) {
+      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "s") {
+        event.preventDefault();
+        if (dirty) save();
+      }
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  });
 
   return (
     <>
@@ -88,12 +122,8 @@ export function RulesPage({ agents }: { agents: AgentInfo[] }) {
       </div>
 
       <div className="toolbar">
-        <button
-          className="primary"
-          disabled={!dirty}
-          onClick={() => write(selected, draft, `Saved ${current?.name} rules.`)}
-        >
-          Save
+        <button className="primary" disabled={!dirty} onClick={save} title={`Save (${SAVE_SHORTCUT})`}>
+          Save <kbd>{SAVE_SHORTCUT}</kbd>
         </button>
         {dirty && <button onClick={() => setDraft(saved)}>Revert</button>}
 
@@ -132,6 +162,26 @@ export function RulesPage({ agents }: { agents: AgentInfo[] }) {
       </div>
 
       {message && <Notice tone={message.error ? "error" : "success"}>{message.text}</Notice>}
+
+      {pendingSelect && (
+        <ConfirmDialog
+          title="Unsaved changes"
+          onCancel={() => setPendingSelect(null)}
+          choices={[
+            { label: "Discard", tone: "danger", onSelect: () => select(pendingSelect, true) },
+            {
+              label: "Save",
+              tone: "primary",
+              onSelect: async () => {
+                if (await save()) select(pendingSelect, true);
+                else setPendingSelect(null);
+              },
+            },
+          ]}
+        >
+          Your changes to the {current?.name} rules are not saved.
+        </ConfirmDialog>
+      )}
     </>
   );
 }
