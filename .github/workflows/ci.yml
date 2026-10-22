@@ -4,8 +4,24 @@ on:
   push:
     branches: [main]
   pull_request:
+  workflow_dispatch:
 
 jobs:
+  frontend:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm lint
+      - run: pnpm test
+
   rust:
     strategy:
       fail-fast: false
@@ -54,3 +70,51 @@ jobs:
       - run: cargo fmt --all --check
       - run: cargo clippy --workspace --all-targets -- -D warnings
       - run: cargo test --workspace
+
+  # Packaging problems would otherwise show up only when a tag is pushed.
+  # Debug installers, without the updater signature, after each merge.
+  bundle:
+    if: github.event_name != 'pull_request'
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-22.04, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Cache Linux packages
+        if: runner.os == 'Linux'
+        uses: actions/cache@v4
+        with:
+          path: ~/apt-archives
+          key: apt-${{ matrix.os }}-webkit2gtk-4.1-v1
+      - name: Install Linux dependencies
+        if: runner.os == 'Linux'
+        timeout-minutes: 15
+        run: |
+          sudo rm -f /var/lib/man-db/auto-update
+          mkdir -p ~/apt-archives/partial
+          apt_options="-o Acquire::Retries=3 -o Acquire::http::Timeout=30 -o Dir::Cache::Archives=$HOME/apt-archives"
+          sudo apt-get update -o Acquire::Retries=3 -o Acquire::http::Timeout=30
+          sudo apt-get install -y $apt_options \
+            libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf
+          sudo rm -rf ~/apt-archives/partial ~/apt-archives/lock
+          sudo chown -R "$USER" ~/apt-archives
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: bundle
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm tauri build --debug
+      - uses: actions/upload-artifact@v4
+        with:
+          name: agentdeck-debug-${{ runner.os }}
+          path: target/debug/bundle
+          retention-days: 7

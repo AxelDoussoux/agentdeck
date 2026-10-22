@@ -55,11 +55,13 @@ build script fails because `src-tauri/binaries/agentdeck-<target>` is missing.
 
 ## Release
 
-Bump `version` in `Cargo.toml`, `package.json` and `src-tauri/tauri.conf.json`,
-then push a tag:
+Set the new version everywhere it is written (`Cargo.toml`, `Cargo.lock`,
+`package.json` and `src-tauri/tauri.conf.json`) in a pull request, then tag
+`main` once it is merged:
 
 ```sh
-git tag v0.1.0 && git push origin v0.1.0
+pnpm bump 0.2.0                              # in the pull request
+git tag v0.2.0 && git push origin v0.2.0     # on main, after the merge
 ```
 
 The `Release` workflow builds the installers (Windows `.msi`/`.exe`, macOS
@@ -74,12 +76,18 @@ installs can no longer be updated. The installers themselves are not
 code-signed yet, so Windows SmartScreen and macOS Gatekeeper warn on first
 launch.
 
+After each merge to `main`, CI also builds debug installers on every OS, so
+packaging problems show up before a release. They are kept for a week as
+artifacts of the run.
+
 ## Before you open a pull request
 
 CI runs these on Windows, macOS and Linux; run them locally first:
 
 ```sh
 pnpm build                      # type-checks and builds the frontend
+pnpm lint                       # ESLint
+pnpm test                       # Vitest, for the helpers in src/lib
 cargo fmt --all --check
 cargo clippy --workspace --all-targets -- -D warnings
 cargo test --workspace
@@ -92,5 +100,6 @@ Guidelines:
 - Secret values must never reach the frontend or the logs. The UI only ever
   sees key names.
 - Add a test for each config format change, with a temporary home folder
-  (see the existing tests in `mcp.rs`).
+  (see the existing tests in `mcp.rs`). Frontend helpers that compute
+  something get a `*.test.ts` file next to them.
 - Keep pull requests focused on one change.
