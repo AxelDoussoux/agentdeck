@@ -70,6 +70,23 @@ export interface ServerEdit {
   options: Partial<ServerOptions>;
 }
 
+/** What starting a server showed. Never holds a secret value. */
+export interface ProbeReport {
+  ok: boolean;
+  serverName: string | null;
+  serverVersion: string | null;
+  protocolVersion: string | null;
+  tools: { name: string; description: string | null }[];
+  /** The server has no tools, only prompts or resources. */
+  noTools: boolean;
+  error: string | null;
+  /** The server asks to sign in, which each agent does on its own. */
+  needsSignIn: boolean;
+  /** The end of what a local server wrote to stderr. */
+  log: string;
+  elapsedMs: number;
+}
+
 export interface Rules {
   agent: Agent;
   content: string | null;
