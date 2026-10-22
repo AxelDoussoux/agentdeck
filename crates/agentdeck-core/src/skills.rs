@@ -36,13 +36,13 @@ impl Location {
 
     pub fn path(self, home: &Path) -> PathBuf {
         let dir = match self {
-            Location::ClaudeCode => ".claude",
-            Location::Shared => ".agents",
-            Location::Codex => ".codex",
-            Location::Gemini => ".gemini",
-            Location::Cursor => ".cursor",
+            Location::ClaudeCode => Agent::ClaudeCode.folder(home),
+            Location::Shared => home.join(".agents"),
+            Location::Codex => Agent::Codex.folder(home),
+            Location::Gemini => Agent::Gemini.folder(home),
+            Location::Cursor => Agent::Cursor.folder(home),
         };
-        home.join(dir).join("skills")
+        dir.join("skills")
     }
 
     /// Agents that load the skills of this folder.

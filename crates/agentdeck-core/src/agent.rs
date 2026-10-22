@@ -47,35 +47,62 @@ impl Agent {
         }
     }
 
-    /// User-level file holding this agent's MCP servers, relative to `home`.
+    /// The variable that moves the agent's folder elsewhere, if any.
+    pub fn folder_variable(self) -> Option<&'static str> {
+        match self {
+            Agent::ClaudeCode => Some("CLAUDE_CONFIG_DIR"),
+            Agent::Codex => Some("CODEX_HOME"),
+            Agent::Cursor | Agent::Gemini => None,
+        }
+    }
+
+    /// The folder set by [`Agent::folder_variable`], when it is set.
+    fn moved_folder(self, home: &Path) -> Option<PathBuf> {
+        if cfg!(test) {
+            return None;
+        }
+        let value = std::env::var_os(self.folder_variable()?)?;
+        folder_from(&value, home)
+    }
+
+    /// The agent's own folder: `~/.claude`, `~/.codex`, `~/.cursor` or
+    /// `~/.gemini`, unless `CLAUDE_CONFIG_DIR` or `CODEX_HOME` moves it.
+    pub fn folder(self, home: &Path) -> PathBuf {
+        self.moved_folder(home).unwrap_or_else(|| {
+            home.join(match self {
+                Agent::ClaudeCode => ".claude",
+                Agent::Codex => ".codex",
+                Agent::Cursor => ".cursor",
+                Agent::Gemini => ".gemini",
+            })
+        })
+    }
+
+    /// User-level file holding this agent's MCP servers.
     pub fn mcp_config_path(self, home: &Path) -> PathBuf {
         match self {
-            Agent::ClaudeCode => home.join(".claude.json"),
-            Agent::Codex => home.join(".codex").join("config.toml"),
-            Agent::Cursor => home.join(".cursor").join("mcp.json"),
-            Agent::Gemini => home.join(".gemini").join("settings.json"),
+            // `~/.claude.json` sits next to `~/.claude`, but inside the
+            // folder `CLAUDE_CONFIG_DIR` names.
+            Agent::ClaudeCode => self
+                .moved_folder(home)
+                .unwrap_or_else(|| home.to_path_buf())
+                .join(".claude.json"),
+            Agent::Codex => self.folder(home).join("config.toml"),
+            Agent::Cursor => self.folder(home).join("mcp.json"),
+            Agent::Gemini => self.folder(home).join("settings.json"),
         }
     }
 
-    /// User-level instructions file loaded into every session, relative to
-    /// `home`. Cursor stores its user rules in its settings database instead.
+    /// User-level instructions file loaded into every session. Cursor stores
+    /// its user rules in its settings database instead.
     pub fn rules_path(self, home: &Path) -> Option<PathBuf> {
-        match self {
-            Agent::ClaudeCode => Some(home.join(".claude").join("CLAUDE.md")),
-            Agent::Codex => Some(home.join(".codex").join("AGENTS.md")),
-            Agent::Cursor => None,
-            Agent::Gemini => Some(home.join(".gemini").join("GEMINI.md")),
-        }
-    }
-
-    /// The folder the agent creates in `home` on first run.
-    fn home_folder(self, home: &Path) -> PathBuf {
-        match self {
-            Agent::ClaudeCode => home.join(".claude"),
-            Agent::Codex => home.join(".codex"),
-            Agent::Cursor => home.join(".cursor"),
-            Agent::Gemini => home.join(".gemini"),
-        }
+        let file = match self {
+            Agent::ClaudeCode => "CLAUDE.md",
+            Agent::Codex => "AGENTS.md",
+            Agent::Cursor => return None,
+            Agent::Gemini => "GEMINI.md",
+        };
+        Some(self.folder(home).join(file))
     }
 
     /// Commands that start the agent.
@@ -94,7 +121,7 @@ impl Agent {
         match self {
             Agent::ClaudeCode => vec![
                 home.join(".local/bin/claude"),
-                home.join(".claude/local/claude"),
+                self.folder(home).join("local/claude"),
             ],
             Agent::Cursor => vec![
                 PathBuf::from("/Applications/Cursor.app"),
@@ -113,7 +140,7 @@ impl Agent {
             agent: self,
             name: self.display_name(),
             installed: has_config
-                || self.home_folder(home).is_dir()
+                || self.folder(home).is_dir()
                 || self.install_paths(home).iter().any(|path| path.exists())
                 || self.commands().iter().any(|command| on_path(command)),
             has_config,
@@ -121,6 +148,19 @@ impl Agent {
             rules_path: self.rules_path(home),
         }
     }
+}
+
+/// A folder variable's value: `~` stands for `home`, and a relative path is
+/// taken from `home`. Empty means unset.
+fn folder_from(value: &std::ffi::OsStr, home: &Path) -> Option<PathBuf> {
+    let value = Path::new(value);
+    if value.as_os_str().is_empty() {
+        return None;
+    }
+    Some(match value.strip_prefix("~") {
+        Ok(rest) => home.join(rest),
+        Err(_) => home.join(value),
+    })
 }
 
 /// Whether `command` names an executable in one of the PATH folders.
@@ -159,5 +199,15 @@ mod tests {
         let codex = Agent::Codex.info(home);
         assert!(codex.installed && codex.has_config);
         assert!(!Agent::Cursor.info(home).has_config);
+    }
+
+    #[test]
+    fn folder_variables_resolve_from_home() {
+        let home = Path::new("/home/me");
+        let folder = |value: &str| folder_from(std::ffi::OsStr::new(value), home);
+        assert_eq!(folder(""), None);
+        assert_eq!(folder("~/work/.codex"), Some(home.join("work/.codex")));
+        assert_eq!(folder("/srv/claude"), Some(PathBuf::from("/srv/claude")));
+        assert_eq!(folder("conf/claude"), Some(home.join("conf/claude")));
     }
 }

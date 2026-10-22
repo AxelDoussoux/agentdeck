@@ -95,6 +95,13 @@ Skills are read from `~/.claude/skills` (Claude Code), `~/.agents/skills`
 and `~/.cursor/skills`. Copying a skill for Codex writes it to the shared
 folder. Removing a skill moves its folder to `~/.agentdeck/trash`.
 
+When `CLAUDE_CONFIG_DIR` or `CODEX_HOME` is set, AgentDeck uses that folder in
+place of `~/.claude` or `~/.codex`, like the agents do: its config, rules,
+skills and session logs. With `CLAUDE_CONFIG_DIR`, `.claude.json` is read from
+inside that folder. On macOS, an app opened from the Finder does not get the
+variables of your shell profile: set them with `launchctl setenv` too, or
+start AgentDeck from a terminal.
+
 Protecting a local MCP server stores the environment variables that look like
 credentials (by name, such as `GITHUB_TOKEN` or `apiKey`, or by value, such as
 `ghp_…` or a URL with a password) in the system keychain (Credential Manager,
