@@ -1,12 +1,13 @@
 import { useState } from "react";
 import { AgentMark, Empty, Icon, Notice, PageHeader } from "../components/ui";
 import { addMcpServer, copyMcpServer, removeMcpServer } from "../lib/api";
+import { joinCommand, splitCommand } from "../lib/command";
 import type { Agent, AgentInfo, McpListing, McpServer, ServerSpec, Transport } from "../lib/types";
 
 function describe(transport: Transport): string {
   switch (transport.kind) {
     case "stdio":
-      return [transport.command, ...transport.args].join(" ");
+      return joinCommand([transport.command, ...transport.args]);
     case "http":
       return transport.url;
     case "sse":
@@ -187,7 +188,7 @@ function AddServerForm({ agents, onAdd, onCancel }: FormProps) {
 
   async function submit(event: React.FormEvent) {
     event.preventDefault();
-    const [command = "", ...args] = target.trim().split(/\s+/);
+    const [command = "", ...args] = splitCommand(target);
     const transport: Transport =
       kind === "stdio" ? { kind, command, args } : { kind, url: target.trim() };
     const pairs = parsePairs(secrets);
@@ -232,6 +233,9 @@ function AddServerForm({ agents, onAdd, onCancel }: FormProps) {
           onChange={(e) => setTarget(e.target.value)}
           placeholder={kind === "stdio" ? "npx -y @modelcontextprotocol/server-github" : "https://example.com/mcp"}
         />
+        {kind === "stdio" && (
+          <small className="hint">Put quotes around paths or arguments that contain spaces.</small>
+        )}
       </label>
       <label>
         {kind === "stdio" ? "Environment variables" : "Headers"}
