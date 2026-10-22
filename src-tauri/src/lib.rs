@@ -272,6 +272,8 @@ struct SecretListing {
     errors: Vec<String>,
     /// The `agentdeck` CLI that protected servers start through, if installed.
     launcher: Option<String>,
+    /// Protected servers whose launcher is missing, so they no longer start.
+    stranded: Vec<secrets::Stranded>,
 }
 
 /// The `agentdeck` CLI that protected servers start through, normally the one
@@ -303,6 +305,7 @@ fn list_secrets() -> Result<SecretListing, String> {
         secrets,
         errors,
         launcher: launcher().map(|path| path.display().to_string()),
+        stranded: secrets::stranded(&home()?),
     })
 }
 
@@ -319,6 +322,16 @@ fn protect_server(undo: State<UndoStore>, agent: Agent, server: String) -> Resul
         server,
         protect: false,
     }))
+}
+
+/// Points protected servers whose launcher is missing at the current one.
+/// Returns how many were repaired.
+#[tauri::command]
+fn repair_launchers() -> Result<usize, String> {
+    let launcher = launcher().ok_or(LAUNCHER_MISSING)?;
+    secrets::repair(&home()?, &launcher)
+        .map(|repaired| repaired.len())
+        .map_err(|err| err.to_string())
 }
 
 #[tauri::command]
@@ -373,6 +386,7 @@ pub fn run() {
             list_secrets,
             protect_server,
             unprotect_server,
+            repair_launchers,
             usage_report,
             undo_change
         ])

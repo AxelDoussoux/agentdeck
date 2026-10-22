@@ -1,4 +1,5 @@
 import type { PageId } from "../App";
+import { LauncherRepair } from "../components/LauncherRepair";
 import { AgentMark, Icon, PageHeader } from "../components/ui";
 import type { AgentInfo, McpListing, SecretListing } from "../lib/types";
 
@@ -7,9 +8,10 @@ interface Props {
   listing: McpListing;
   secrets: SecretListing | null;
   onNavigate: (page: PageId) => void;
+  onChange: () => void;
 }
 
-export function OverviewPage({ agents, listing, secrets, onNavigate }: Props) {
+export function OverviewPage({ agents, listing, secrets, onNavigate, onChange }: Props) {
   const detected = agents.filter((info) => info.installed).length;
   const names = new Set(listing.servers.map((s) => s.name));
   // Servers some detected agent is missing: one click away from being synced.
@@ -27,6 +29,8 @@ export function OverviewPage({ agents, listing, secrets, onNavigate }: Props) {
         title="Overview"
         description="Every AI coding agent on this computer, and what they are set up with."
       />
+
+      {secrets && <LauncherRepair agents={agents} listing={secrets} onRepaired={onChange} />}
 
       <div className="stats">
         <div className="stat">

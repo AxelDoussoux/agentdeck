@@ -1459,3 +1459,30 @@ button.cell-differs:hover {
 .form .also .hint {
   flex-basis: 100%;
 }
+
+.notice > div {
+  flex: 1;
+  min-width: 0;
+}
+
+.repair {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.repair > span {
+  flex: 1;
+  color: var(--text);
+}
+
+.repair strong {
+  display: block;
+  color: var(--danger);
+}
+
+.repair small {
+  display: block;
+  margin-top: 4px;
+  color: var(--muted);
+}

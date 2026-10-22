@@ -132,8 +132,16 @@ export interface SecretRef {
   protectable: boolean;
 }
 
+/** A protected server whose `agentdeck` launcher is missing, so it no longer starts. */
+export interface Stranded {
+  agent: Agent;
+  server: string;
+  launcher: string;
+}
+
 export interface SecretListing {
   secrets: SecretRef[];
   errors: string[];
   launcher: string | null;
+  stranded: Stranded[];
 }

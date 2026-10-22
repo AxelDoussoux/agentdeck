@@ -190,7 +190,7 @@ function App() {
           <UpdateBanner />
           {error && <p className="notice notice-error">{error}</p>}
           {page === "overview" && (
-            <OverviewPage agents={agents} listing={listing} secrets={secrets} onNavigate={navigate} />
+            <OverviewPage agents={agents} listing={listing} secrets={secrets} onNavigate={navigate} onChange={refresh} />
           )}
           {page === "mcp" && <McpPage agents={agents} listing={listing} onChange={refresh} />}
           {page === "rules" && (
