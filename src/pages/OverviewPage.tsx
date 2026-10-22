@@ -3,7 +3,7 @@ import type { PageId } from "../App";
 import { useToast } from "../components/Toasts";
 import { AgentMark, Icon, PageHeader, type IconName } from "../components/ui";
 import { listRules, openConfig, repairLaunchers, usageReport } from "../lib/api";
-import { formatDay, formatList, t } from "../lib/i18n";
+import { errorText, formatDay, formatList, t } from "../lib/i18n";
 import { drifting } from "../lib/servers";
 import type { AgentInfo, McpListing, Rules, SecretListing, UsageReport } from "../lib/types";
 import { formatCost, recentCost } from "../lib/usage";
@@ -69,7 +69,7 @@ export function OverviewPage({ agents, listing, secrets, onNavigate, onChange }:
       const repaired = await repairLaunchers();
       notify({ tone: "success", text: t.launcher.repaired(repaired) });
     } catch (err) {
-      notify({ tone: "error", text: String(err) });
+      notify({ tone: "error", text: errorText(err) });
     }
     setRepairing(false);
     onChange();
@@ -198,7 +198,7 @@ export function OverviewPage({ agents, listing, secrets, onNavigate, onChange }:
         {agents.map((info) => {
           const servers = listing.servers.filter((s) => s.agent === info.agent).length;
           const open = (reveal: boolean) =>
-            openConfig(info.agent, reveal).catch((err) => notify({ tone: "error", text: String(err) }));
+            openConfig(info.agent, reveal).catch((err) => notify({ tone: "error", text: errorText(err) }));
           return (
             <article key={info.agent} className={`agent-card ${info.installed ? "" : "agent-missing"}`}>
               <header>

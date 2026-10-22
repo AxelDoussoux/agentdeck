@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { relaunch } from "@tauri-apps/plugin-process";
 import { check, type Update } from "@tauri-apps/plugin-updater";
 import { Icon } from "./components/ui";
-import { t } from "./lib/i18n";
+import { errorText, t } from "./lib/i18n";
 
 /** Offers to install a new release, checked once at startup. */
 export function UpdateBanner() {
@@ -24,7 +24,7 @@ export function UpdateBanner() {
       setStatus(t.update.restarting);
       await relaunch();
     } catch (err) {
-      setStatus(t.update.failed(String(err)));
+      setStatus(t.update.failed(errorText(err)));
     }
   }
 

@@ -1,4 +1,6 @@
 import type { ReactNode } from "react";
+import { SHARED_END, SHARED_START } from "../lib/rules";
+import type { ErrorCode, ErrorInfo } from "../lib/types";
 import type { Messages } from "./en";
 
 /** `1 skill`, `2 skills`: in French, 0 and 1 take the singular. */
@@ -22,6 +24,7 @@ export const fr: Messages = {
     unsaved: "Modifications non enregistrées",
     notSaved: (what: string) => `Vos modifications des ${what} ne sont pas enregistrées.`,
     notFound: (agent: string) => `${agent} est introuvable sur cet ordinateur`,
+    about: (what: string, text: string) => `${what} : ${text}`,
   },
   toast: {
     region: "Notifications",
@@ -655,6 +658,35 @@ export const fr: Messages = {
     nowTreated: (name: string, secret: boolean) =>
       `${name} est maintenant traité comme ${secret ? "un secret" : "un réglage"} sur tous les serveurs.`,
   },
+  errors: {
+    noHomeDir: () => "Impossible de trouver le dossier personnel",
+    io: (e) => `Impossible d’accéder à ${e.path} : ${e.detail}`,
+    json: (e) => `JSON invalide dans ${e.path} : ${e.detail}`,
+    toml: (e) => `TOML invalide dans ${e.path} : ${e.detail}`,
+    conflict: (e) =>
+      `${e.path} n’a cessé de changer pendant qu’AgentDeck l’écrivait. Fermez l’agent qui l’utilise et réessayez`,
+    invalidServer: (e) => `Serveur MCP « ${e.name} » invalide dans ${e.path} : ${e.detail}`,
+    missingValue: (e) => `${e.name} n’a pas de valeur : saisissez-en une, ou retirez-la`,
+    invalid: (e) => `Structure inattendue dans ${e.path} : ${e.detail}`,
+    notFound: (e) => `${e.agent} n’a pas de serveur MCP nommé « ${e.name} »`,
+    alreadyExists: (e) => `${e.agent} a déjà un serveur MCP nommé « ${e.name} »`,
+    noRulesFile: (e) => `${e.agent} garde ses règles globales dans ses propres réglages, pas dans un fichier`,
+    keychain: (e) => `Trousseau du système : ${e.detail}`,
+    noSharedRules: (e) =>
+      `Les règles de ${e.agent} n’ont pas de base commune : placez-la entre ${SHARED_START} et ${SHARED_END}`,
+    invalidSkillName: (e) => `« ${e.name} » n’est pas un nom de skill valide`,
+    newSkillName: (e) =>
+      `« ${e.name} » ne peut pas nommer un nouveau skill : utilisez des lettres minuscules, des chiffres et des tirets simples, 64 caractères au plus`,
+    skillNotFound: (e) => `Aucun skill dans ${e.path}`,
+    skillExists: (e) => `Un skill existe déjà dans ${e.path}`,
+    unsupported: (e) =>
+      e.detail === "SSE MCP servers" ? `${e.agent} ne prend pas en charge les serveurs MCP SSE` : e.message,
+    undoExpired: () => "Cette modification ne peut plus être annulée.",
+    rulesChanged: (e) => `Les règles de ${e.agent} ont changé depuis : elles sont restées telles quelles.`,
+    launcherMissing: () =>
+      "La commande agentdeck par laquelle démarrent les serveurs protégés est introuvable. Réinstallez AgentDeck.",
+    notCreated: (e) => `${e.path} n’existe pas encore.`,
+  } satisfies Record<ErrorCode, (error: ErrorInfo) => string>,
   history: {
     description:
       "D’après les journaux de session de Claude Code et Codex sur cet ordinateur. Les coûts sont estimés aux prix publics de l’API : un abonnement Claude ou ChatGPT est facturé autrement. Cursor et Gemini CLI ne gardent pas de journaux d’utilisation en local.",

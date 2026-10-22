@@ -15,5 +15,5 @@ pub mod skills;
 pub mod usage;
 
 pub use agent::{Agent, AgentInfo};
-pub use error::{Error, Result};
+pub use error::{Error, ErrorInfo, Result};
 pub use mcp::{McpServer, ServerSpec, Transport};

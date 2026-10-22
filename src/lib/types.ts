@@ -40,7 +40,47 @@ export interface ServerOptions {
 
 export interface McpListing {
   servers: McpServer[];
-  errors: string[];
+  /** Configs that could not be read, each with its agent. */
+  errors: ErrorInfo[];
+}
+
+/** What went wrong in the core, as `errorText` words it. */
+export type ErrorCode =
+  | "noHomeDir"
+  | "io"
+  | "json"
+  | "toml"
+  | "conflict"
+  | "invalidServer"
+  | "missingValue"
+  | "invalid"
+  | "notFound"
+  | "alreadyExists"
+  | "noRulesFile"
+  | "keychain"
+  | "noSharedRules"
+  | "invalidSkillName"
+  | "newSkillName"
+  | "skillNotFound"
+  | "skillExists"
+  | "unsupported"
+  | "undoExpired"
+  | "rulesChanged"
+  | "launcherMissing"
+  | "notCreated";
+
+/**
+ * An error from a command: a code with the values it names, and the English
+ * message for codes the UI does not know, such as "other".
+ */
+export interface ErrorInfo {
+  code: ErrorCode | "other";
+  agent?: string;
+  name?: string;
+  path?: string;
+  /** What the system or a parser said, in English. */
+  detail?: string;
+  message: string;
 }
 
 /** An earlier version of a server, from the backups of its agent's config. */

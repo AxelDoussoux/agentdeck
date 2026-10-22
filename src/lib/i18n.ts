@@ -1,5 +1,6 @@
 import { en, type Messages } from "../locales/en";
 import { fr } from "../locales/fr";
+import type { ErrorCode, ErrorInfo } from "./types";
 
 export type Language = "en" | "fr";
 /** What the user picked in Settings: a language, or the system's. */
@@ -66,3 +67,13 @@ export const formatDay = (moment: Date, options: Intl.DateTimeFormatOptions = { 
 /** "A, B and C", or "A, B et C" in French; British English has no comma before "and". */
 export const formatList = (items: string[]) =>
   new Intl.ListFormat(locale === "en" ? "en-GB" : locale, { type: "conjunction" }).format(items);
+
+const isErrorInfo = (err: unknown): err is ErrorInfo =>
+  typeof err === "object" && err !== null && "code" in err && "message" in err;
+
+/** What a failed command or action says, in the current language when its code has a text. */
+export function errorText(err: unknown): string {
+  if (err instanceof Error) return err.message;
+  if (isErrorInfo(err)) return t.errors[err.code as ErrorCode]?.(err) ?? err.message;
+  return String(err);
+}

@@ -4,7 +4,7 @@ import { Drawer } from "../components/Drawer";
 import { useToast } from "../components/Toasts";
 import { AgentMark, Empty, Notice, PageHeader } from "../components/ui";
 import { exportSessionsCsv, usageReport } from "../lib/api";
-import { formatDateTime, formatDay, formatNumber, t } from "../lib/i18n";
+import { errorText, formatDateTime, formatDay, formatNumber, t } from "../lib/i18n";
 import { dateOf, datesBetween, formatCost, lastDays, localDate, localDays } from "../lib/usage";
 import type { Agent, AgentInfo, ReadProgress, Session, Tokens, UsageReport } from "../lib/types";
 
@@ -107,7 +107,7 @@ export function HistoryPage({ agents }: { agents: AgentInfo[] }) {
       setReport(await usageReport(setProgress));
       setError(null);
     } catch (err) {
-      setError(String(err));
+      setError(errorText(err));
     }
   }
 
@@ -213,7 +213,7 @@ export function HistoryPage({ agents }: { agents: AgentInfo[] }) {
       const path = await exportSessionsCsv(exported, `agentdeck-sessions-${since}-to-${until}.csv`);
       if (path) notify({ tone: "success", text: t.history.exported(exported.length, basename(path)) });
     } catch (err) {
-      notify({ tone: "error", text: String(err) });
+      notify({ tone: "error", text: errorText(err) });
     } finally {
       setExporting(false);
     }
@@ -557,7 +557,7 @@ function SessionDrawer({ session, agentName, onClose, onProject }: SessionProps)
       await navigator.clipboard.writeText(resumeCommand(session));
       notify({ tone: "success", text: t.history.copiedCommand });
     } catch (err) {
-      notify({ tone: "error", text: t.secrets.copyFailed(String(err)) });
+      notify({ tone: "error", text: t.secrets.copyFailed(errorText(err)) });
     }
   }
 

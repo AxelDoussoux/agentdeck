@@ -1,4 +1,5 @@
 import type { ReactNode } from "react";
+import type { ErrorCode, ErrorInfo } from "../lib/types";
 
 /** `1 skill`, `2 skills`: the count and the noun that agrees with it. */
 const count = (n: number, one: string, many: string) => `${n.toLocaleString("en")} ${n === 1 ? one : many}`;
@@ -24,6 +25,8 @@ export const en = {
     unsaved: "Unsaved changes",
     notSaved: (what: string) => `Your changes to the ${what} are not saved.`,
     notFound: (agent: string) => `${agent} was not found on this computer`,
+    /** A text about something, such as an agent's error: "Cursor: …". */
+    about: (what: string, text: string) => `${what}: ${text}`,
   },
   toast: {
     region: "Notifications",
@@ -635,6 +638,8 @@ export const en = {
     nowTreated: (name: string, secret: boolean) =>
       `${name} is now treated as a ${secret ? "secret" : "setting"} on every server.`,
   },
+  /** Errors of the core by code; English uses the core's own messages. */
+  errors: {} as Partial<Record<ErrorCode, (error: ErrorInfo) => string>>,
   history: {
     description:
       "Read from Claude Code and Codex session logs on this computer. Costs are estimated at API list prices: a Claude or ChatGPT subscription is billed differently. Cursor and Gemini CLI keep no usage logs locally.",

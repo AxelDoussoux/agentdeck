@@ -22,7 +22,7 @@ import { byName, changes, describe, differences, WITH_OPTIONS } from "../lib/ser
 import { moveInGrid } from "../lib/grid";
 import { matches } from "../lib/search";
 import type { Agent, AgentInfo, McpListing, McpServer, ServerSpec, ServerVersion } from "../lib/types";
-import { formatDateTime, formatList, formatNumber, t } from "../lib/i18n";
+import { errorText, formatDateTime, formatList, formatNumber, t } from "../lib/i18n";
 
 interface Props {
   agents: AgentInfo[];
@@ -58,7 +58,7 @@ export function McpPage({ agents, listing, onChange, focus }: Props) {
     try {
       state = { running: false, report: await testMcpServer(agent, name) };
     } catch (err) {
-      state = { running: false, error: String(err) };
+      state = { running: false, error: errorText(err) };
     }
     setTests((current) => ({ ...current, [key]: state }));
   }
@@ -119,7 +119,7 @@ export function McpPage({ agents, listing, onChange, focus }: Props) {
         },
       });
     } catch (err) {
-      notify({ tone: "error", text: String(err) });
+      notify({ tone: "error", text: errorText(err) });
       ok = false;
     }
     await onChange();
@@ -145,7 +145,7 @@ export function McpPage({ agents, listing, onChange, focus }: Props) {
         result.lost?.forEach((setting) => lost.add(setting));
       }
     } catch (err) {
-      notify({ tone: "error", text: String(err) });
+      notify({ tone: "error", text: errorText(err) });
       ok = false;
     }
     if (ids.length > 0) {
@@ -239,8 +239,10 @@ export function McpPage({ agents, listing, onChange, focus }: Props) {
           </>
         }
       />
-      {listing.errors.map((message) => (
-        <Notice key={message} tone="error">{message}</Notice>
+      {listing.errors.map((error) => (
+        <Notice key={error.message} tone="error">
+          {t.common.about(error.agent ?? "", errorText(error))}
+        </Notice>
       ))}
 
       {adding && (
@@ -460,7 +462,7 @@ export function McpPage({ agents, listing, onChange, focus }: Props) {
                       <button
                         className="small"
                         onClick={() =>
-                          openConfig(server.agent).catch((err) => notify({ tone: "error", text: String(err) }))
+                          openConfig(server.agent).catch((err) => notify({ tone: "error", text: errorText(err) }))
                         }
                       >
                         {t.mcp.openFile}

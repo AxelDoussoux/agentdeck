@@ -12,7 +12,7 @@ import { SHARED_END, SHARED_START, sharedPart, startShared, withShared } from ".
 import { shortcut, withModifier } from "../lib/keys";
 import { useFilesChanged } from "../lib/watch";
 import type { Agent, AgentInfo, Rules } from "../lib/types";
-import { t } from "../lib/i18n";
+import { errorText, t } from "../lib/i18n";
 
 // CodeMirror is most of the app's code, so it loads with the Rules page.
 const MarkdownEditor = lazy(() => import("../components/MarkdownEditor").then((m) => ({ default: m.MarkdownEditor })));
@@ -78,7 +78,7 @@ export function RulesPage({ agents, setGuard, focus }: Props) {
       setOnDisk(null);
       setLoadError(null);
     } catch (err) {
-      setLoadError(String(err));
+      setLoadError(errorText(err));
     }
   }
 
@@ -132,7 +132,7 @@ export function RulesPage({ agents, setGuard, focus }: Props) {
       const id = await saveRules(agent, content);
       notify({ tone: "success", text: done, undo: () => undo(id, agent, content) });
     } catch (err) {
-      notify({ tone: "error", text: String(err) });
+      notify({ tone: "error", text: errorText(err) });
       ok = false;
     }
     setPendingCopy(null);
