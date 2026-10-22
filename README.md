@@ -115,6 +115,12 @@ Environment and header values of MCP servers are never displayed, only
 their names. When copying a server between agents, secrets are copied by the
 Rust core and never reach the UI.
 
+A copy also carries the working directory, tool timeout and allowed tools
+between Codex and Gemini CLI, the only agents that have them. Settings the
+target agent cannot take are listed after the copy. Replacing an existing
+server keeps the settings of its entry that AgentDeck does not manage, such as
+Codex's `startup_timeout_sec`.
+
 Before changing a config file, AgentDeck saves the previous version next to
 it as `<file>.agentdeck.bak`, keeps the last 20 versions in
 `~/.agentdeck/backups/`, and writes the new one atomically with the same

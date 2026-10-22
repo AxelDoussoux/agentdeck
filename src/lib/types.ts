@@ -24,6 +24,16 @@ export interface McpServer {
   /** A hash of each value, by name: equal values have equal hashes. */
   envHashes: Record<string, string>;
   headerHashes: Record<string, string>;
+  options: ServerOptions;
+}
+
+/** Settings only Codex and Gemini CLI have, except `disabled`: Codex only. */
+export interface ServerOptions {
+  cwd: string | null;
+  timeoutMs: number | null;
+  disabled: boolean;
+  includeTools: string[] | null;
+  excludeTools: string[] | null;
 }
 
 export interface McpListing {
@@ -35,6 +45,7 @@ export interface ServerSpec {
   transport: Transport;
   env: Record<string, string>;
   headers: Record<string, string>;
+  options?: Partial<ServerOptions>;
 }
 
 export interface Rules {

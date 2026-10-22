@@ -21,7 +21,7 @@ enum UndoAction {
     Mcp {
         agent: Agent,
         name: String,
-        previous: Option<ServerSpec>,
+        previous: Option<Box<ServerSpec>>,
     },
     /// Put back the previous rules, unless they changed again since.
     Rules {
@@ -61,21 +61,25 @@ impl UndoStore {
     }
 }
 
-/// Runs an MCP edit of `name` in `agent` and returns the id that undoes it.
-fn undoable_mcp(
+/// Runs an MCP edit of `name` in `agent` and returns the id that undoes it,
+/// with what the edit returned.
+fn undoable_mcp<T>(
     undo: &UndoStore,
     agent: Agent,
     name: &str,
-    edit: impl FnOnce(&std::path::Path) -> agentdeck_core::Result<()>,
-) -> Result<u64, String> {
+    edit: impl FnOnce(&std::path::Path) -> agentdeck_core::Result<T>,
+) -> Result<(u64, T), String> {
     let home = home()?;
-    let previous = mcp::get(agent, &home, name).map_err(|err| err.to_string())?;
-    edit(&home).map_err(|err| err.to_string())?;
-    Ok(undo.push(UndoAction::Mcp {
+    let previous = mcp::get(agent, &home, name)
+        .map_err(|err| err.to_string())?
+        .map(Box::new);
+    let output = edit(&home).map_err(|err| err.to_string())?;
+    let id = undo.push(UndoAction::Mcp {
         agent,
         name: name.to_owned(),
         previous,
-    }))
+    });
+    Ok((id, output))
 }
 
 #[tauri::command]
@@ -165,11 +169,12 @@ fn add_mcp_server(
     undoable_mcp(&undo, agent, &name, |home| {
         mcp::add(agent, home, &name, &spec, false)
     })
+    .map(|(id, ())| id)
 }
 
 #[tauri::command]
 fn remove_mcp_server(undo: State<UndoStore>, agent: Agent, name: String) -> Result<u64, String> {
-    undoable_mcp(&undo, agent, &name, |home| mcp::remove(agent, home, &name))
+    undoable_mcp(&undo, agent, &name, |home| mcp::remove(agent, home, &name)).map(|(id, ())| id)
 }
 
 #[tauri::command]
@@ -179,10 +184,19 @@ fn copy_mcp_server(
     from: Agent,
     to: Agent,
     overwrite: bool,
-) -> Result<u64, String> {
-    undoable_mcp(&undo, to, &name, |home| {
+) -> Result<CopyResult, String> {
+    let (undo, lost) = undoable_mcp(&undo, to, &name, |home| {
         mcp::copy(home, &name, from, to, overwrite)
-    })
+    })?;
+    Ok(CopyResult { undo, lost })
+}
+
+/// What `copy_mcp_server` did: the id that undoes it, and the settings the
+/// target agent could not take.
+#[derive(serde::Serialize)]
+struct CopyResult {
+    undo: u64,
+    lost: Vec<String>,
 }
 
 #[tauri::command]

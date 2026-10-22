@@ -24,9 +24,12 @@ export const addMcpServer = (agent: Agent, name: string, spec: ServerSpec) =>
 export const removeMcpServer = (agent: Agent, name: string) =>
   invoke<number>("remove_mcp_server", { agent, name });
 
-/** With `overwrite`, replaces the server in `to` if it already has one. */
+/**
+ * With `overwrite`, replaces the server in `to` if it already has one.
+ * Returns the undo id and the settings `to` could not take.
+ */
 export const copyMcpServer = (name: string, from: Agent, to: Agent, overwrite = false) =>
-  invoke<number>("copy_mcp_server", { name, from, to, overwrite });
+  invoke<{ undo: number; lost: string[] }>("copy_mcp_server", { name, from, to, overwrite });
 
 export const listRules = () => invoke<Rules[]>("list_rules");
 
