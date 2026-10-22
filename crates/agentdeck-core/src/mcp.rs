@@ -283,12 +283,10 @@ impl Edit<'_> {
 
 fn edit(agent: Agent, home: &Path, edit: Edit) -> Result<()> {
     let path = agent.mcp_config_path(home);
-    let content = config_file::read_optional(&path)?.unwrap_or_default();
-    let updated = match agent {
-        Agent::Codex => edit_toml(&path, &content, &edit)?,
-        _ => edit_json(agent, &path, &content, &edit)?,
-    };
-    config_file::write(&path, &updated)
+    config_file::update(home, &path, |content| match agent {
+        Agent::Codex => edit_toml(&path, content, &edit),
+        _ => edit_json(agent, &path, content, &edit),
+    })
 }
 
 fn edit_json(agent: Agent, path: &Path, content: &str, edit: &Edit) -> Result<String> {

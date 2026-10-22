@@ -9,7 +9,7 @@
 //! agentdeck exec --secret GITHUB_TOKEN=claude-code/github/GITHUB_TOKEN -- npx -y server-github
 //! ```
 
-use std::collections::{BTreeMap, HashMap};
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::path::Path;
 
 use serde::Serialize;
@@ -370,10 +370,33 @@ pub fn unprotect(vault: &dyn Vault, home: &Path, agent: Agent, server: &str) -> 
         env.insert(key.clone(), value);
     }
     mcp::set_launch(agent, home, server, &wrapped.command, &wrapped.args, &env)?;
+    // A copy of this server in another agent may start through the same
+    // keychain entries: deleting them would break it.
+    let Some(in_use) = ids_in_use(home) else {
+        return Ok(());
+    };
     for id in wrapped.secrets.values() {
-        vault.delete(id)?;
+        if !in_use.contains(id) {
+            vault.delete(id)?;
+        }
     }
     Ok(())
+}
+
+/// Keychain ids that some server of some agent still starts with, or `None`
+/// when a config cannot be read and the answer is unknown.
+fn ids_in_use(home: &Path) -> Option<HashSet<String>> {
+    let mut ids = HashSet::new();
+    for agent in Agent::ALL {
+        for spec in mcp::read_specs(agent, home).ok()?.into_values() {
+            if let Transport::Stdio { command, args } = &spec.transport
+                && let Some(wrapped) = unwrap(command, args)
+            {
+                ids.extend(wrapped.secrets.into_values());
+            }
+        }
+    }
+    Some(ids)
 }
 
 /// Reads the secrets named in `--secret KEY=ID` flags, for `agentdeck exec`.
@@ -595,6 +618,35 @@ mod tests {
         unprotect(&vault, home, Agent::ClaudeCode, "pg").unwrap();
         let spec = &mcp::read_specs(Agent::ClaudeCode, home).unwrap()["pg"];
         assert_eq!(spec.env.len(), 2);
+    }
+
+    #[test]
+    fn unprotect_keeps_secrets_a_copied_server_still_uses() {
+        let home = setup();
+        let home = home.path();
+        let vault = MemoryVault::default();
+        let id = "claude-code/github/GITHUB_TOKEN";
+
+        protect(
+            &vault,
+            home,
+            Agent::ClaudeCode,
+            "github",
+            Path::new("agentdeck"),
+        )
+        .unwrap();
+        mcp::copy(home, "github", Agent::ClaudeCode, Agent::Codex, false).unwrap();
+
+        unprotect(&vault, home, Agent::ClaudeCode, "github").unwrap();
+        assert_eq!(vault.get(id).unwrap().as_deref(), Some("ghp_same"));
+        let restored = &mcp::read_specs(Agent::ClaudeCode, home).unwrap()["github"];
+        assert_eq!(restored.env["GITHUB_TOKEN"], "ghp_same");
+
+        // Once the last copy is restored, the keychain entry goes away.
+        unprotect(&vault, home, Agent::Codex, "github").unwrap();
+        assert!(vault.get(id).unwrap().is_none());
+        let codex = &mcp::read_specs(Agent::Codex, home).unwrap()["github"];
+        assert_eq!(codex.env["GITHUB_TOKEN"], "ghp_same");
     }
 
     #[test]
