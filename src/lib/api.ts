@@ -4,6 +4,7 @@ import type {
   AgentInfo,
   AppSettings,
   McpListing,
+  ProtectPreview,
   ReadProgress,
   Rules,
   SecretListing,
@@ -95,6 +96,10 @@ export const listSecrets = () => invoke<SecretListing>("list_secrets");
 
 export const protectServer = (agent: Agent, server: string) =>
   invoke<number>("protect_server", { agent, server });
+
+/** How protecting a server would change its command, without writing anything. */
+export const previewProtect = (agent: Agent, server: string) =>
+  invoke<ProtectPreview>("preview_protect", { agent, server });
 
 export const unprotectServer = (agent: Agent, server: string) =>
   invoke<number>("unprotect_server", { agent, server });

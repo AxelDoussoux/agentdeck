@@ -481,8 +481,13 @@ fn protect_server(undo: State<UndoStore>, agent: Agent, server: String) -> Resul
     }))
 }
 
-/// Points protected servers whose launcher is missing at the current one.
-/// Returns how many were repaired.
+/// How protecting a server would change its command, without writing it.
+#[tauri::command]
+fn preview_protect(agent: Agent, server: String) -> Result<secrets::ProtectPreview, String> {
+    let launcher = launcher().ok_or(LAUNCHER_MISSING)?;
+    secrets::preview_protect(&home()?, agent, &server, &launcher).map_err(|err| err.to_string())
+}
+
 /// Marks a variable name as a secret (`true`), a setting (`false`), or lets
 /// AgentDeck judge it again (`null`).
 #[tauri::command]
@@ -490,6 +495,8 @@ fn mark_secret_name(name: String, secret: Option<bool>) -> Result<(), String> {
     secrets::mark_name(&home()?, &name, secret).map_err(|err| err.to_string())
 }
 
+/// Points protected servers whose launcher is missing at the current one.
+/// Returns how many were repaired.
 #[tauri::command]
 fn repair_launchers() -> Result<usize, String> {
     let launcher = launcher().ok_or(LAUNCHER_MISSING)?;
@@ -573,6 +580,7 @@ pub fn run() {
             restore_skill,
             list_secrets,
             protect_server,
+            preview_protect,
             unprotect_server,
             repair_launchers,
             mark_secret_name,
