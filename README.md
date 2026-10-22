@@ -36,7 +36,8 @@ shows them side by side, and syncs them in one click.
   Service). Values are never displayed.
 - **History & costs.** Token usage and estimated cost per day, per agent,
   per project, per model and per session, from Claude Code and Codex logs,
-  with an optional monthly budget.
+  over the last days or any period, with an optional monthly budget. Click a
+  session to see its token split, cache hit rate and the command to resume it.
 - **Keyboard.** `Ctrl+K` (`⌘K` on macOS) opens a palette to jump to a page,
   a server, a skill or an agent's rules, or to copy a server to another agent.
   `Ctrl+1` to `Ctrl+6` switch pages, `Ctrl+R` reloads the configs and `Ctrl+S`

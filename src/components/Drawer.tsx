@@ -12,6 +12,7 @@ export interface DrawerTab<T extends string> {
 interface Props<T extends string> {
   title: ReactNode;
   subtitle?: ReactNode;
+  /** With a single tab, no tab list is shown. */
   tabs: DrawerTab<T>[];
   tab: T;
   onTab: (tab: T) => void;
@@ -65,24 +66,31 @@ export function Drawer<T extends string>({ title, subtitle, tabs, tab, onTab, on
           <Icon name="close" />
         </button>
       </header>
-      <div className="tabs drawer-tabs" role="tablist" aria-label="Sections" onKeyDown={onTabKey}>
-        {tabs.map((t) => (
-          <button
-            key={t.id}
-            id={`drawer-tab-${t.id}`}
-            role="tab"
-            aria-selected={t.id === tab}
-            aria-controls="drawer-panel"
-            tabIndex={t.id === tab ? 0 : -1}
-            className={t.id === tab ? "active" : undefined}
-            onClick={() => onTab(t.id)}
-          >
-            {t.label}
-            {t.count !== undefined && t.count > 0 && <span className="tab-count">{t.count}</span>}
-          </button>
-        ))}
-      </div>
-      <div className="drawer-body" id="drawer-panel" role="tabpanel" aria-labelledby={`drawer-tab-${tab}`}>
+      {tabs.length > 1 && (
+        <div className="tabs drawer-tabs" role="tablist" aria-label="Sections" onKeyDown={onTabKey}>
+          {tabs.map((t) => (
+            <button
+              key={t.id}
+              id={`drawer-tab-${t.id}`}
+              role="tab"
+              aria-selected={t.id === tab}
+              aria-controls="drawer-panel"
+              tabIndex={t.id === tab ? 0 : -1}
+              className={t.id === tab ? "active" : undefined}
+              onClick={() => onTab(t.id)}
+            >
+              {t.label}
+              {t.count !== undefined && t.count > 0 && <span className="tab-count">{t.count}</span>}
+            </button>
+          ))}
+        </div>
+      )}
+      <div
+        className="drawer-body"
+        id="drawer-panel"
+        role={tabs.length > 1 ? "tabpanel" : undefined}
+        aria-labelledby={tabs.length > 1 ? `drawer-tab-${tab}` : undefined}
+      >
         {children}
       </div>
     </dialog>

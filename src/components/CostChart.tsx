@@ -32,7 +32,8 @@ export function CostChart({ dates, costs, agents, nameOf }: Props) {
   const totals = dates.map((date) => [...(costs.get(date)?.values() ?? [])].reduce((sum, cost) => sum + cost, 0));
   const top = axisTop(Math.max(0.04, ...totals));
   const ticks = [0, 1, 2, 3, 4].map((i) => (top / 4) * i);
-  const labels = [0, Math.floor((dates.length - 1) / 2), dates.length - 1];
+  // First, middle and last day, once each for periods of one or two days.
+  const labels = [...new Set([0, Math.floor((dates.length - 1) / 2), dates.length - 1])];
 
   function onKeyDown(event: React.KeyboardEvent) {
     const last = dates.length - 1;
