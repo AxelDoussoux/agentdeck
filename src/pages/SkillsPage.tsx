@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { AgentMark, Empty, Icon, Notice, PageHeader } from "../components/ui";
+import { useToast } from "../components/Toasts";
 import { copySkill, listSkills, readSkill, removeSkill } from "../lib/api";
 import type { Agent, AgentInfo, Skill, SkillListing, SkillLocation } from "../lib/types";
 
@@ -16,13 +17,15 @@ export function SkillsPage({ agents }: { agents: AgentInfo[] }) {
   const [selected, setSelected] = useState<string | null>(null);
   const [preview, setPreview] = useState<string>("");
   const [pendingRemoval, setPendingRemoval] = useState<SkillLocation | null>(null);
-  const [message, setMessage] = useState<{ error: boolean; text: string } | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const notify = useToast();
 
   async function load() {
     try {
       setListing(await listSkills());
+      setLoadError(null);
     } catch (err) {
-      setMessage({ error: true, text: String(err) });
+      setLoadError(String(err));
     }
   }
 
@@ -40,16 +43,15 @@ export function SkillsPage({ agents }: { agents: AgentInfo[] }) {
   async function open(name: string) {
     setSelected(name);
     setPendingRemoval(null);
-    setMessage(null);
     const [first] = byName.get(name) ?? [];
     setPreview(first ? await readSkill(first.location, name).catch(String) : "");
   }
 
   async function run(action: () => Promise<string>) {
     try {
-      setMessage({ error: false, text: await action() });
+      notify({ tone: "success", text: await action() });
     } catch (err) {
-      setMessage({ error: true, text: String(err) });
+      notify({ tone: "error", text: String(err) });
     }
     setPendingRemoval(null);
     await load();
@@ -66,7 +68,7 @@ export function SkillsPage({ agents }: { agents: AgentInfo[] }) {
       {listing.errors.map((text) => (
         <Notice key={text} tone="error">{text}</Notice>
       ))}
-      {message && <Notice tone={message.error ? "error" : "success"}>{message.text}</Notice>}
+      {loadError && <Notice tone="error">{loadError}</Notice>}
 
       {byName.size === 0 ? (
         <Empty icon="skills" title="No skill installed yet">

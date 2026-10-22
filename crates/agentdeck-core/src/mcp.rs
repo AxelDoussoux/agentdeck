@@ -153,6 +153,12 @@ pub(crate) fn read_specs(agent: Agent, home: &Path) -> Result<BTreeMap<String, S
         .collect())
 }
 
+/// The full settings of one server, secrets included, or `None` when the agent
+/// has no server by that name. Never send it to the UI.
+pub fn get(agent: Agent, home: &Path, name: &str) -> Result<Option<ServerSpec>> {
+    Ok(read_specs(agent, home)?.remove(name))
+}
+
 /// Reads the user-level MCP servers of `agent`. A missing config file is not
 /// an error: the agent is simply not installed.
 pub fn list_for_agent(agent: Agent, home: &Path) -> Result<Vec<McpServer>> {
