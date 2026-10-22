@@ -908,36 +908,37 @@ tr.selected td {
   -webkit-box-orient: vertical;
 }
 
-.cell-on,
-.cell-add {
+.cell {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
   padding: 4px 10px;
+  border: 1px solid transparent;
   border-radius: 999px;
   font-size: 12px;
+  font-weight: 500;
 }
 
 .cell-on {
-  border: 1px solid transparent;
   background: var(--ok-soft);
   color: var(--ok);
 }
 
-.cell-on.static {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  font-weight: 500;
+.cell-differs {
+  background: var(--warn-soft);
+  color: var(--warn);
 }
 
-button.cell-on:hover {
-  border-color: var(--danger);
-  background: var(--danger-soft);
-  color: var(--danger);
+.cell-none {
+  color: var(--faint);
+  font-weight: 400;
 }
 
 .cell-add {
   border: 1px dashed var(--border-strong);
   background: transparent;
   color: var(--muted);
+  font-weight: 400;
 }
 
 .cell-add:hover:not(:disabled) {
@@ -945,9 +946,70 @@ button.cell-on:hover {
   color: var(--accent);
 }
 
-.confirm {
-  display: inline-flex;
-  gap: 4px;
+/* Agents not found on this computer: still usable, but set back. */
+.agent-off {
+  opacity: 0.55;
+}
+
+.menu-col {
+  width: 1%;
+  padding-left: 0;
+  text-align: right;
+}
+
+.row-menu .icon-button {
+  width: 28px;
+  height: 28px;
+  border-color: transparent;
+  opacity: 0;
+}
+
+tr:hover .row-menu .icon-button,
+.row-menu .icon-button:focus-visible,
+.row-menu.open .icon-button {
+  border-color: var(--border);
+  opacity: 1;
+}
+
+.menu {
+  position: fixed;
+  z-index: 40;
+  display: flex;
+  flex-direction: column;
+  min-width: 190px;
+  padding: 4px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  box-shadow: var(--shadow-lg);
+}
+
+.menu button {
+  justify-content: flex-start;
+  padding: 7px 10px;
+  border: none;
+  background: transparent;
+  text-align: left;
+  font-weight: 400;
+}
+
+.menu button:hover,
+.menu button:focus-visible {
+  background: var(--surface-2);
+  outline: none;
+}
+
+.menu button.danger {
+  color: var(--danger);
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
 }
 
 .number {
@@ -1282,4 +1344,56 @@ button.primary kbd {
   border-color: currentColor;
   color: inherit;
   opacity: 0.75;
+}
+
+.dialog-wide {
+  width: min(680px, calc(100vw - 32px));
+}
+
+.dialog-body p {
+  margin: 0 0 12px;
+}
+
+.dialog-body p:last-child {
+  margin-bottom: 0;
+}
+
+/* Line differences */
+
+.diff {
+  max-height: 320px;
+  margin: 0;
+  padding: 8px 0;
+  overflow: auto;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+  color: var(--text);
+  font: 12px/1.55 var(--mono);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.diff span {
+  display: block;
+  padding: 0 12px;
+}
+
+.diff-add {
+  background: var(--ok-soft);
+  color: var(--ok);
+}
+
+.diff-remove {
+  background: var(--danger-soft);
+  color: var(--danger);
+}
+
+.diff-same {
+  color: var(--muted);
+}
+
+.diff-fold {
+  color: var(--faint);
+  font-style: italic;
 }
