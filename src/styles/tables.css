@@ -1,0 +1,193 @@
+.table-card {
+  overflow-x: auto;
+  margin-bottom: 20px;
+}
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+th {
+  position: sticky;
+  top: 0;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface-2);
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 600;
+  text-align: left;
+  white-space: nowrap;
+}
+
+td {
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--border);
+  vertical-align: middle;
+}
+
+tbody tr:last-child td {
+  border-bottom: none;
+}
+
+tbody tr:hover td {
+  background: color-mix(in srgb, var(--surface-2) 55%, transparent);
+}
+
+tr.selected td {
+  background: var(--accent-soft);
+}
+
+.th-agent {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.agent-col {
+  width: 1%;
+  white-space: nowrap;
+}
+
+.server strong {
+  display: block;
+}
+
+.meta {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 3px;
+  min-width: 0;
+}
+
+.meta code {
+  overflow: hidden;
+  max-width: 420px;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  word-break: normal;
+}
+
+.server small {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-top: 4px;
+}
+
+.cell {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 10px;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.cell-on {
+  background: var(--ok-soft);
+  color: var(--ok);
+}
+
+.cell-differs {
+  background: var(--warn-soft);
+  color: var(--warn);
+}
+
+.cell-none {
+  color: var(--faint);
+  font-weight: 400;
+}
+
+.cell-add {
+  border: 1px dashed var(--border-strong);
+  background: transparent;
+  color: var(--muted);
+  font-weight: 400;
+}
+
+.cell-add:hover:not(:disabled) {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+/* Agents not found on this computer: still usable, but set back. */
+.agent-off {
+  opacity: 0.55;
+}
+
+.menu-col {
+  width: 1%;
+  padding-left: 0;
+  text-align: right;
+}
+
+.row-menu .icon-button {
+  width: 28px;
+  height: 28px;
+  border-color: transparent;
+  opacity: 0;
+}
+
+tr:hover .row-menu .icon-button,
+.row-menu .icon-button:focus-visible,
+.row-menu.open .icon-button {
+  border-color: var(--border);
+  opacity: 1;
+}
+
+.menu {
+  position: fixed;
+  z-index: 40;
+  display: flex;
+  flex-direction: column;
+  min-width: 190px;
+  padding: 4px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  box-shadow: var(--shadow-lg);
+}
+
+.menu button {
+  justify-content: flex-start;
+  padding: 7px 10px;
+  border: none;
+  background: transparent;
+  text-align: left;
+  font-weight: 400;
+}
+
+.menu button:hover,
+.menu button:focus-visible {
+  background: var(--surface-2);
+  outline: none;
+}
+
+.menu button.danger {
+  color: var(--danger);
+}
+
+button.cell-differs:hover {
+  border-color: var(--warn);
+}
+
+tr.highlight td {
+  background: var(--accent-soft);
+  transition: background 0.3s;
+}
+
+/* Sortable headers */
+th button.sort {
+  padding: 0;
+  border: 0;
+  background: none;
+  box-shadow: none;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}

@@ -1,0 +1,94 @@
+.agent-mark {
+  display: inline-grid;
+  place-items: center;
+  flex-shrink: 0;
+  border-radius: 28%;
+  color: #fff;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+}
+
+.agent-claude-code {
+  background: var(--claude);
+}
+
+.agent-codex {
+  background: var(--codex);
+}
+
+.agent-cursor {
+  background: var(--cursor);
+}
+
+.agent-gemini {
+  background: var(--gemini);
+}
+
+.agent-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+  gap: 12px;
+}
+
+.agent-card {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 16px;
+}
+
+.agent-card header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.agent-card header strong {
+  display: block;
+  margin-bottom: 2px;
+}
+
+.agent-missing .agent-mark {
+  filter: grayscale(1);
+  opacity: 0.5;
+}
+
+.agent-card dl {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  margin: 0;
+}
+
+.agent-card dt {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.agent-card dd {
+  margin: 0;
+  font-weight: 600;
+}
+
+.agent-card code {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  word-break: normal;
+}
+
+.agent-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+/* Longer labels, as in French, go to the next line whole. */
+.agent-actions button {
+  white-space: nowrap;
+}
+
+.agent-card dd button.link {
+  color: var(--accent);
+  font: inherit;
+}

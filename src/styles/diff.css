@@ -1,0 +1,48 @@
+.diff {
+  max-height: 320px;
+  margin: 0;
+  padding: 8px 0;
+  overflow: auto;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+  color: var(--text);
+  font: 12px/1.55 var(--mono);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.diff span {
+  display: block;
+  padding: 0 12px;
+}
+
+.diff-add {
+  background: var(--ok-soft);
+  color: var(--ok);
+}
+
+.diff-remove {
+  background: var(--danger-soft);
+  color: var(--danger);
+}
+
+.diff-same {
+  color: var(--muted);
+}
+
+.diff-fold {
+  color: var(--faint);
+  font-style: italic;
+}
+
+.differences {
+  margin: 0 0 12px;
+  padding-left: 18px;
+  color: var(--text);
+  overflow-wrap: anywhere;
+}
+
+.differences li + li {
+  margin-top: 4px;
+}

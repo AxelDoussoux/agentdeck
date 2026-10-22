@@ -1,0 +1,175 @@
+.session-title {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.session-title strong {
+  display: block;
+}
+
+.sessions-bar {
+  margin: 28px 0 12px;
+}
+
+.sessions-bar .section-title {
+  margin: 0;
+}
+
+.sessions-bar input {
+  width: min(320px, 100%);
+}
+
+.more {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  margin-top: 12px;
+}
+
+/* Monthly budget */
+.meter {
+  display: block;
+  width: 100%;
+  height: 6px;
+  margin: 4px 0 2px;
+  overflow: hidden;
+  border-radius: 3px;
+  background: var(--surface-2);
+}
+
+.meter i {
+  display: block;
+  height: 100%;
+  background: var(--accent);
+}
+
+.meter-warn i {
+  background: var(--warn);
+}
+
+.meter-danger i {
+  background: var(--danger);
+}
+
+.budget-form {
+  display: flex;
+  gap: 6px;
+  margin-top: 4px;
+}
+
+.budget-form input {
+  width: 110px;
+}
+
+/* Loading */
+.skeleton-block {
+  min-height: 92px;
+  background: linear-gradient(90deg, var(--surface) 0%, var(--surface-2) 50%, var(--surface) 100%);
+  background-size: 200% 100%;
+  animation: shimmer 1.4s ease-in-out infinite;
+}
+
+.skeleton-chart {
+  height: 220px;
+  margin-bottom: 12px;
+}
+
+/* Below the skeleton, so the bar stays put while the count changes. */
+.reading {
+  max-width: 360px;
+}
+
+.reading .meter i {
+  transition: width 0.2s ease-out;
+}
+
+@keyframes shimmer {
+  from {
+    background-position: 100% 0;
+  }
+  to {
+    background-position: -100% 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .skeleton-block {
+    animation: none;
+  }
+
+  .reading .meter i {
+    transition: none;
+  }
+}
+
+/* Session detail */
+.date-range {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.token-bar {
+  display: flex;
+  height: 10px;
+  overflow: hidden;
+  margin-bottom: 10px;
+  border-radius: 999px;
+  background: var(--surface-2);
+}
+
+.token-bar i + i {
+  border-left: 2px solid var(--surface);
+}
+
+.token-list {
+  display: grid;
+  grid-template-columns: auto 1fr auto 3.5em;
+  gap: 4px 8px;
+  align-items: center;
+  margin: 0 0 8px;
+  padding: 0;
+  list-style: none;
+  font-size: 13px;
+}
+
+.token-list li {
+  display: contents;
+}
+
+.token-list .number {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.token-input {
+  background: var(--accent);
+}
+
+.token-cacheRead {
+  background: color-mix(in srgb, var(--accent) 45%, var(--surface));
+}
+
+.token-cacheWrite5m,
+.token-cacheWrite1h {
+  background: color-mix(in srgb, var(--accent) 22%, var(--surface));
+}
+
+.token-output {
+  background: color-mix(in srgb, var(--accent) 60%, var(--text));
+}
+
+.drawer-section .hint {
+  margin: 0;
+}
+
+.command {
+  display: block;
+  margin-bottom: 6px;
+  padding: 8px 10px;
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+  overflow-wrap: anywhere;
+}

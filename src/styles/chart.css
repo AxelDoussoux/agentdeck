@@ -1,0 +1,135 @@
+.cost-chart {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  grid-template-rows: 180px auto;
+  column-gap: 8px;
+}
+
+.y-axis {
+  position: relative;
+  min-width: 36px;
+  color: var(--faint);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
+.y-axis span {
+  position: absolute;
+  right: 0;
+  transform: translateY(50%);
+}
+
+.plot {
+  position: relative;
+  border-bottom: 1px solid var(--border-strong);
+  outline-offset: 4px;
+}
+
+.plot .grid-line {
+  position: absolute;
+  right: 0;
+  left: 0;
+  border-top: 1px dashed var(--border);
+}
+
+.plot .bars {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: flex-end;
+  gap: 3px;
+}
+
+.plot .day {
+  display: flex;
+  flex: 1;
+  align-items: flex-end;
+  height: 100%;
+  border-radius: 3px 3px 0 0;
+}
+
+.plot .day.active {
+  background: var(--surface-2);
+}
+
+.plot .stack {
+  display: flex;
+  flex-direction: column-reverse;
+  width: 100%;
+  overflow: hidden;
+  border-radius: 3px 3px 0 0;
+}
+
+.plot .segment {
+  display: block;
+  min-height: 1px;
+}
+
+.segment-claude-code {
+  background: var(--claude);
+}
+
+.segment-codex {
+  background: var(--codex);
+}
+
+.segment-cursor {
+  background: var(--cursor);
+}
+
+.segment-gemini {
+  background: var(--gemini);
+}
+
+.chart-tip {
+  position: absolute;
+  top: 0;
+  z-index: 2;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 140px;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  box-shadow: var(--shadow-lg);
+  font-size: 12px;
+  pointer-events: none;
+  transform: translateX(8px);
+}
+
+.chart-tip-left {
+  transform: translateX(calc(-100% - 8px));
+}
+
+.chart-tip span,
+.legend span {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--muted);
+}
+
+.legend {
+  display: flex;
+  gap: 14px;
+  font-size: 12px;
+}
+
+.swatch {
+  display: inline-block;
+  width: 9px;
+  height: 9px;
+  border-radius: 2px;
+}
+
+.x-axis {
+  display: flex;
+  grid-column: 2;
+  justify-content: space-between;
+  padding-top: 6px;
+  color: var(--faint);
+  font-size: 11px;
+}
