@@ -43,7 +43,7 @@ export function LauncherRepair({
 
   return (
     <Notice tone="error">
-      <div className="repair">
+      <div className="notice-row repair">
         <span>
           <strong>
             {count} protected server{count === 1 ? " no longer starts" : "s no longer start"}
