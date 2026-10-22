@@ -2,12 +2,14 @@ use std::collections::HashMap;
 use std::fs;
 use std::path::PathBuf;
 use std::sync::Mutex;
+use std::time::{Duration, Instant};
 
 use agentdeck_core::rules::{self, Rules};
 use agentdeck_core::secrets::{self, Keychain, SecretRef};
 use agentdeck_core::skills::{self, Location, Skill};
-use agentdeck_core::usage::{self, UsageReport};
+use agentdeck_core::usage::{self, ReadProgress, UsageReport};
 use agentdeck_core::{Agent, AgentInfo, Error, McpServer, ServerSpec, agent, config_file, mcp};
+use tauri::ipc::Channel;
 use tauri::{Manager, State};
 
 mod watch;
@@ -508,11 +510,22 @@ fn unprotect_server(undo: State<UndoStore>, agent: Agent, server: String) -> Res
 
 /// Parsing months of logs takes a while, so it runs off the main thread.
 #[tauri::command]
-async fn usage_report() -> Result<UsageReport, String> {
+async fn usage_report(progress: Channel<ReadProgress>) -> Result<UsageReport, String> {
     let home = home()?;
-    tauri::async_runtime::spawn_blocking(move || usage::report(&home))
-        .await
-        .map_err(|err| err.to_string())
+    tauri::async_runtime::spawn_blocking(move || {
+        // Thousands of cached files are read in a blink: only say how far
+        // the reading is a few times a second.
+        let mut last: Option<Instant> = None;
+        usage::report_with_progress(&home, |step| {
+            let due = last.is_none_or(|at| at.elapsed() >= Duration::from_millis(100));
+            if due || step.done == step.total {
+                last = Some(Instant::now());
+                let _ = progress.send(step);
+            }
+        })
+    })
+    .await
+    .map_err(|err| err.to_string())
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]

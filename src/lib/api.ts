@@ -1,9 +1,10 @@
-import { invoke } from "@tauri-apps/api/core";
+import { Channel, invoke } from "@tauri-apps/api/core";
 import type {
   Agent,
   AgentInfo,
   AppSettings,
   McpListing,
+  ReadProgress,
   Rules,
   SecretListing,
   ServerEdit,
@@ -52,7 +53,12 @@ export const listRules = () => invoke<Rules[]>("list_rules");
 export const saveRules = (agent: Agent, content: string) =>
   invoke<number>("save_rules", { agent, content });
 
-export const usageReport = () => invoke<UsageReport>("usage_report");
+/** Reads the session logs, telling `onProgress` how many files are read. */
+export function usageReport(onProgress?: (progress: ReadProgress) => void) {
+  const progress = new Channel<ReadProgress>();
+  if (onProgress) progress.onmessage = onProgress;
+  return invoke<UsageReport>("usage_report", { progress });
+}
 
 export const listSkills = () => invoke<SkillListing>("list_skills");
 

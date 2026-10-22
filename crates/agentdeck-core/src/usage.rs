@@ -126,6 +126,21 @@ pub fn date_days_ago(days: u32) -> String {
 /// size or modification time changes. Costs are computed on each read, so a
 /// price change applies to old sessions too.
 pub fn report(home: &Path) -> UsageReport {
+    report_with_progress(home, |_| {})
+}
+
+/// How far [`report_with_progress`] is through the log files.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ReadProgress {
+    /// Files read so far, from the cache or parsed again. Equals `total`
+    /// once every file is read.
+    pub done: usize,
+    pub total: usize,
+}
+
+/// [`report`], calling `on_progress` after each log file.
+pub fn report_with_progress(home: &Path, mut on_progress: impl FnMut(ReadProgress)) -> UsageReport {
     let cache_path = home.join(".agentdeck").join("cache").join("usage.json");
     let mut cache = Cache::load(&cache_path);
     let mut kept = Cache::default();
@@ -141,8 +156,12 @@ pub fn report(home: &Path) -> UsageReport {
         ),
         (Agent::Codex, codex_files),
     ];
+    let total = sources.iter().map(|(_, files)| files.len()).sum();
+    let mut done = 0;
     for (agent, files) in sources {
         for path in files {
+            on_progress(ReadProgress { done, total });
+            done += 1;
             let key = path.to_string_lossy().into_owned();
             let stamp = stamp(&path);
             let log = match cache.files.remove(&key) {
@@ -170,6 +189,7 @@ pub fn report(home: &Path) -> UsageReport {
             kept.files.insert(key, log);
         }
     }
+    on_progress(ReadProgress { done, total });
     // Files that are gone leave the cache too.
     if kept.changed || !cache.files.is_empty() {
         kept.save(&cache_path);
@@ -860,6 +880,19 @@ mod tests {
         fs::remove_file(&log).unwrap();
         assert!(report(home.path()).sessions.is_empty());
         assert!(!fs::read_to_string(&cache).unwrap().contains("s1.jsonl"));
+    }
+
+    #[test]
+    fn progress_counts_every_log_file() {
+        let home = tempfile::tempdir().unwrap();
+        let line = r#"{"type":"assistant","sessionId":"s1","timestamp":"2026-10-20T10:00:05Z","message":{"id":"m","model":"claude-opus-5-5","usage":{"input_tokens":1,"output_tokens":1}}}"#;
+        write(&home.path().join(".claude/projects/-a/s1.jsonl"), &[line]);
+        write(&home.path().join(".claude/projects/-b/s2.jsonl"), &[line]);
+        let mut seen = Vec::new();
+        report_with_progress(home.path(), |progress| {
+            seen.push((progress.done, progress.total))
+        });
+        assert_eq!(seen, [(0, 2), (1, 2), (2, 2)]);
     }
 
     #[test]
