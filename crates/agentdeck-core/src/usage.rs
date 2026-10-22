@@ -73,6 +73,18 @@ pub struct DayUsage {
     pub cost_usd: f64,
 }
 
+/// Usage of one agent during one UTC hour, so that a viewer can group it by
+/// day in its own time zone.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct HourUsage {
+    /// `YYYY-MM-DDTHH`, in UTC like the agents' log timestamps.
+    pub hour: String,
+    pub agent: Agent,
+    pub tokens: Tokens,
+    pub cost_usd: f64,
+}
+
 #[derive(Debug, Default, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct UsageReport {
@@ -80,6 +92,8 @@ pub struct UsageReport {
     pub sessions: Vec<Session>,
     /// Oldest first.
     pub daily: Vec<DayUsage>,
+    /// Oldest first.
+    pub hourly: Vec<HourUsage>,
     /// Files that could not be read. Malformed lines are skipped silently.
     pub errors: Vec<String>,
 }
@@ -117,6 +131,7 @@ pub fn report(home: &Path) -> UsageReport {
 struct ReportBuilder {
     sessions: HashMap<(Agent, String), Session>,
     daily: BTreeMap<(String, Agent), DayUsage>,
+    hourly: BTreeMap<(String, Agent), HourUsage>,
     errors: Vec<String>,
 }
 
@@ -186,6 +201,20 @@ impl ReportBuilder {
             });
         day.tokens += tokens;
         day.cost_usd += cost.unwrap_or(0.0);
+
+        // Claude Code and Codex both log timestamps in UTC (`…Z`).
+        let hour = timestamp.get(..13).unwrap_or(timestamp).to_owned();
+        let slot = self
+            .hourly
+            .entry((hour.clone(), agent))
+            .or_insert_with(|| HourUsage {
+                hour,
+                agent,
+                tokens: Tokens::default(),
+                cost_usd: 0.0,
+            });
+        slot.tokens += tokens;
+        slot.cost_usd += cost.unwrap_or(0.0);
     }
 
     fn finish(self) -> UsageReport {
@@ -198,6 +227,7 @@ impl ReportBuilder {
         UsageReport {
             sessions,
             daily: self.daily.into_values().collect(),
+            hourly: self.hourly.into_values().collect(),
             errors: self.errors,
         }
     }
@@ -553,6 +583,9 @@ mod tests {
         assert_eq!(session.ended_at.as_deref(), Some("2026-10-21T09:00:00Z"));
         assert_eq!(report.daily.len(), 1);
         assert_eq!(report.daily[0].date, "2026-10-20");
+        assert_eq!(report.hourly.len(), 1);
+        assert_eq!(report.hourly[0].hour, "2026-10-20T10");
+        assert!((report.hourly[0].cost_usd - 24.0).abs() < 1e-9);
     }
 
     #[test]

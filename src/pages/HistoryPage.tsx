@@ -16,13 +16,22 @@ function formatTokens(count: number): string {
 
 const formatCost = (usd: number) => `$${usd.toFixed(usd < 10 ? 2 : 0)}`;
 
-/** UTC dates from `days - 1` days ago to today, matching the core's day keys. */
+/** `YYYY-MM-DD` of a moment in the local time zone. */
+function localDate(moment: Date): string {
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${moment.getFullYear()}-${pad(moment.getMonth() + 1)}-${pad(moment.getDate())}`;
+}
+
+/** Local dates from `days - 1` days ago to today. */
 function lastDays(days: number): string[] {
-  const today = Date.now();
+  const now = new Date();
   return Array.from({ length: days }, (_, i) =>
-    new Date(today - (days - 1 - i) * 86_400_000).toISOString().slice(0, 10),
+    localDate(new Date(now.getFullYear(), now.getMonth(), now.getDate() - (days - 1 - i))),
   );
 }
+
+/** Local date of a UTC timestamp from the logs. */
+const dateOf = (timestamp: string) => localDate(new Date(timestamp));
 
 const basename = (path: string | null) => path?.split(/[\\/]/).filter(Boolean).pop() ?? "";
 
@@ -51,9 +60,13 @@ export function HistoryPage({ agents }: { agents: AgentInfo[] }) {
   const since = dates[0];
   const matches = (agent: Agent) => filter === "all" || agent === filter;
 
-  const daily = report?.daily.filter((d) => d.date >= since && matches(d.agent)) ?? [];
+  // The core counts per UTC hour; days start at local midnight here.
+  const daily =
+    report?.hourly
+      .map((h) => ({ ...h, date: dateOf(`${h.hour}:00:00Z`) }))
+      .filter((d) => d.date >= since && matches(d.agent)) ?? [];
   const sessions =
-    report?.sessions.filter((s) => (s.endedAt ?? "") >= since && matches(s.agent)) ?? [];
+    report?.sessions.filter((s) => s.endedAt && dateOf(s.endedAt) >= since && matches(s.agent)) ?? [];
   const costByDate = new Map<string, number>();
   for (const day of daily) costByDate.set(day.date, (costByDate.get(day.date) ?? 0) + day.costUsd);
   const maxCost = Math.max(0.01, ...costByDate.values());
@@ -171,7 +184,7 @@ export function HistoryPage({ agents }: { agents: AgentInfo[] }) {
                 <tbody>
                   {sessions.slice(0, 200).map((session) => (
                     <tr key={`${session.agent}/${session.id}`}>
-                      <td className="nowrap">{session.endedAt?.slice(0, 10)}</td>
+                      <td className="nowrap">{session.endedAt && dateOf(session.endedAt)}</td>
                       <td>
                         <span className="session-title">
                           <AgentMark agent={session.agent} size={20} />
