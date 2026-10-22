@@ -10,12 +10,12 @@
 }
 
 .card {
-  margin-bottom: 20px;
+  margin-bottom: var(--space-5);
   padding: 18px;
 }
 
 .card h3 {
-  font-size: 15px;
+  font-size: var(--text-lg);
 }
 
 .card-header,
@@ -23,15 +23,15 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 12px;
-  margin-bottom: 12px;
+  gap: var(--space-3);
+  margin-bottom: var(--space-3);
 }
 
 .stats {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(210px, 1fr));
-  gap: 12px;
-  margin-bottom: 20px;
+  gap: var(--space-3);
+  margin-bottom: var(--space-5);
 }
 
 .stat {
@@ -53,7 +53,7 @@
 
 .stat .label {
   color: var(--muted);
-  font-size: 12px;
+  font-size: var(--text-sm);
   font-weight: 500;
 }
 
@@ -64,7 +64,7 @@
 }
 
 .stat .value {
-  font-size: 26px;
+  font-size: var(--text-xl);
   font-weight: 650;
   letter-spacing: -0.02em;
   font-variant-numeric: tabular-nums;
@@ -72,19 +72,19 @@
 
 .stat .value small {
   display: inline;
-  font-size: 15px;
+  font-size: var(--text-lg);
   font-weight: 500;
 }
 
 .pill {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
+  gap: var(--space-1);
   padding: 2px 8px;
   border-radius: 999px;
   background: var(--surface-2);
   color: var(--muted);
-  font-size: 12px;
+  font-size: var(--text-sm);
   font-weight: 500;
   white-space: nowrap;
 }
@@ -117,7 +117,7 @@
   display: flex;
   align-items: flex-start;
   gap: 10px;
-  margin: 0 0 16px;
+  margin: 0 0 var(--space-4);
   padding: 10px 14px;
   border: 1px solid transparent;
   border-radius: var(--radius-sm);
@@ -140,7 +140,7 @@
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 8px 16px;
+  gap: var(--space-2) var(--space-4);
 }
 
 .notice-row > span {
@@ -190,7 +190,7 @@
   place-items: center;
   width: 44px;
   height: 44px;
-  margin-bottom: 4px;
+  margin-bottom: var(--space-1);
   border-radius: 12px;
   background: var(--surface-2);
 }

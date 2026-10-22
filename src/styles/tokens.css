@@ -24,6 +24,21 @@
   --radius-sm: 7px;
   --mono: ui-monospace, "Cascadia Code", "SF Mono", Menlo, Consolas, monospace;
 
+  /* Spacing steps, for gaps, padding and margins. */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+
+  /* Type scale around the 14px body text. */
+  --text-xs: 11px;
+  --text-sm: 12px;
+  --text-md: 13px;
+  --text-lg: 15px;
+  --text-xl: 26px;
+
   --claude: #d97757;
   --codex: #10a37f;
   --cursor: #3f3f4a;

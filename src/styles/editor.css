@@ -3,7 +3,7 @@
   flex-shrink: 0;
   white-space: nowrap;
   align-items: center;
-  gap: 8px;
+  gap: var(--space-2);
   margin-left: auto;
 }
 
@@ -24,7 +24,7 @@
 
 .markdown-editor .cm-editor .cm-panel.cm-search {
   padding: 8px 10px;
-  font-size: 12px;
+  font-size: var(--text-sm);
 }
 
 .markdown-editor .cm-editor .cm-panel .cm-textfield,
@@ -34,12 +34,12 @@
   border-radius: var(--radius-sm);
   background: var(--surface);
   color: var(--text);
-  font-size: 12px;
+  font-size: var(--text-sm);
 }
 
 .markdown-editor .cm-editor .cm-panel label {
   color: var(--muted);
-  font-size: 12px;
+  font-size: var(--text-sm);
 }
 
 .markdown-editor .cm-editor .cm-panel button[name="close"] {
@@ -64,7 +64,7 @@
   border-radius: 999px;
   background: var(--surface-2);
   color: var(--muted);
-  font-size: 11px;
+  font-size: var(--text-xs);
   font-weight: 500;
 }
 
@@ -98,7 +98,7 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 12px;
+  gap: var(--space-3);
   padding: 8px 14px;
   border-bottom: 1px solid var(--border);
   background: var(--surface-2);
@@ -107,7 +107,7 @@
 .copies {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: var(--space-2);
   margin: 0 0 14px;
   padding: 0;
   list-style: none;
@@ -117,7 +117,7 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 12px;
+  gap: var(--space-3);
   padding: 10px 12px;
   border-radius: var(--radius-sm);
   background: var(--surface-2);
@@ -126,7 +126,7 @@
 .copies li .hint {
   display: block;
   margin-top: 2px;
-  font-size: 12px;
+  font-size: var(--text-sm);
 }
 
 .copies li.active {
@@ -146,10 +146,10 @@
 .differ-note {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
+  gap: var(--space-1);
   margin-top: 2px;
   color: var(--warn);
-  font-size: 12px;
+  font-size: var(--text-sm);
 }
 
 .preview {

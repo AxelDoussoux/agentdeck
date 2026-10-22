@@ -29,6 +29,12 @@ The texts of the app are in `src/locales`: `en.tsx` is the reference, and
 in both files. A new language is one more file there, listed in
 `src/lib/i18n.ts`.
 
+Shared UI pieces (icons, page header, notices, segmented buttons, tabs) are
+in `src/components/ui.tsx`; larger ones have their own file next to it. The
+styles are in `src/styles`, one file per topic, imported in cascade order
+by `src/App.css`. Colors, spacing (`--space-*`) and text sizes (`--text-*`)
+come from the variables in `tokens.css`.
+
 ## Build from source
 
 Prerequisites: [Rust](https://rustup.rs), Node 22, pnpm 10 and the

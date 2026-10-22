@@ -9,9 +9,9 @@
 .skill-files li {
   display: flex;
   justify-content: space-between;
-  gap: 12px;
+  gap: var(--space-3);
   padding: 3px 0;
-  font-size: 12px;
+  font-size: var(--text-sm);
 }
 
 .skill-files code {

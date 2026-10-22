@@ -1,7 +1,7 @@
 .diff {
   max-height: 320px;
   margin: 0;
-  padding: 8px 0;
+  padding: var(--space-2) 0;
   overflow: auto;
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
@@ -14,7 +14,7 @@
 
 .diff span {
   display: block;
-  padding: 0 12px;
+  padding: 0 var(--space-3);
 }
 
 .diff-add {
@@ -37,12 +37,12 @@
 }
 
 .differences {
-  margin: 0 0 12px;
+  margin: 0 0 var(--space-3);
   padding-left: 18px;
   color: var(--text);
   overflow-wrap: anywhere;
 }
 
 .differences li + li {
-  margin-top: 4px;
+  margin-top: var(--space-1);
 }

@@ -23,7 +23,7 @@ code {
 small {
   display: block;
   color: var(--muted);
-  font-size: 12px;
+  font-size: var(--text-sm);
 }
 
 .icon {
@@ -32,7 +32,7 @@ small {
 
 .hint {
   color: var(--muted);
-  font-size: 13px;
+  font-size: var(--text-md);
 }
 
 .danger-text {

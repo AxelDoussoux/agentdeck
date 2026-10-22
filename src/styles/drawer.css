@@ -34,7 +34,7 @@
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
-  gap: 12px;
+  gap: var(--space-3);
   padding: 18px 20px 10px;
 }
 
@@ -45,13 +45,13 @@
 }
 
 .drawer-header .hint {
-  margin-top: 4px;
-  font-size: 13px;
+  margin-top: var(--space-1);
+  font-size: var(--text-md);
 }
 
 .drawer-tabs {
   margin: 0;
-  padding: 0 20px;
+  padding: 0 var(--space-5);
 }
 
 .tab-count {
@@ -60,15 +60,15 @@
   border-radius: 999px;
   background: var(--surface-2);
   color: var(--muted);
-  font-size: 11px;
+  font-size: var(--text-xs);
 }
 
 .drawer-body {
   display: flex;
   flex: 1;
   flex-direction: column;
-  gap: 12px;
-  padding: 16px 20px 20px;
+  gap: var(--space-3);
+  padding: var(--space-4) var(--space-5) var(--space-5);
   overflow-y: auto;
 }
 
@@ -93,7 +93,7 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 8px;
+  gap: var(--space-2);
   margin-bottom: 10px;
 }
 
@@ -106,7 +106,7 @@
   grid-template-columns: max-content 1fr;
   gap: 6px 14px;
   margin: 0;
-  font-size: 13px;
+  font-size: var(--text-md);
 }
 
 .facts dt {

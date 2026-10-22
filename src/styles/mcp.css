@@ -1,22 +1,22 @@
 .test-result {
   display: flex;
   flex-direction: column;
-  gap: 8px;
-  margin-top: 12px;
+  gap: var(--space-2);
+  margin-top: var(--space-3);
 }
 
 .test-running {
-  margin: 12px 0 0;
+  margin: var(--space-3) 0 0;
 }
 
 .test-ok {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 4px;
+  gap: var(--space-1);
   margin: 0;
   color: var(--ok);
-  font-size: 13px;
+  font-size: var(--text-md);
 }
 
 .tool-list {
@@ -25,7 +25,7 @@
   padding: 0;
   overflow-y: auto;
   list-style: none;
-  font-size: 12px;
+  font-size: var(--text-sm);
 }
 
 .tool-list li {
@@ -47,7 +47,7 @@
 .test-log summary {
   cursor: pointer;
   color: var(--muted);
-  font-size: 12px;
+  font-size: var(--text-sm);
   font-weight: 600;
 }
 

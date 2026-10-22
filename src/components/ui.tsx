@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+import type { KeyboardEvent, ReactNode } from "react";
 import type { Agent } from "../lib/types";
 
 // Small building blocks shared by every page.
@@ -115,6 +115,96 @@ export function Empty({ icon, title, children }: { icon: IconName; title: string
       <span className="empty-icon"><Icon name={icon} size={22} /></span>
       <strong>{title}</strong>
       {children && <p>{children}</p>}
+    </div>
+  );
+}
+
+interface SegmentedOption<T> {
+  value: T;
+  label: ReactNode;
+  /** The option's language, when its label is the name of one. */
+  lang?: string;
+}
+
+interface SegmentedProps<T> {
+  label: string;
+  options: SegmentedOption<T>[];
+  value: T;
+  onChange: (value: T) => void;
+  /** A setting, read as radio buttons, rather than a view switch. */
+  radio?: boolean;
+}
+
+/** A row of joined buttons where exactly one is on. */
+export function Segmented<T extends string | number | boolean>({ label, options, value, onChange, radio }: SegmentedProps<T>) {
+  return (
+    <div className="segmented" role={radio ? "radiogroup" : "group"} aria-label={label}>
+      {options.map((option) => {
+        const on = option.value === value;
+        return (
+          <button
+            key={String(option.value)}
+            role={radio ? "radio" : undefined}
+            aria-checked={radio ? on : undefined}
+            aria-pressed={radio ? undefined : on}
+            className={on ? "active" : undefined}
+            lang={option.lang}
+            onClick={() => onChange(option.value)}
+          >
+            {option.label}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+export interface Tab<T extends string> {
+  id: T;
+  label: ReactNode;
+}
+
+interface TabsProps<T extends string> {
+  label: string;
+  tabs: Tab<T>[];
+  tab: T;
+  onTab: (tab: T) => void;
+  /** Prefix of the tab ids, which the panel's aria-labelledby names. */
+  idPrefix: string;
+  /** The id of the panel the tabs control. */
+  panel: string;
+  className?: string;
+}
+
+/** A tab list: arrow keys, Home and End move between tabs, as in any tab list. */
+export function Tabs<T extends string>({ label, tabs, tab, onTab, idPrefix, panel, className }: TabsProps<T>) {
+  function onKey(event: KeyboardEvent) {
+    const index = tabs.findIndex((item) => item.id === tab);
+    const last = tabs.length - 1;
+    const target = { ArrowRight: index + 1, ArrowLeft: index - 1, Home: 0, End: last }[event.key];
+    if (target === undefined) return;
+    event.preventDefault();
+    const next = tabs[(target + tabs.length) % tabs.length];
+    onTab(next.id);
+    document.getElementById(`${idPrefix}-${next.id}`)?.focus();
+  }
+
+  return (
+    <div className={className ? `tabs ${className}` : "tabs"} role="tablist" aria-label={label} onKeyDown={onKey}>
+      {tabs.map((item) => (
+        <button
+          key={item.id}
+          id={`${idPrefix}-${item.id}`}
+          role="tab"
+          aria-selected={item.id === tab}
+          aria-controls={panel}
+          tabIndex={item.id === tab ? 0 : -1}
+          className={item.id === tab ? "active" : undefined}
+          onClick={() => onTab(item.id)}
+        >
+          {item.label}
+        </button>
+      ))}
     </div>
   );
 }

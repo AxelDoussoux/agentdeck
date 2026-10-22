@@ -1,6 +1,6 @@
 .table-card {
   overflow-x: auto;
-  margin-bottom: 20px;
+  margin-bottom: var(--space-5);
 }
 
 table {
@@ -15,7 +15,7 @@ th {
   border-bottom: 1px solid var(--border);
   background: var(--surface-2);
   color: var(--muted);
-  font-size: 12px;
+  font-size: var(--text-sm);
   font-weight: 600;
   text-align: left;
   white-space: nowrap;
@@ -73,18 +73,18 @@ tr.selected td {
 .server small {
   display: flex;
   align-items: center;
-  gap: 4px;
-  margin-top: 4px;
+  gap: var(--space-1);
+  margin-top: var(--space-1);
 }
 
 .cell {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
+  gap: var(--space-1);
   padding: 4px 10px;
   border: 1px solid transparent;
   border-radius: 999px;
-  font-size: 12px;
+  font-size: var(--text-sm);
   font-weight: 500;
 }
 
@@ -146,7 +146,7 @@ tr:hover .row-menu .icon-button,
   display: flex;
   flex-direction: column;
   min-width: 190px;
-  padding: 4px;
+  padding: var(--space-1);
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
   background: var(--surface);

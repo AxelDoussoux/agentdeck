@@ -7,7 +7,7 @@ import { ConfirmDialog } from "../components/ConfirmDialog";
 import { LauncherRepair } from "../components/LauncherRepair";
 import { useToast } from "../components/Toasts";
 import { Tooltip } from "../components/Tooltip";
-import { AgentMark, Icon, Notice, PageHeader } from "../components/ui";
+import { AgentMark, Icon, Notice, PageHeader, Segmented } from "../components/ui";
 import { appSettings, emptySkillTrash, openFolder, pickAgentFolder, resetAgentFolder } from "../lib/api";
 import type { Agent, AgentInfo, AppSettings, SecretListing } from "../lib/types";
 import { errorText, LANGUAGES, t, type LanguageSetting } from "../lib/i18n";
@@ -124,36 +124,27 @@ export function SettingsPage({ agents, secrets, version, theme, setTheme, langua
         <h2>{t.settings.appearance}</h2>
         <div className="setting-row">
           <span className="setting-label">{t.settings.theme}</span>
-          <div className="segmented" role="radiogroup" aria-label={t.settings.theme}>
-            {THEMES.map((option) => (
-              <button
-                key={option}
-                role="radio"
-                aria-checked={theme === option}
-                className={theme === option ? "active" : undefined}
-                onClick={() => setTheme(option)}
-              >
-                {t.settings.themes[option]}
-              </button>
-            ))}
-          </div>
+          <Segmented
+            radio
+            label={t.settings.theme}
+            value={theme}
+            onChange={setTheme}
+            options={THEMES.map((option) => ({ value: option, label: t.settings.themes[option] }))}
+          />
         </div>
         <div className="setting-row">
           <span className="setting-label">{t.settings.language}</span>
-          <div className="segmented" role="radiogroup" aria-label={t.settings.language}>
-            {LANGUAGE_SETTINGS.map((option) => (
-              <button
-                key={option}
-                role="radio"
-                aria-checked={language === option}
-                className={language === option ? "active" : undefined}
-                lang={option === "system" ? undefined : option}
-                onClick={() => setLanguage(option)}
-              >
-                {option === "system" ? t.settings.systemLanguage : LANGUAGES[option].name}
-              </button>
-            ))}
-          </div>
+          <Segmented
+            radio
+            label={t.settings.language}
+            value={language}
+            onChange={setLanguage}
+            options={LANGUAGE_SETTINGS.map((option) =>
+              option === "system"
+                ? { value: option, label: t.settings.systemLanguage }
+                : { value: option, label: LANGUAGES[option].name, lang: option },
+            )}
+          />
         </div>
       </section>
 

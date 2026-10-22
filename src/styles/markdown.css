@@ -1,5 +1,5 @@
 .markdown {
-  font-size: 13px;
+  font-size: var(--text-md);
   line-height: 1.6;
   overflow-wrap: anywhere;
 }
@@ -32,12 +32,12 @@
 }
 
 .markdown h4 {
-  font-size: 15px;
+  font-size: var(--text-lg);
 }
 
 .markdown h5,
 .markdown h6 {
-  font-size: 13px;
+  font-size: var(--text-md);
 }
 
 .markdown p,
@@ -83,7 +83,7 @@
 }
 
 .markdown blockquote {
-  padding-left: 12px;
+  padding-left: var(--space-3);
   border-left: 3px solid var(--border-strong);
   color: var(--muted);
 }
@@ -113,7 +113,7 @@
 
 .markdown table {
   border-collapse: collapse;
-  font-size: 12px;
+  font-size: var(--text-sm);
 }
 
 .markdown th,
