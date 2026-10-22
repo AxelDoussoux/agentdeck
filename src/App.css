@@ -1261,6 +1261,10 @@ tr:hover .row-menu .icon-button,
   border-left: 1px solid var(--border);
 }
 
+.shared-hint {
+  margin: 10px 0 0;
+}
+
 .tab-badge {
   margin-left: 6px;
   padding: 0 6px;

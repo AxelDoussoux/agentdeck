@@ -30,7 +30,8 @@ shows them side by side, and syncs them in one click.
   or see why it fails.
 - **Rules.** Edit `CLAUDE.md`, `AGENTS.md` and `GEMINI.md` in a Markdown
   editor with a live preview, see which agents have the same rules, and copy
-  them from one agent to the others after reviewing the differences.
+  them from one agent to the others after reviewing the differences. Mark a
+  shared base, and copying it keeps the rules specific to each agent.
 - **Skills.** See which agents load each Agent Skill, read its `SKILL.md`
   rendered with the files it bundles, start a new one from a template, and
   share a skill with another agent without duplicating folders needlessly.
@@ -90,6 +91,7 @@ agentdeck mcp remove codex github
 agentdeck rules list
 agentdeck rules show claude-code
 agentdeck rules copy --from claude-code --to codex gemini
+agentdeck rules copy --from claude-code --to codex --shared   # only the shared base
 agentdeck skills list
 agentdeck skills new release-notes --to shared --description "Write release notes from merged PRs"
 agentdeck skills copy pdf --from claude-code --to codex gemini

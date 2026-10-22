@@ -51,6 +51,63 @@ pub fn copy(home: &Path, from: Agent, to: Agent) -> Result<()> {
     write(to, home, &content)
 }
 
+/// Opens the shared base: the part of the rules that is the same for every
+/// agent. HTML comments, so agents and Markdown viewers ignore the markers.
+pub const SHARED_START: &str = "<!-- agentdeck:shared -->";
+/// Closes the shared base.
+pub const SHARED_END: &str = "<!-- /agentdeck:shared -->";
+
+/// Where the shared base sits in `content`: the byte ranges of the whole
+/// block, markers included, and of the text between the markers.
+fn shared_block(content: &str) -> Option<(std::ops::Range<usize>, std::ops::Range<usize>)> {
+    let start = content.find(SHARED_START)?;
+    let inner_start = start + SHARED_START.len();
+    let end = inner_start + content[inner_start..].find(SHARED_END)?;
+    Some((start..end + SHARED_END.len(), inner_start..end))
+}
+
+/// The shared base of `content`, between its markers, without the line
+/// breaks that frame it. `None` when the rules have no shared base.
+pub fn shared_part(content: &str) -> Option<&str> {
+    let (_, inner) = shared_block(content)?;
+    Some(trim_frame(&content[inner]))
+}
+
+/// Drops one line break after the start marker and one before the end marker.
+fn trim_frame(text: &str) -> &str {
+    let text = text
+        .strip_prefix("\r\n")
+        .or_else(|| text.strip_prefix('\n'))
+        .unwrap_or(text);
+    text.strip_suffix("\r\n")
+        .or_else(|| text.strip_suffix('\n'))
+        .unwrap_or(text)
+}
+
+/// `content` with its shared base replaced by `shared`, or with the shared
+/// base added on top when it has none. The rest is kept as it is.
+pub fn with_shared(content: &str, shared: &str) -> String {
+    let block = format!("{SHARED_START}\n{shared}\n{SHARED_END}");
+    match shared_block(content) {
+        Some((whole, _)) => format!(
+            "{}{block}{}",
+            &content[..whole.start],
+            &content[whole.end..]
+        ),
+        None if content.trim().is_empty() => format!("{block}\n"),
+        None => format!("{block}\n\n{content}"),
+    }
+}
+
+/// Puts the shared base of `from` into the rules of `to`, keeping the rest
+/// of them. Fails when `from` has no shared base.
+pub fn copy_shared(home: &Path, from: Agent, to: Agent) -> Result<()> {
+    let source = read(from, home)?.content.unwrap_or_default();
+    let shared = shared_part(&source).ok_or(Error::NoSharedRules { agent: from })?;
+    let target = read(to, home)?.content.unwrap_or_default();
+    write(to, home, &with_shared(&target, shared))
+}
+
 #[cfg(test)]
 mod tests {
     use std::fs;
@@ -77,6 +134,55 @@ mod tests {
         let (all, errors) = read_all(home);
         assert!(errors.is_empty());
         assert_eq!(all.len(), 3);
+    }
+
+    #[test]
+    fn the_shared_base_is_replaced_and_the_rest_kept() {
+        let claude = "# Rules\n<!-- agentdeck:shared -->\nUse pnpm.\nWrite tests.\n<!-- /agentdeck:shared -->\n\nClaude only.\n";
+        assert_eq!(shared_part(claude), Some("Use pnpm.\nWrite tests."));
+        assert_eq!(shared_part("no markers"), None);
+        assert_eq!(shared_part("<!-- agentdeck:shared -->\nunclosed"), None);
+
+        // Replaced in place, around the agent's own rules.
+        let codex =
+            "Intro.\n<!-- agentdeck:shared -->\nOld.\n<!-- /agentdeck:shared -->\nCodex only.\n";
+        assert_eq!(
+            with_shared(codex, "Use pnpm.\nWrite tests."),
+            "Intro.\n<!-- agentdeck:shared -->\nUse pnpm.\nWrite tests.\n<!-- /agentdeck:shared -->\nCodex only.\n"
+        );
+        // Added on top of rules without a base, and alone in empty ones.
+        assert_eq!(
+            with_shared("Gemini only.\n", "Base."),
+            "<!-- agentdeck:shared -->\nBase.\n<!-- /agentdeck:shared -->\n\nGemini only.\n"
+        );
+        assert_eq!(
+            with_shared("", "Base."),
+            "<!-- agentdeck:shared -->\nBase.\n<!-- /agentdeck:shared -->\n"
+        );
+        // Syncing twice changes nothing more.
+        let once = with_shared("Gemini only.\n", "Base.");
+        assert_eq!(with_shared(&once, "Base."), once);
+    }
+
+    #[test]
+    fn copy_shared_keeps_each_agents_own_rules() {
+        let home = tempfile::tempdir().unwrap();
+        let home = home.path();
+        write(
+            Agent::ClaudeCode,
+            home,
+            "<!-- agentdeck:shared -->\nUse pnpm.\n<!-- /agentdeck:shared -->\nClaude only.\n",
+        )
+        .unwrap();
+        write(Agent::Codex, home, "Codex only.\n").unwrap();
+        copy_shared(home, Agent::ClaudeCode, Agent::Codex).unwrap();
+        let codex = read(Agent::Codex, home).unwrap().content.unwrap();
+        assert_eq!(
+            codex,
+            "<!-- agentdeck:shared -->\nUse pnpm.\n<!-- /agentdeck:shared -->\n\nCodex only.\n"
+        );
+        let err = copy_shared(home, Agent::Gemini, Agent::Codex).unwrap_err();
+        assert!(matches!(err, Error::NoSharedRules { .. }));
     }
 
     #[test]
