@@ -26,6 +26,10 @@ pub enum Error {
         path: PathBuf,
         source: Box<toml_edit::TomlError>,
     },
+    #[error(
+        "{path} kept changing while AgentDeck was writing it. Close the agent that uses it and try again"
+    )]
+    Conflict { path: PathBuf },
     #[error("unexpected structure in {path}: {reason}")]
     Invalid { path: PathBuf, reason: &'static str },
     #[error("{} has no MCP server named \"{name}\"", agent.display_name())]
