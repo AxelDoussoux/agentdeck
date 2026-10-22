@@ -27,10 +27,12 @@ shows them side by side, and syncs them in one click.
   back one server at a time.
 - **Rules.** Edit `CLAUDE.md`, `AGENTS.md` and `GEMINI.md` side by side and
   copy them from one agent to the others.
-- **Skills.** See which agents load each Agent Skill, and share a skill with
-  another agent without duplicating folders needlessly. When copies of a skill
-  differ, compare their `SKILL.md` and use the one you want everywhere;
-  removed and replaced copies go to a trash you can restore from.
+- **Skills.** See which agents load each Agent Skill, read its `SKILL.md`
+  rendered with the files it bundles, start a new one from a template, and
+  share a skill with another agent without duplicating folders needlessly.
+  No HTML or image in a skill is loaded. When copies of a skill differ, compare
+  their `SKILL.md` and use the one you want everywhere; removed and replaced
+  copies go to a trash you can restore from.
 - **Secrets.** Find API keys stored in plain text in agent configs and move them
   to the system keychain (Windows Credential Manager, macOS Keychain, Secret
   Service), one server at a time or all at once. Values are never displayed.
@@ -84,6 +86,7 @@ agentdeck rules list
 agentdeck rules show claude-code
 agentdeck rules copy --from claude-code --to codex gemini
 agentdeck skills list
+agentdeck skills new release-notes --to shared --description "Write release notes from merged PRs"
 agentdeck skills copy pdf --from claude-code --to codex gemini
 agentdeck skills remove pdf --from shared   # moved to ~/.agentdeck/trash
 agentdeck skills trash
