@@ -6,6 +6,7 @@ import { RowMenu, type MenuItem } from "../components/RowMenu";
 import { ServerForm, type ServerDraft } from "../components/ServerForm";
 import { ServerTestResult, type TestState } from "../components/ServerTest";
 import { useToast } from "../components/Toasts";
+import { Tooltip } from "../components/Tooltip";
 import {
   addMcpServer,
   copyMcpServer,
@@ -18,6 +19,7 @@ import {
   undoChange,
 } from "../lib/api";
 import { byName, changes, describe, differences, WITH_OPTIONS } from "../lib/servers";
+import { moveInGrid } from "../lib/grid";
 import { matches } from "../lib/search";
 import type { Agent, AgentInfo, McpListing, McpServer, ServerSpec, ServerVersion } from "../lib/types";
 
@@ -274,7 +276,7 @@ export function McpPage({ agents, listing, onChange, focus }: Props) {
         </Empty>
       ) : (
         <div className="table-card">
-          <table className="matrix">
+          <table className="matrix" onKeyDown={moveInGrid}>
             <thead>
               <tr>
                 <th>Server</th>
@@ -347,13 +349,14 @@ export function McpPage({ agents, listing, onChange, focus }: Props) {
                       if (differs.length > 0) {
                         return (
                           <td key={agent} className={`agent-col ${off}`}>
-                            <button
-                              className="cell cell-differs"
-                              title={differs.join("\n")}
-                              onClick={() => open(name, "differences")}
-                            >
-                              <Icon name="differs" size={14} /> Different
-                            </button>
+                            <Tooltip text={differs.join("\n")}>
+                              <button
+                                className="cell cell-differs"
+                                onClick={() => open(name, "differences")}
+                              >
+                                <Icon name="differs" size={14} /> Different
+                              </button>
+                            </Tooltip>
                           </td>
                         );
                       }
@@ -377,13 +380,14 @@ export function McpPage({ agents, listing, onChange, focus }: Props) {
                       }
                       return (
                         <td key={agent} className={`agent-col ${off}`}>
-                          <button
-                            className="cell cell-add"
-                            title={`Copy ${name} from ${nameOf(source.agent)} to ${nameOf(agent)}`}
-                            onClick={() => copyMany(name, source.agent, [agent], false)}
-                          >
-                            <Icon name="plus" size={14} /> Add
-                          </button>
+                          <Tooltip text={`Copy ${name} from ${nameOf(source.agent)} to ${nameOf(agent)}`}>
+                            <button
+                              className="cell cell-add"
+                              onClick={() => copyMany(name, source.agent, [agent], false)}
+                            >
+                              <Icon name="plus" size={14} /> Add
+                            </button>
+                          </Tooltip>
                         </td>
                       );
                     })}

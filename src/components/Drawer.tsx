@@ -1,6 +1,7 @@
 import { useEffect, useRef, type KeyboardEvent, type ReactNode } from "react";
 import { useToastHost } from "./Toasts";
 import { Icon } from "./ui";
+import { Tooltip } from "./Tooltip";
 
 export interface DrawerTab<T extends string> {
   id: T;
@@ -62,9 +63,11 @@ export function Drawer<T extends string>({ title, subtitle, tabs, tab, onTab, on
           <h2 id="drawer-title">{title}</h2>
           {subtitle && <div className="hint">{subtitle}</div>}
         </div>
-        <button className="icon-button" aria-label="Close" title="Close" onClick={onClose}>
-          <Icon name="close" />
-        </button>
+        <Tooltip text="Close">
+          <button className="icon-button" aria-label="Close" onClick={onClose}>
+            <Icon name="close" />
+          </button>
+        </Tooltip>
       </header>
       {tabs.length > 1 && (
         <div className="tabs drawer-tabs" role="tablist" aria-label="Sections" onKeyDown={onTabKey}>

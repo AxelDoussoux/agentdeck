@@ -4,6 +4,7 @@ import { ConfirmDialog } from "../components/ConfirmDialog";
 import { DiffView } from "../components/DiffView";
 import { AgentMark, Icon, Notice, PageHeader } from "../components/ui";
 import { useToast } from "../components/Toasts";
+import { Tooltip } from "../components/Tooltip";
 import { listRules, saveRules, undoChange } from "../lib/api";
 import { lineCount } from "../lib/diff";
 import { shortcut, withModifier } from "../lib/keys";
@@ -219,9 +220,11 @@ export function RulesPage({ agents, setGuard, focus }: Props) {
       </div>
 
       <div className="toolbar">
-        <button className="primary" disabled={!dirty} onClick={save} title={`Save (${SAVE_SHORTCUT})`}>
-          Save <kbd>{SAVE_SHORTCUT}</kbd>
-        </button>
+        <Tooltip text={`Save (${SAVE_SHORTCUT})`}>
+          <button className="primary" disabled={!dirty} onClick={save}>
+            Save <kbd>{SAVE_SHORTCUT}</kbd>
+          </button>
+        </Tooltip>
         {dirty && <button onClick={() => (onDisk === null ? setDraft(saved) : load())}>Revert</button>}
 
         <span className="spacer" />

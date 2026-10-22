@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, type CSSProperties, type KeyboardEvent } from "react";
 import { Icon } from "./ui";
+import { Tooltip } from "./Tooltip";
 
 export interface MenuItem {
   label: string;
@@ -62,17 +63,18 @@ export function RowMenu({ label, items }: { label: string; items: MenuItem[] }) 
 
   return (
     <div ref={root} className={`row-menu ${open ? "open" : ""}`} onKeyDown={onKeyDown}>
-      <button
-        ref={trigger}
-        className="icon-button"
-        aria-label={label}
-        title={label}
-        aria-haspopup="menu"
-        aria-expanded={open}
-        onClick={toggle}
-      >
-        <Icon name="more" />
-      </button>
+      <Tooltip text={label}>
+        <button
+          ref={trigger}
+          className="icon-button"
+          aria-label={label}
+          aria-haspopup="menu"
+          aria-expanded={open}
+          onClick={toggle}
+        >
+          <Icon name="more" />
+        </button>
+      </Tooltip>
       {position && (
         <div className="menu" role="menu" aria-label={label} style={position}>
           {items.map((item) => (

@@ -6,6 +6,7 @@ import { DiffView } from "../components/DiffView";
 import { Drawer } from "../components/Drawer";
 import { Markdown } from "../components/Markdown";
 import { useToast } from "../components/Toasts";
+import { Tooltip } from "../components/Tooltip";
 import {
   copySkill,
   createSkill,
@@ -17,6 +18,7 @@ import {
   restoreSkill,
   skillFiles,
 } from "../lib/api";
+import { moveInGrid } from "../lib/grid";
 import { matches } from "../lib/search";
 import { useFilesChanged } from "../lib/watch";
 import type { Agent, AgentInfo, Skill, SkillFile, SkillListing, SkillLocation, TrashedSkill } from "../lib/types";
@@ -262,7 +264,7 @@ export function SkillsPage({ agents, focus }: { agents: AgentInfo[]; focus?: Foc
         </Empty>
       ) : (
         <div className="table-card">
-          <table className="matrix">
+          <table className="matrix" onKeyDown={moveInGrid}>
             <thead>
               <tr>
                 <th>Skill</th>
@@ -303,18 +305,19 @@ export function SkillsPage({ agents, focus }: { agents: AgentInfo[]; focus?: Foc
                         </td>
                       ) : (
                         <td key={agent} className="agent-col">
-                          <button
-                            className="cell cell-add"
-                            title={`Copies ${source.path}, the copy edited last`}
-                            onClick={() =>
-                              run(async () => {
-                                await copySkill(name, source.location, agent);
-                                return `Copied "${name}" for ${nameOf(agent)}.`;
-                              })
-                            }
-                          >
-                            <Icon name="plus" size={14} /> Add
-                          </button>
+                          <Tooltip text={`Copies ${source.path}, the copy edited last`}>
+                            <button
+                              className="cell cell-add"
+                              onClick={() =>
+                                run(async () => {
+                                  await copySkill(name, source.location, agent);
+                                  return `Copied "${name}" for ${nameOf(agent)}.`;
+                                })
+                              }
+                            >
+                              <Icon name="plus" size={14} /> Add
+                            </button>
+                          </Tooltip>
                         </td>
                       );
                     })}
@@ -351,9 +354,11 @@ export function SkillsPage({ agents, focus }: { agents: AgentInfo[]; focus?: Foc
                   return (
                     <li key={skill.location} className={skill.location === previewed ? "active" : undefined}>
                       <div>
-                        <button className="link" title="Show this copy" onClick={() => show(skill.name, skill.location)}>
-                          <code>{skill.path}</code>
-                        </button>
+                        <Tooltip text="Show this copy">
+                          <button className="link" onClick={() => show(skill.name, skill.location)}>
+                            <code>{skill.path}</code>
+                          </button>
+                        </Tooltip>
                         <span className="hint">
                           Loaded by {skill.readers.map(nameOf).join(", ") || "no agent"} · edited{" "}
                           {formatDate(skill.modifiedMs)}
