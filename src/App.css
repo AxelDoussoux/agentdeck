@@ -1170,3 +1170,51 @@ button.cell-on:hover {
     padding: 20px 16px 40px;
   }
 }
+
+/* Modal dialog */
+
+.dialog {
+  width: min(440px, calc(100vw - 32px));
+  padding: 20px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+  color: var(--text);
+  box-shadow: var(--shadow-lg);
+}
+
+.dialog::backdrop {
+  background: rgb(10 10 16 / 0.45);
+}
+
+.dialog h3 {
+  margin: 0 0 8px;
+  font-size: 16px;
+}
+
+.dialog-body {
+  color: var(--muted);
+  line-height: 1.5;
+}
+
+.dialog-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 20px;
+}
+
+kbd {
+  padding: 1px 5px;
+  border: 1px solid var(--border-strong);
+  border-bottom-width: 2px;
+  border-radius: 4px;
+  font: 11px var(--mono);
+  color: var(--muted);
+}
+
+button.primary kbd {
+  border-color: currentColor;
+  color: inherit;
+  opacity: 0.75;
+}
