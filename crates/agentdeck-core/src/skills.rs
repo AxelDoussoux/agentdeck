@@ -26,7 +26,8 @@ pub enum Location {
 }
 
 impl Location {
-    /// The agent folder a location lives in, which the trash keeps.
+    /// The default name of the location's agent folder, which identifies the
+    /// location in the trash even when a variable moves the folder.
     fn folder(self) -> &'static str {
         match self {
             Location::ClaudeCode => ".claude",
@@ -46,7 +47,14 @@ impl Location {
     ];
 
     pub fn path(self, home: &Path) -> PathBuf {
-        home.join(self.folder()).join("skills")
+        let dir = match self {
+            Location::ClaudeCode => Agent::ClaudeCode.folder(home),
+            Location::Shared => home.join(".agents"),
+            Location::Codex => Agent::Codex.folder(home),
+            Location::Gemini => Agent::Gemini.folder(home),
+            Location::Cursor => Agent::Cursor.folder(home),
+        };
+        dir.join("skills")
     }
 
     /// Agents that load the skills of this folder.

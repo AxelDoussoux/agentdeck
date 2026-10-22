@@ -131,13 +131,13 @@ pub fn report(home: &Path) -> UsageReport {
     let mut kept = Cache::default();
     let mut builder = ReportBuilder::default();
 
-    let codex = home.join(".codex");
+    let codex = Agent::Codex.folder(home);
     let mut codex_files = jsonl_files(&codex.join("sessions"));
     codex_files.extend(jsonl_files(&codex.join("archived_sessions")));
     let sources = [
         (
             Agent::ClaudeCode,
-            jsonl_files(&home.join(".claude").join("projects")),
+            jsonl_files(&Agent::ClaudeCode.folder(home).join("projects")),
         ),
         (Agent::Codex, codex_files),
     ];
