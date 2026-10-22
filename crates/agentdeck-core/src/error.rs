@@ -48,6 +48,8 @@ pub enum Error {
     NoRulesFile { agent: Agent },
     #[error("system keychain: {0}")]
     Keychain(String),
+    #[error("the {} rules have no shared base: put it between {} and {}", agent.display_name(), crate::rules::SHARED_START, crate::rules::SHARED_END)]
+    NoSharedRules { agent: Agent },
     #[error("\"{name}\" is not a valid skill name")]
     InvalidSkillName { name: String },
     #[error(

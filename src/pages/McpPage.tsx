@@ -18,6 +18,7 @@ import {
   undoChange,
 } from "../lib/api";
 import { byName, changes, describe, differences, WITH_OPTIONS } from "../lib/servers";
+import { matches } from "../lib/search";
 import type { Agent, AgentInfo, McpListing, McpServer, ServerSpec, ServerVersion } from "../lib/types";
 
 interface Props {
@@ -45,6 +46,7 @@ export function McpPage({ agents, listing, onChange, focus }: Props) {
   const [adding, setAdding] = useState(false);
   const [opened, setOpened] = useState<Opened | null>(null);
   const [highlighted, setHighlighted] = useState<string | null>(null);
+  const [query, setQuery] = useState("");
   const [versions, setVersions] = useState<Map<Agent, ServerVersion[]>>(new Map());
   // Server tests by `agent/name`, kept while the page is open.
   const [tests, setTests] = useState<Record<string, TestState>>({});
@@ -65,6 +67,8 @@ export function McpPage({ agents, listing, onChange, focus }: Props) {
     if (focus?.kind === "add-server") setAdding(true);
     else if (focus?.kind === "edit-server") setOpened({ name: focus.name, tab: "details", editing: focus.agent });
     if (focus?.kind !== "server") return;
+    // The server may be filtered out of the grid.
+    setQuery("");
     setOpened({ name: focus.name, tab: "details" });
     setHighlighted(focus.name);
     document.getElementById(rowId(focus.name))?.scrollIntoView({ block: "center", behavior: "smooth" });
@@ -74,6 +78,9 @@ export function McpPage({ agents, listing, onChange, focus }: Props) {
 
   // One row per server name, one column per agent.
   const rows = byName(listing);
+  const shown = [...rows].filter(([name, byAgent]) =>
+    matches(query, [name, ...[...byAgent.values()].map((server) => describe(server.transport))]),
+  );
 
   // The drawer closes once no agent has the server any more.
   useEffect(() => {
@@ -215,9 +222,21 @@ export function McpPage({ agents, listing, onChange, focus }: Props) {
         title="MCP servers"
         description="Each row is a server, each column an agent. Add a server to another agent in one click: its settings and secrets are copied for you."
         actions={
-          <button className="primary" onClick={() => setAdding(true)}>
-            <Icon name="plus" /> Add server
-          </button>
+          <>
+            {rows.size > 0 && (
+              <input
+                type="search"
+                className="header-search"
+                placeholder="Search servers"
+                aria-label="Search servers by name, command or URL"
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+              />
+            )}
+            <button className="primary" onClick={() => setAdding(true)}>
+              <Icon name="plus" /> Add server
+            </button>
+          </>
         }
       />
       {listing.errors.map((message) => (
@@ -246,6 +265,13 @@ export function McpPage({ agents, listing, onChange, focus }: Props) {
         <Empty icon="plug" title="No MCP server configured yet">
           Add one with the button above, or install one in any agent: it shows up here.
         </Empty>
+      ) : shown.length === 0 ? (
+        <Empty icon="plug" title={`No server matches “${query.trim()}”`}>
+          Search looks at names, commands and URLs.{" "}
+          <button className="link" onClick={() => setQuery("")}>
+            Clear the search
+          </button>
+        </Empty>
       ) : (
         <div className="table-card">
           <table className="matrix">
@@ -270,7 +296,7 @@ export function McpPage({ agents, listing, onChange, focus }: Props) {
               </tr>
             </thead>
             <tbody>
-              {[...rows].map(([name, byAgent]) => {
+              {shown.map(([name, byAgent]) => {
                 const [source] = byAgent.values();
                 const secretKeys = [...source.envKeys, ...source.headerKeys];
                 const missing = agents.filter(({ agent }) => !byAgent.has(agent) && supports(source, agent));

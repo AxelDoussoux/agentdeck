@@ -17,6 +17,7 @@ import {
   restoreSkill,
   skillFiles,
 } from "../lib/api";
+import { matches } from "../lib/search";
 import { useFilesChanged } from "../lib/watch";
 import type { Agent, AgentInfo, Skill, SkillFile, SkillListing, SkillLocation, TrashedSkill } from "../lib/types";
 
@@ -72,6 +73,7 @@ export function SkillsPage({ agents, focus }: { agents: AgentInfo[]; focus?: Foc
   const [pendingSpread, setPendingSpread] = useState<SkillLocation | null>(null);
   const [pendingRestore, setPendingRestore] = useState<TrashedSkill | null>(null);
   const [showTrash, setShowTrash] = useState(false);
+  const [query, setQuery] = useState("");
   const [loadError, setLoadError] = useState<string | null>(null);
   const notify = useToast();
 
@@ -93,6 +95,8 @@ export function SkillsPage({ agents, focus }: { agents: AgentInfo[]; focus?: Foc
   useEffect(() => {
     if (focus?.kind === "skill" && focus !== focused && listing.skills.some((s) => s.name === focus.name)) {
       setFocused(focus);
+      // The skill may be filtered out of the grid.
+      setQuery("");
       open(focus.name);
     }
   }, [focus, listing]);
@@ -102,6 +106,9 @@ export function SkillsPage({ agents, focus }: { agents: AgentInfo[]; focus?: Foc
   for (const skill of listing.skills) {
     byName.set(skill.name, [...(byName.get(skill.name) ?? []), skill]);
   }
+  const shown = [...byName].filter(([name, found]) =>
+    matches(query, [name, ...found.map((skill) => skill.description)]),
+  );
   const copies = selected ? (byName.get(selected) ?? []) : [];
   const trashed = listing.trash.filter((skill) => skill.name === selected);
   const differ = (found: Skill[]) => new Set(found.map((skill) => skill.hash)).size > 1;
@@ -183,6 +190,16 @@ export function SkillsPage({ agents, focus }: { agents: AgentInfo[]; focus?: Foc
         description="Folders with a SKILL.md that agents load on demand. Codex, Gemini CLI and Cursor share ~/.agents/skills, and Cursor also reads the Claude Code and Codex folders, so one copy can reach several agents."
         actions={
           <>
+            {byName.size > 0 && (
+              <input
+                type="search"
+                className="header-search"
+                placeholder="Search skills"
+                aria-label="Search skills by name or description"
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+              />
+            )}
             <button aria-pressed={showTrash} onClick={() => setShowTrash(!showTrash)}>
               Trash{listing.trash.length > 0 && ` (${listing.trash.length})`}
             </button>
@@ -236,6 +253,13 @@ export function SkillsPage({ agents, focus }: { agents: AgentInfo[]; focus?: Foc
         <Empty icon="skills" title="No skill installed yet">
           Skills you add to any agent's skills folder show up here.
         </Empty>
+      ) : shown.length === 0 ? (
+        <Empty icon="skills" title={`No skill matches “${query.trim()}”`}>
+          Search looks at names and descriptions.{" "}
+          <button className="link" onClick={() => setQuery("")}>
+            Clear the search
+          </button>
+        </Empty>
       ) : (
         <div className="table-card">
           <table className="matrix">
@@ -253,7 +277,7 @@ export function SkillsPage({ agents, focus }: { agents: AgentInfo[]; focus?: Foc
               </tr>
             </thead>
             <tbody>
-              {[...byName].map(([name, found]) => {
+              {shown.map(([name, found]) => {
                 const source = newest(found);
                 return (
                   <tr key={name} className={name === selected ? "selected" : undefined}>

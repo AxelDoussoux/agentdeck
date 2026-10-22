@@ -157,6 +157,12 @@ export interface UsageReport {
   errors: string[];
 }
 
+/** How many session log files are read so far. */
+export interface ReadProgress {
+  done: number;
+  total: number;
+}
+
 export type SkillLocation = "claude-code" | "shared" | "codex" | "gemini" | "cursor";
 
 export interface Skill {
