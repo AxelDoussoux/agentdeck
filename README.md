@@ -42,6 +42,7 @@ shows them side by side, and syncs them in one click.
   per project, per model and per session, from Claude Code and Codex logs,
   over the last days or any period, with an optional monthly budget. Click a
   session to see its token split, cache hit rate and the command to resume it.
+  Export the sessions shown as CSV for a spreadsheet.
 - **Keyboard.** `Ctrl+K` (`⌘K` on macOS) opens a palette to jump to a page,
   a server, a skill or an agent's rules, or to copy a server to another agent.
   `Ctrl+1` to `Ctrl+6` switch pages, `Ctrl+R` reloads the configs and `Ctrl+S`
@@ -99,6 +100,7 @@ agentdeck secrets unprotect claude-code github
 agentdeck secrets repair    # after moving the app
 agentdeck secrets mark SERVICE_ID secret   # or setting, or auto
 agentdeck usage --days 30
+agentdeck usage --days 30 --csv > sessions.csv
 ```
 
 ## Config files read

@@ -16,7 +16,7 @@ use serde_json::Value;
 
 use crate::{Agent, pricing};
 
-#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Serialize)]
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Tokens {
     /// Input tokens read without the cache.
@@ -43,7 +43,7 @@ impl AddAssign for Tokens {
     }
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Session {
     pub agent: Agent,
@@ -96,6 +96,60 @@ pub struct UsageReport {
     pub hourly: Vec<HourUsage>,
     /// Files that could not be read. Malformed lines are skipped silently.
     pub errors: Vec<String>,
+}
+
+/// Sessions as CSV, one row each, for a spreadsheet.
+///
+/// Fields are quoted when they hold a comma, a quote or a line break, as
+/// RFC 4180 says. A title or project starting with `=`, `+`, `-` or `@` gets
+/// a leading `'`, so that a spreadsheet shows it instead of running it as a
+/// formula: titles are the first prompt of a session, which anyone can write.
+pub fn sessions_csv(sessions: &[Session]) -> String {
+    let mut csv = String::from(
+        "ended_at,agent,session_id,title,project,models,input_tokens,output_tokens,\
+         cache_read_tokens,cache_write_5m_tokens,cache_write_1h_tokens,total_tokens,\
+         cost_usd,unpriced_tokens\r\n",
+    );
+    for session in sessions {
+        let t = &session.tokens;
+        let fields = [
+            field(session.ended_at.as_deref().unwrap_or("")),
+            field(session.agent.display_name()),
+            field(&session.id),
+            text_field(session.title.as_deref().unwrap_or("")),
+            text_field(session.project.as_deref().unwrap_or("")),
+            field(&session.models.join("; ")),
+            t.input.to_string(),
+            t.output.to_string(),
+            t.cache_read.to_string(),
+            t.cache_write_5m.to_string(),
+            t.cache_write_1h.to_string(),
+            t.total().to_string(),
+            format!("{:.4}", session.cost_usd),
+            session.unpriced_tokens.to_string(),
+        ];
+        csv.push_str(&fields.join(","));
+        csv.push_str("\r\n");
+    }
+    csv
+}
+
+/// A CSV field, quoted when it needs to be.
+fn field(value: &str) -> String {
+    if value.contains([',', '"', '\n', '\r']) {
+        format!("\"{}\"", value.replace('"', "\"\""))
+    } else {
+        value.to_owned()
+    }
+}
+
+/// A field of free text, which a spreadsheet must not read as a formula.
+fn text_field(value: &str) -> String {
+    if value.starts_with(['=', '+', '-', '@', '\t', '\r']) {
+        field(&format!("'{value}"))
+    } else {
+        field(value)
+    }
 }
 
 /// The UTC date `days` days before today, as `YYYY-MM-DD`, to filter
@@ -880,6 +934,36 @@ mod tests {
         fs::remove_file(&log).unwrap();
         assert!(report(home.path()).sessions.is_empty());
         assert!(!fs::read_to_string(&cache).unwrap().contains("s1.jsonl"));
+    }
+
+    #[test]
+    fn csv_quotes_fields_and_defuses_formulas() {
+        let session = Session {
+            agent: Agent::ClaudeCode,
+            id: "s1".into(),
+            project: Some("/work/a,b".into()),
+            title: Some("=HYPERLINK(\"x\")".into()),
+            models: vec!["opus".into(), "haiku".into()],
+            started_at: None,
+            ended_at: Some("2026-10-20T10:00:00Z".into()),
+            tokens: Tokens {
+                input: 1,
+                output: 2,
+                cache_read: 3,
+                cache_write_5m: 4,
+                cache_write_1h: 5,
+            },
+            cost_usd: 0.5,
+            unpriced_tokens: 0,
+        };
+        let csv = sessions_csv(&[session]);
+        let rows: Vec<_> = csv.split("\r\n").collect();
+        assert!(rows[0].starts_with("ended_at,agent,session_id,title,"));
+        assert_eq!(
+            rows[1],
+            r#"2026-10-20T10:00:00Z,Claude Code,s1,"'=HYPERLINK(""x"")","/work/a,b",opus; haiku,1,2,3,4,5,15,0.5000,0"#
+        );
+        assert_eq!(rows[2], "");
     }
 
     #[test]

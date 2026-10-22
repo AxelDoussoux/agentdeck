@@ -6,6 +6,7 @@ import type {
   McpListing,
   ProtectPreview,
   ReadProgress,
+  Session,
   Rules,
   SecretListing,
   ServerEdit,
@@ -60,6 +61,10 @@ export function usageReport(onProgress?: (progress: ReadProgress) => void) {
   if (onProgress) progress.onmessage = onProgress;
   return invoke<UsageReport>("usage_report", { progress });
 }
+
+/** Asks where to save the sessions as CSV. Gives the path, or null when cancelled. */
+export const exportSessionsCsv = (sessions: Session[], fileName: string) =>
+  invoke<string | null>("export_sessions_csv", { sessions, fileName });
 
 export const listSkills = () => invoke<SkillListing>("list_skills");
 
