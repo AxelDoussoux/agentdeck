@@ -1,4 +1,5 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import type { Focus } from "../App";
 import { AgentMark, Empty, Icon, Notice, PageHeader } from "../components/ui";
 import { ConfirmDialog } from "../components/ConfirmDialog";
 import { RowMenu, type MenuItem } from "../components/RowMenu";
@@ -12,13 +13,26 @@ interface Props {
   agents: AgentInfo[];
   listing: McpListing;
   onChange: () => Promise<void>;
+  /** A server to show, or a form to open, chosen in the command palette. */
+  focus?: Focus | null;
 }
 
-export function McpPage({ agents, listing, onChange }: Props) {
+export function McpPage({ agents, listing, onChange, focus }: Props) {
   const notify = useToast();
   /** The form shown: `true` to add a server, or the server to edit. */
   const [form, setForm] = useState<true | { agent: Agent; name: string } | null>(null);
   const [aligning, setAligning] = useState<{ name: string; agent: Agent } | null>(null);
+  const [highlighted, setHighlighted] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (focus?.kind === "add-server") setForm(true);
+    else if (focus?.kind === "edit-server") setForm({ agent: focus.agent, name: focus.name });
+    if (focus?.kind !== "server") return;
+    setHighlighted(focus.name);
+    document.getElementById(rowId(focus.name))?.scrollIntoView({ block: "center", behavior: "smooth" });
+    const timer = setTimeout(() => setHighlighted(null), 1600);
+    return () => clearTimeout(timer);
+  }, [focus]);
 
   // One row per server name, one column per agent.
   const rows = byName(listing);
@@ -198,7 +212,7 @@ export function McpPage({ agents, listing, onChange }: Props) {
                   })),
                 ];
                 return (
-                  <tr key={name}>
+                  <tr key={name} id={rowId(name)} className={name === highlighted ? "highlight" : undefined}>
                     <td className="server">
                       <strong>{name}</strong>
                       <span className="meta">
@@ -532,3 +546,5 @@ function ServerForm({ agents, editing, onSubmit, onCancel }: FormProps) {
     </form>
   );
 }
+
+const rowId = (name: string) => `server-${name}`;

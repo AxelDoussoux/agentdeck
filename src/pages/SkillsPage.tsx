@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import type { Focus } from "../App";
 import { AgentMark, Empty, Icon, Notice, PageHeader } from "../components/ui";
 import { ConfirmDialog } from "../components/ConfirmDialog";
 import { useToast } from "../components/Toasts";
@@ -20,7 +21,8 @@ const formatDate = (ms: number) =>
 /** The copy edited last, which a new copy starts from. */
 const newest = (copies: Skill[]) => copies.reduce((a, b) => (b.modifiedMs > a.modifiedMs ? b : a));
 
-export function SkillsPage({ agents }: { agents: AgentInfo[] }) {
+/** `focus` names a skill to open, chosen in the command palette. */
+export function SkillsPage({ agents, focus }: { agents: AgentInfo[]; focus?: Focus | null }) {
   const [listing, setListing] = useState<SkillListing>({ skills: [], errors: [], trash: [] });
   const [selected, setSelected] = useState<string | null>(null);
   const [previewed, setPreviewed] = useState<SkillLocation | null>(null);
@@ -44,6 +46,15 @@ export function SkillsPage({ agents }: { agents: AgentInfo[] }) {
   useEffect(() => {
     load();
   }, []);
+
+  // Opens the skill once the listing has it.
+  const [focused, setFocused] = useState<Focus | null>(null);
+  useEffect(() => {
+    if (focus?.kind === "skill" && focus !== focused && listing.skills.some((s) => s.name === focus.name)) {
+      setFocused(focus);
+      open(focus.name);
+    }
+  }, [focus, listing]);
 
   // Every copy of each skill, grouped by folder name.
   const byName = new Map<string, Skill[]>();
