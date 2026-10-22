@@ -9,6 +9,7 @@ import type {
   ServerEdit,
   ServerSpec,
   ServerVersion,
+  SkillFile,
   SkillListing,
   SkillLocation,
   UsageReport,
@@ -58,6 +59,14 @@ export const listSkills = () => invoke<SkillListing>("list_skills");
 export const readSkill = (location: SkillLocation, name: string) =>
   invoke<string>("read_skill", { location, name });
 
+/** The files of a skill folder, sorted, at most 500. */
+export const skillFiles = (location: SkillLocation, name: string) =>
+  invoke<SkillFile[]>("skill_files", { location, name });
+
+/** Creates a skill with a SKILL.md to fill in, and returns its folder. */
+export const createSkill = (location: SkillLocation, name: string, description: string) =>
+  invoke<string>("create_skill", { location, name, description });
+
 export const copySkill = (name: string, from: SkillLocation, to: Agent) =>
   invoke<void>("copy_skill", { name, from, to });
 
@@ -84,11 +93,11 @@ export const protectServer = (agent: Agent, server: string) =>
 export const unprotectServer = (agent: Agent, server: string) =>
   invoke<number>("unprotect_server", { agent, server });
 
-/** Points protected servers whose launcher is missing at the current one. Returns how many. */
 /** Marks a variable name as a secret, a setting, or (`null`) lets AgentDeck judge it. */
 export const markSecretName = (name: string, secret: boolean | null) =>
   invoke<void>("mark_secret_name", { name, secret });
 
+/** Points protected servers whose launcher is missing at the current one. Returns how many. */
 export const repairLaunchers = () => invoke<number>("repair_launchers");
 
 /** Reverts the change that returned `id`. Each change can be undone once. */
@@ -97,6 +106,8 @@ export const undoChange = (id: number) => invoke<void>("undo_change", { id });
 export const appSettings = () => invoke<AppSettings>("app_settings");
 
 /** Shows one of AgentDeck's folders, or an agent's, in the file manager. */
-export const openFolder = (folder: "backups" | "trash" | { agent: Agent }) => invoke<void>("open_folder", { folder });
+export const openFolder = (
+  folder: "backups" | "trash" | { agent: Agent } | { skill: { location: SkillLocation; name: string } },
+) => invoke<void>("open_folder", { folder });
 
 export const emptySkillTrash = () => invoke<number>("empty_skill_trash");
