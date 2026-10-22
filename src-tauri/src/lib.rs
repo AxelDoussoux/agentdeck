@@ -7,7 +7,7 @@ use std::time::{Duration, Instant};
 use agentdeck_core::rules::{self, Rules};
 use agentdeck_core::secrets::{self, Keychain, SecretRef};
 use agentdeck_core::skills::{self, Location, Skill};
-use agentdeck_core::usage::{self, ReadProgress, UsageReport};
+use agentdeck_core::usage::{self, ReadProgress, Session, UsageReport};
 use agentdeck_core::{
     Agent, AgentInfo, Error, McpServer, ServerSpec, agent, config_file, mcp, probe,
 };
@@ -552,6 +552,41 @@ async fn usage_report(progress: Channel<ReadProgress>) -> Result<UsageReport, St
     .map_err(|err| err.to_string())
 }
 
+/// Saves sessions as CSV where the user picks in a save dialog. Returns the
+/// file's path, or nothing when the dialog is cancelled. Only the dialog
+/// chooses the path: the UI never passes one.
+#[tauri::command]
+async fn export_sessions_csv(
+    app: tauri::AppHandle,
+    sessions: Vec<Session>,
+    file_name: String,
+) -> Result<Option<String>, String> {
+    use tauri_plugin_dialog::DialogExt;
+    tauri::async_runtime::spawn_blocking(move || {
+        let mut dialog = app
+            .dialog()
+            .file()
+            .set_file_name(file_name)
+            .add_filter("CSV", &["csv"]);
+        // Over the window, so that it stays in front of it.
+        if let Some(window) = app.get_webview_window("main") {
+            dialog = dialog.set_parent(&window);
+        }
+        let Some(picked) = dialog.blocking_save_file() else {
+            return Ok(None);
+        };
+        let path = picked.into_path().map_err(|err| err.to_string())?;
+        // The byte order mark tells Excel the file is UTF-8, so accents and
+        // emoji in titles show as written.
+        let csv = format!("\u{feff}{}", usage::sessions_csv(&sessions));
+        fs::write(&path, csv)
+            .map_err(|err| format!("Could not write {}: {err}", path.display()))?;
+        Ok(Some(path.display().to_string()))
+    })
+    .await
+    .map_err(|err| err.to_string())?
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -565,6 +600,7 @@ pub fn run() {
             }
         }))
         .plugin(tauri_plugin_window_state::Builder::default().build())
+        .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_process::init())
@@ -603,6 +639,7 @@ pub fn run() {
             repair_launchers,
             mark_secret_name,
             usage_report,
+            export_sessions_csv,
             undo_change,
             app_settings,
             open_folder,

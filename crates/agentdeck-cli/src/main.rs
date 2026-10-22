@@ -63,6 +63,9 @@ enum Command {
         /// Number of sessions to list
         #[arg(long, default_value_t = 10)]
         sessions: usize,
+        /// Print every session of the period as CSV, for a spreadsheet
+        #[arg(long, conflicts_with = "sessions")]
+        csv: bool,
     },
 }
 
@@ -299,7 +302,11 @@ fn run(cli: Cli) -> agentdeck_core::Result<()> {
         Command::Skills { command } => run_skills(command, &home, cli.json)?,
         Command::Secrets { command } => run_secrets(command, &home, cli.json)?,
         Command::Exec { .. } => unreachable!("handled in main"),
-        Command::Usage { days, sessions } => run_usage(&home, days, sessions, cli.json),
+        Command::Usage {
+            days,
+            sessions,
+            csv,
+        } => run_usage(&home, days, sessions, csv, cli.json),
     }
     Ok(())
 }
@@ -479,9 +486,21 @@ fn run_rules(
     Ok(())
 }
 
-fn run_usage(home: &std::path::Path, days: u32, limit: usize, json: bool) {
+fn run_usage(home: &std::path::Path, days: u32, limit: usize, csv: bool, json: bool) {
     let report = usage::report(home);
     let since = usage::date_days_ago(days);
+    if csv {
+        let sessions: Vec<_> = report
+            .sessions
+            .into_iter()
+            .filter(|s| s.ended_at.as_deref().and_then(|t| t.get(..10)) >= Some(since.as_str()))
+            .collect();
+        print!("{}", usage::sessions_csv(&sessions));
+        for error in &report.errors {
+            eprintln!("warning: {error}");
+        }
+        return;
+    }
     if json {
         println!("{}", serde_json::to_string_pretty(&report).unwrap());
         return;

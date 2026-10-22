@@ -3,7 +3,7 @@ import { CostChart } from "../components/CostChart";
 import { Drawer } from "../components/Drawer";
 import { useToast } from "../components/Toasts";
 import { AgentMark, Empty, Notice, PageHeader } from "../components/ui";
-import { usageReport } from "../lib/api";
+import { exportSessionsCsv, usageReport } from "../lib/api";
 import { dateOf, datesBetween, formatCost, lastDays, localDate, localDays } from "../lib/usage";
 import type { Agent, AgentInfo, ReadProgress, Session, Tokens, UsageReport } from "../lib/types";
 
@@ -69,6 +69,8 @@ function formatTokens(count: number): string {
   return String(count);
 }
 
+const sessionCount = (count: number) => `${count.toLocaleString()} session${count === 1 ? "" : "s"}`;
+
 const basename = (path: string | null) => path?.split(/[\\/]/).filter(Boolean).pop() ?? "";
 
 export function HistoryPage({ agents }: { agents: AgentInfo[] }) {
@@ -88,6 +90,9 @@ export function HistoryPage({ agents }: { agents: AgentInfo[] }) {
   const [sort, setSort] = useState<{ key: SortKey; descending: boolean }>({ key: "date", descending: true });
   const [budget, setBudget] = useState<number | null>(storedBudget);
   const [editingBudget, setEditingBudget] = useState(false);
+  const notify = useToast();
+  // The save dialog is open: a second click would open another one.
+  const [exporting, setExporting] = useState(false);
 
   async function load() {
     setReport(null);
@@ -194,12 +199,37 @@ export function HistoryPage({ agents }: { agents: AgentInfo[] }) {
 
   const periodCost = daily.reduce((sum, day) => sum + day.costUsd, 0);
 
+  /** Saves the sessions of the period, agent and search, in the table's order. */
+  async function exportCsv() {
+    const exported = sorted;
+    setExporting(true);
+    try {
+      const path = await exportSessionsCsv(exported, `agentdeck-sessions-${since}-to-${until}.csv`);
+      if (path) notify({ tone: "success", text: `Exported ${sessionCount(exported.length)} to ${basename(path)}.` });
+    } catch (err) {
+      notify({ tone: "error", text: String(err) });
+    } finally {
+      setExporting(false);
+    }
+  }
+
   return (
     <>
       <PageHeader
         title="History & costs"
         description="Read from Claude Code and Codex session logs on this computer. Costs are estimated at API list prices: a Claude or ChatGPT subscription is billed differently. Cursor and Gemini CLI keep no usage logs locally."
-        actions={<button onClick={load}>Reload logs</button>}
+        actions={
+          <>
+            <button
+              disabled={sorted.length === 0 || exporting}
+              title={sorted.length ? `Save the ${sessionCount(sorted.length)} shown below as CSV` : "No session to export"}
+              onClick={exportCsv}
+            >
+              Export CSV
+            </button>
+            <button onClick={load}>Reload logs</button>
+          </>
+        }
       />
 
       <div className="toolbar toolbar-top">

@@ -321,6 +321,11 @@ small {
   margin-bottom: 20px;
 }
 
+/* The text gives way first, so the actions stay on the title's line. */
+.page-header > div:first-child {
+  flex: 1 1 360px;
+}
+
 .page-header h1 {
   font-size: 22px;
   font-weight: 650;
