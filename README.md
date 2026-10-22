@@ -32,8 +32,9 @@ shows them side by side, and syncs them in one click.
 - **Secrets.** Find API keys stored in plain text in agent configs and move them
   to the system keychain (Windows Credential Manager, macOS Keychain, Secret
   Service). Values are never displayed.
-- **History & costs.** Token usage and estimated cost per day, per agent and
-  per session, from Claude Code and Codex logs.
+- **History & costs.** Token usage and estimated cost per day, per agent,
+  per project, per model and per session, from Claude Code and Codex logs,
+  with an optional monthly budget.
 - **Keyboard.** `Ctrl+K` (`⌘K` on macOS) opens a palette to jump to a page,
   a server, a skill or an agent's rules, or to copy a server to another agent.
   `Ctrl+1` to `Ctrl+6` switch pages, `Ctrl+R` reloads the configs and `Ctrl+S`
