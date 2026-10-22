@@ -67,9 +67,19 @@ export interface DayUsage {
   costUsd: number;
 }
 
+/** Usage during one UTC hour; `hour` is `YYYY-MM-DDTHH`. */
+export interface HourUsage {
+  hour: string;
+  agent: Agent;
+  tokens: Tokens;
+  costUsd: number;
+}
+
 export interface UsageReport {
   sessions: Session[];
+  /** Grouped by UTC day; the app groups `hourly` by local day instead. */
   daily: DayUsage[];
+  hourly: HourUsage[];
   errors: string[];
 }
 
