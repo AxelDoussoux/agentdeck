@@ -6,6 +6,7 @@ use agentdeck_core::secrets::{self, Keychain, SecretRef};
 use agentdeck_core::skills::{self, Location, Skill};
 use agentdeck_core::usage::{self, UsageReport};
 use agentdeck_core::{Agent, AgentInfo, McpServer, ServerSpec, agent, mcp};
+use tauri::Manager;
 
 fn home() -> Result<PathBuf, String> {
     agent::home_dir().map_err(|err| err.to_string())
@@ -158,6 +159,16 @@ async fn usage_report() -> Result<UsageReport, String> {
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        // Two instances would edit the same config files: a second launch
+        // brings the open window to the front instead. Must come first.
+        .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
+            if let Some(window) = app.get_webview_window("main") {
+                let _ = window.unminimize();
+                let _ = window.show();
+                let _ = window.set_focus();
+            }
+        }))
+        .plugin(tauri_plugin_window_state::Builder::default().build())
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_process::init())
