@@ -23,7 +23,10 @@ struct Cli {
 #[derive(Subcommand)]
 enum Command {
     /// List supported agents and whether they are installed
-    Agents,
+    Agents {
+        #[command(subcommand)]
+        command: Option<AgentsCommand>,
+    },
     /// Manage MCP servers
     Mcp {
         #[command(subcommand)]
@@ -66,6 +69,24 @@ enum Command {
         /// Print every session of the period as CSV, for a spreadsheet
         #[arg(long, conflicts_with = "sessions")]
         csv: bool,
+    },
+}
+
+#[derive(Subcommand)]
+enum AgentsCommand {
+    /// Show or choose the folder where an agent keeps its files
+    ///
+    /// For an agent whose folder is not the default one, such as a
+    /// CLAUDE_CONFIG_DIR that an app opened from the macOS Finder cannot see.
+    /// The agent's variable, when set, still comes first.
+    Folder {
+        agent: AgentArg,
+        /// The folder to use from now on
+        #[arg(conflicts_with = "reset")]
+        path: Option<std::path::PathBuf>,
+        /// Use the default folder again
+        #[arg(long)]
+        reset: bool,
     },
 }
 
@@ -309,7 +330,30 @@ fn main() -> ExitCode {
 fn run(cli: Cli) -> agentdeck_core::Result<()> {
     let home = agent::home_dir()?;
     match cli.command {
-        Command::Agents => {
+        Command::Agents {
+            command: Some(AgentsCommand::Folder { agent, path, reset }),
+        } => {
+            let agent = Agent::from(agent);
+            if path.is_some() || reset {
+                agent::choose_folder(&home, agent, path.as_deref())?;
+            }
+            let folder = agent.folder(&home);
+            if cli.json {
+                println!(
+                    "{}",
+                    serde_json::json!({ "agent": agent, "folder": folder })
+                );
+            } else {
+                println!("{}", folder.display());
+                if let Some(variable) = agent
+                    .folder_variable()
+                    .filter(|_| agent.variable_folder(&home).is_some())
+                {
+                    eprintln!("Set by {variable}, which comes before a chosen folder.");
+                }
+            }
+        }
+        Command::Agents { command: None } => {
             let agents = agent::detect(&home);
             if cli.json {
                 println!("{}", serde_json::to_string_pretty(&agents).unwrap());

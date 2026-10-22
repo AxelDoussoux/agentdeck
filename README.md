@@ -86,6 +86,7 @@ to get started.
 
 ```sh
 agentdeck agents   # found, no config yet, or missing
+agentdeck agents folder claude-code ~/work/.claude   # --reset for the default
 agentdeck mcp list [--json]
 agentdeck mcp add claude-code github -e GITHUB_TOKEN=ghp_x -- npx -y @modelcontextprotocol/server-github
 agentdeck mcp add cursor linear --url https://mcp.linear.app/mcp
@@ -131,8 +132,10 @@ When `CLAUDE_CONFIG_DIR` or `CODEX_HOME` is set, AgentDeck uses that folder in
 place of `~/.claude` or `~/.codex`, like the agents do: its config, rules,
 skills and session logs. With `CLAUDE_CONFIG_DIR`, `.claude.json` is read from
 inside that folder. On macOS, an app opened from the Finder does not get the
-variables of your shell profile: set them with `launchctl setenv` too, or
-start AgentDeck from a terminal.
+variables of your shell profile: choose the folder in Settings (or with
+`agentdeck agents folder`), set them with `launchctl setenv` too, or start
+AgentDeck from a terminal. A folder chosen this way is kept in
+`~/.agentdeck/folders.json`, and the variable still comes first when set.
 
 Protecting a local MCP server stores the environment variables that look like
 credentials (by name, such as `GITHUB_TOKEN` or `apiKey`, or by value, such as

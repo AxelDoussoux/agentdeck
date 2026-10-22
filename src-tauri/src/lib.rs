@@ -202,7 +202,10 @@ struct AgentFolder {
     agent: Agent,
     path: String,
     variable: Option<&'static str>,
+    /// Its variable is set, and moves the folder.
     moved: bool,
+    /// Another folder was chosen in AgentDeck, which the variable may override.
+    chosen: bool,
 }
 
 /// What the Settings page shows about AgentDeck's own files.
@@ -221,6 +224,7 @@ struct AppSettings {
 #[tauri::command]
 fn app_settings() -> Result<AppSettings, UiError> {
     let home = home()?;
+    let chosen = agent::chosen_folders(&home)?;
     let folders = Agent::ALL
         .into_iter()
         .map(|agent| {
@@ -229,9 +233,8 @@ fn app_settings() -> Result<AppSettings, UiError> {
                 agent,
                 path: agent.folder(&home).display().to_string(),
                 variable,
-                moved: variable
-                    .and_then(std::env::var_os)
-                    .is_some_and(|value| !value.is_empty()),
+                moved: agent.variable_folder(&home).is_some(),
+                chosen: chosen.contains_key(&agent),
             }
         })
         .collect();
@@ -272,6 +275,39 @@ fn open_folder(app: tauri::AppHandle, folder: AppFolder) -> Result<(), UiError> 
     app.opener()
         .open_path(path.to_string_lossy(), None::<&str>)
         .map_err(other)
+}
+
+/// Asks for the folder where `agent` keeps its files, in a folder picker, and
+/// uses it from now on. Returns false when the picker is cancelled. Only the
+/// picker chooses the path: the UI never passes one.
+#[tauri::command]
+async fn pick_agent_folder(app: tauri::AppHandle, agent: Agent) -> Result<bool, UiError> {
+    use tauri_plugin_dialog::DialogExt;
+    let home = home()?;
+    tauri::async_runtime::spawn_blocking(move || {
+        let mut dialog = app
+            .dialog()
+            .file()
+            .set_title(agent.display_name())
+            .set_directory(agent.folder(&home));
+        if let Some(window) = app.get_webview_window("main") {
+            dialog = dialog.set_parent(&window);
+        }
+        let Some(picked) = dialog.blocking_pick_folder() else {
+            return Ok::<_, UiError>(false);
+        };
+        let folder = picked.into_path().map_err(other)?;
+        agent::choose_folder(&home, agent, Some(&folder))?;
+        Ok(true)
+    })
+    .await
+    .map_err(other)?
+}
+
+/// Makes AgentDeck use `agent`'s default folder again.
+#[tauri::command]
+fn reset_agent_folder(agent: Agent) -> Result<(), UiError> {
+    Ok(agent::choose_folder(&home()?, agent, None)?)
 }
 
 #[tauri::command]
@@ -689,6 +725,8 @@ pub fn run() {
             undo_change,
             app_settings,
             open_folder,
+            pick_agent_folder,
+            reset_agent_folder,
             empty_skill_trash
         ])
         .run(tauri::generate_context!())
