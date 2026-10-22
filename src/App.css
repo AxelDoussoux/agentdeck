@@ -1397,3 +1397,18 @@ button.primary kbd {
   color: var(--faint);
   font-style: italic;
 }
+
+.differences {
+  margin: 0 0 12px;
+  padding-left: 18px;
+  color: var(--text);
+  overflow-wrap: anywhere;
+}
+
+.differences li + li {
+  margin-top: 4px;
+}
+
+button.cell-differs:hover {
+  border-color: var(--warn);
+}

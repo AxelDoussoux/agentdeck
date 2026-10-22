@@ -1,5 +1,8 @@
 use std::collections::BTreeMap;
+use std::collections::hash_map::RandomState;
+use std::hash::BuildHasher;
 use std::path::Path;
+use std::sync::OnceLock;
 
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
@@ -27,7 +30,8 @@ pub enum Transport {
 /// One MCP server as declared in an agent's configuration.
 ///
 /// Environment and header values are never exposed: they often hold API keys,
-/// so only their names are kept.
+/// so only their names are kept, with a hash of each value to tell whether two
+/// servers use the same one.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct McpServer {
@@ -36,6 +40,24 @@ pub struct McpServer {
     pub transport: Transport,
     pub env_keys: Vec<String>,
     pub header_keys: Vec<String>,
+    /// [`value_hash`] of each environment variable, by name.
+    pub env_hashes: BTreeMap<String, String>,
+    /// [`value_hash`] of each header, by name.
+    pub header_hashes: BTreeMap<String, String>,
+}
+
+/// A hash of `value` keyed at random for this process. Equal values get equal
+/// hashes, but a hash says nothing about the value, and means nothing outside
+/// the process that computed it.
+pub fn value_hash(value: &str) -> String {
+    static KEY: OnceLock<RandomState> = OnceLock::new();
+    format!("{:016x}", KEY.get_or_init(RandomState::new).hash_one(value))
+}
+
+fn hashes(map: &BTreeMap<String, String>) -> BTreeMap<String, String> {
+    map.iter()
+        .map(|(key, value)| (key.clone(), value_hash(value)))
+        .collect()
 }
 
 /// Everything needed to write an MCP server into an agent's config,
@@ -167,6 +189,8 @@ pub fn list_for_agent(agent: Agent, home: &Path) -> Result<Vec<McpServer>> {
         .map(|(name, spec)| McpServer {
             agent,
             name,
+            env_hashes: hashes(&spec.env),
+            header_hashes: hashes(&spec.headers),
             transport: spec.transport,
             env_keys: spec.env.into_keys().collect(),
             header_keys: spec.headers.into_keys().collect(),
@@ -608,6 +632,26 @@ mod tests {
         assert!(list_for_agent(Agent::Codex, home).unwrap().is_empty());
         let err = remove(Agent::Codex, home, "github").unwrap_err();
         assert!(matches!(err, Error::NotFound { .. }));
+    }
+
+    #[test]
+    fn listing_tells_equal_values_apart_without_showing_them() {
+        let home = tempfile::tempdir().unwrap();
+        let home = home.path();
+        write(
+            home,
+            ".cursor/mcp.json",
+            r#"{"mcpServers": {
+                "a": {"command": "x", "env": {"TOKEN": "ghp_same", "MODE": "1"}},
+                "b": {"command": "x", "env": {"TOKEN": "ghp_same", "MODE": "2"}}
+            }}"#,
+        );
+        let servers = list_for_agent(Agent::Cursor, home).unwrap();
+        let (a, b) = (&servers[0].env_hashes, &servers[1].env_hashes);
+        assert_eq!(a["TOKEN"], b["TOKEN"]);
+        assert_ne!(a["MODE"], b["MODE"]);
+        let json = serde_json::to_string(&servers).unwrap();
+        assert!(!json.contains("ghp_same"));
     }
 
     #[test]

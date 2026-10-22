@@ -21,6 +21,9 @@ export interface McpServer {
   transport: Transport;
   envKeys: string[];
   headerKeys: string[];
+  /** A hash of each value, by name: equal values have equal hashes. */
+  envHashes: Record<string, string>;
+  headerHashes: Record<string, string>;
 }
 
 export interface McpListing {

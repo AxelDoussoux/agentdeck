@@ -178,9 +178,10 @@ fn copy_mcp_server(
     name: String,
     from: Agent,
     to: Agent,
+    overwrite: bool,
 ) -> Result<u64, String> {
     undoable_mcp(&undo, to, &name, |home| {
-        mcp::copy(home, &name, from, to, false)
+        mcp::copy(home, &name, from, to, overwrite)
     })
 }
 
