@@ -5,7 +5,7 @@ import { useToast } from "../components/Toasts";
 import { AgentMark, Empty, Notice, PageHeader } from "../components/ui";
 import { usageReport } from "../lib/api";
 import { dateOf, datesBetween, formatCost, lastDays, localDate, localDays } from "../lib/usage";
-import type { Agent, AgentInfo, Session, Tokens, UsageReport } from "../lib/types";
+import type { Agent, AgentInfo, ReadProgress, Session, Tokens, UsageReport } from "../lib/types";
 
 const PERIODS = [7, 30, 90] as const;
 type Period = (typeof PERIODS)[number] | "custom";
@@ -74,6 +74,7 @@ const basename = (path: string | null) => path?.split(/[\\/]/).filter(Boolean).p
 export function HistoryPage({ agents }: { agents: AgentInfo[] }) {
   const [report, setReport] = useState<UsageReport | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [progress, setProgress] = useState<ReadProgress | null>(null);
   const [period, setPeriod] = useState<Period>(30);
   const [range, setRange] = useState(() => {
     const recent = lastDays(30);
@@ -90,8 +91,9 @@ export function HistoryPage({ agents }: { agents: AgentInfo[] }) {
 
   async function load() {
     setReport(null);
+    setProgress(null);
     try {
-      setReport(await usageReport());
+      setReport(await usageReport(setProgress));
       setError(null);
     } catch (err) {
       setError(String(err));
@@ -264,7 +266,7 @@ export function HistoryPage({ agents }: { agents: AgentInfo[] }) {
             ))}
           </div>
           <div className="card skeleton-block skeleton-chart" />
-          <p className="hint">Reading session logs…</p>
+          <ReadingProgress progress={progress} />
         </div>
       )}
 
@@ -636,5 +638,29 @@ function SessionDrawer({ session, agentName, onClose, onProject }: SessionProps)
         </div>
       )}
     </Drawer>
+  );
+}
+
+/** How far the reading of the session logs is, once there are files to count. */
+function ReadingProgress({ progress }: { progress: ReadProgress | null }) {
+  if (!progress?.total) return <p className="hint">Reading session logs…</p>;
+  const { done, total } = progress;
+  return (
+    <div className="reading">
+      <span
+        className="meter"
+        role="progressbar"
+        aria-label="Session logs read"
+        aria-valuemin={0}
+        aria-valuemax={total}
+        aria-valuenow={done}
+      >
+        <i style={{ width: `${(done / total) * 100}%` }} />
+      </span>
+      <p className="hint">
+        Reading session logs: {done.toLocaleString()} of {total.toLocaleString()} files
+        {done === total ? "" : "…"}
+      </p>
+    </div>
   );
 }
