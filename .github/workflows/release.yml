@@ -27,16 +27,29 @@ jobs:
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
+      # The Ubuntu mirror is sometimes slow enough to take more than ten
+      # minutes for these packages: they come from CI's cache instead.
+      - name: Cache Linux packages
+        if: runner.os == 'Linux'
+        uses: actions/cache@v4
+        with:
+          path: ~/apt-archives
+          key: apt-${{ matrix.os }}-webkit2gtk-4.1-v1
       - name: Install Linux dependencies
         if: runner.os == 'Linux'
         # A stuck mirror fails the job in minutes instead of holding it for hours.
-        timeout-minutes: 10
+        timeout-minutes: 15
         run: |
           # man-db rebuilds its index after each install, which can take minutes.
           sudo rm -f /var/lib/man-db/auto-update
+          mkdir -p ~/apt-archives/partial
+          apt_options="-o Acquire::Retries=3 -o Acquire::http::Timeout=30 -o Dir::Cache::Archives=$HOME/apt-archives"
           sudo apt-get update -o Acquire::Retries=3 -o Acquire::http::Timeout=30
-          sudo apt-get install -y -o Acquire::Retries=3 -o Acquire::http::Timeout=30 \
+          sudo apt-get install -y $apt_options \
             libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf
+          # The cache step saves the folder as this user.
+          sudo rm -rf ~/apt-archives/partial ~/apt-archives/lock
+          sudo chown -R "$USER" ~/apt-archives
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: ${{ matrix.target }}
