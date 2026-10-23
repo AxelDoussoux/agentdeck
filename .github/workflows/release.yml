@@ -37,8 +37,9 @@ jobs:
           key: apt-${{ matrix.os }}-webkit2gtk-4.1-v1
       - name: Install Linux dependencies
         if: runner.os == 'Linux'
-        # A stuck mirror fails the job in minutes instead of holding it for hours.
-        timeout-minutes: 15
+        # A stuck mirror fails the job instead of holding it for hours; on a
+        # slow day, a cache miss can take more than 15 minutes.
+        timeout-minutes: 30
         run: |
           # man-db rebuilds its index after each install, which can take minutes.
           sudo rm -f /var/lib/man-db/auto-update
