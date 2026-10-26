@@ -4,6 +4,8 @@ import type {
   AgentInfo,
   AppSettings,
   Finding,
+  ImportPreview,
+  ImportSummary,
   ProfileListing,
   McpListing,
   ProbeReport,
@@ -41,6 +43,16 @@ export const editMcpServer = (agent: Agent, name: string, edit: ServerEdit) =>
 
 export const removeMcpServer = (agent: Agent, name: string) =>
   invoke<number>("remove_mcp_server", { agent, name });
+
+/** Saves the whole setup, without secret values, where the user picks. */
+export const exportConfig = () => invoke<string | null>("export_config");
+
+/** Asks for an export file and says what importing it would change. */
+export const previewImport = () => invoke<ImportPreview | null>("preview_import");
+
+/** Imports the file of the last preview. Secret values only go to the core. */
+export const applyImport = (secrets: { server: string; key: string; value: string }[], replace: boolean) =>
+  invoke<{ undo: number; summary: ImportSummary }>("apply_import", { secrets, replace });
 
 export const listProfiles = () => invoke<ProfileListing>("list_profiles");
 

@@ -157,6 +157,27 @@ export const fr: Messages = {
     backupsHint: (n: number, kept: number) =>
       `${count(n, "sauvegarde", "sauvegardes")}. Chaque écriture garde la version précédente ; les ${kept} dernières de chaque fichier sont conservées.`,
     trash: "Corbeille des skills",
+    transfer: "Passer à un autre ordinateur",
+    transferHint:
+      "Un fichier avec les serveurs MCP de chaque agent, les règles, les skills, les dossiers choisis et les profils. Les valeurs secrètes n’y sont pas : l’import les demande.",
+    exportButton: "Exporter…",
+    importButton: "Importer…",
+    exported: (path: string) => `Exporté dans ${path}. Les valeurs secrètes n’y sont pas.`,
+    importTitle: "Importer",
+    importFrom: (file: string) => `Depuis ${file}`,
+    importChanges: { add: "Ajoutés", replace: "Différents ici", same: "Déjà identiques", skip: "Absents de cet ordinateur" },
+    importKinds: { server: "Serveur", rules: "Règles", skill: "Skill", folder: "Dossier", profile: "Profil" },
+    importReplace: "Remplacer aussi ce qui diffère ici",
+    importReplaceHint: "Les configs gardent leurs sauvegardes, et les skills remplacés vont à la corbeille.",
+    importSecrets: "Valeurs secrètes",
+    importSecretsHint:
+      "Écrites dans la config de l’agent comme toute valeur : mettez-les ensuite dans le trousseau depuis Secrets. Laissez un champ vide pour le remplir plus tard.",
+    importGo: "Importer",
+    importUndoHint:
+      "Annuler remet les serveurs et les règles comme avant ; les skills, dossiers et profils importés restent.",
+    importNothing: "Tout ce que contient ce fichier est déjà là.",
+    imported: (n: number) => `${count(n, "élément importé", "éléments importés")}.`,
+    importMissing: (n: number) => ` ${count(n, "secret", "secrets")} à remplir.`,
     trashEmpty: "Vide.",
     trashHint: (n: number) =>
       `${count(n, "skill supprimé ou remplacé", "skills supprimés ou remplacés")}, à restaurer depuis la page Skills.`,
@@ -731,6 +752,7 @@ export const fr: Messages = {
     skillExists: (e) => `Un skill existe déjà dans ${e.path}`,
     profileNotFound: (e) => `Aucun profil nommé « ${e.name} »`,
     profileName: () => "Donnez un nom au profil",
+    importExpired: () => "Choisissez à nouveau le fichier à importer",
     unsupported: (e) =>
       e.detail === "SSE MCP servers" ? `${e.agent} ne prend pas en charge les serveurs MCP SSE` : e.message,
     undoExpired: () => "Cette modification ne peut plus être annulée.",

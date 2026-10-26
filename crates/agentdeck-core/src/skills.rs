@@ -434,7 +434,7 @@ pub fn skill_dir(home: &Path, location: Location, name: &str) -> Result<PathBuf>
     Ok(location.path(home).join(name))
 }
 
-fn move_to_trash(home: &Path, dir: &Path) -> Result<PathBuf> {
+pub(crate) fn move_to_trash(home: &Path, dir: &Path) -> Result<PathBuf> {
     let mut stamp = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .unwrap_or_default()

@@ -9,6 +9,7 @@ use agentdeck_core::profiles;
 use agentdeck_core::rules::{self, Rules};
 use agentdeck_core::secrets::{self, Keychain, SecretRef};
 use agentdeck_core::skills::{self, Location, Skill};
+use agentdeck_core::transfer;
 use agentdeck_core::usage::{self, ReadProgress, Session, UsageReport};
 use agentdeck_core::{
     Agent, AgentInfo, Error, ErrorInfo, McpServer, ServerSpec, agent, config_file, mcp, probe,
@@ -69,6 +70,8 @@ enum UndoAction {
     },
     /// Turn back on or off the servers a profile switched.
     Profile { changes: Vec<profiles::Switch> },
+    /// Undo each of these, the last first: an import.
+    Many(Vec<UndoAction>),
 }
 
 /// How many recent changes can still be undone.
@@ -119,28 +122,37 @@ fn undo_change(undo: State<UndoStore>, id: u64) -> Result<(), UiError> {
     let action = undo
         .take(id)
         .ok_or_else(|| ErrorInfo::new("undoExpired", "This change can no longer be undone."))?;
-    let home = home()?;
+    revert(&home()?, action)
+}
+
+fn revert(home: &std::path::Path, action: UndoAction) -> Result<(), UiError> {
     match action {
+        UndoAction::Many(actions) => {
+            for action in actions.into_iter().rev() {
+                revert(home, action)?;
+            }
+            Ok(())
+        }
         UndoAction::Mcp {
             agent,
             name,
             previous: Some(spec),
-        } => mcp::add(agent, &home, &name, &spec, true),
+        } => mcp::add(agent, home, &name, &spec, true),
         UndoAction::Mcp {
             agent,
             name,
             previous: None,
-        } => match mcp::remove(agent, &home, &name) {
+        } => match mcp::remove(agent, home, &name) {
             Err(Error::NotFound { .. }) => Ok(()),
             other => other,
         },
-        UndoAction::Profile { changes } => profiles::revert(&home, &changes),
+        UndoAction::Profile { changes } => profiles::revert(home, &changes),
         UndoAction::Rules {
             agent,
             previous,
             written,
         } => {
-            let current = rules::read(agent, &home)?.content.unwrap_or_default();
+            let current = rules::read(agent, home)?.content.unwrap_or_default();
             if current != written {
                 return Err(ErrorInfo::new(
                     "rulesChanged",
@@ -152,7 +164,7 @@ fn undo_change(undo: State<UndoStore>, id: u64) -> Result<(), UiError> {
                 .agent(agent)
                 .into());
             }
-            rules::write(agent, &home, &previous)
+            rules::write(agent, home, &previous)
         }
         UndoAction::Protect {
             agent,
@@ -160,13 +172,13 @@ fn undo_change(undo: State<UndoStore>, id: u64) -> Result<(), UiError> {
             protect: true,
         } => {
             let launcher = launcher().ok_or_else(launcher_missing)?;
-            secrets::protect(&Keychain, &home, agent, &server, &launcher)
+            secrets::protect(&Keychain, home, agent, &server, &launcher)
         }
         UndoAction::Protect {
             agent,
             server,
             protect: false,
-        } => secrets::unprotect(&Keychain, &home, agent, &server),
+        } => secrets::unprotect(&Keychain, home, agent, &server),
     }
     .map_err(UiError::from)
 }
@@ -730,6 +742,132 @@ async fn export_sessions_csv(
     .map_err(other)?
 }
 
+/// Saves the whole setup, without secret values, where the user picks in a
+/// save dialog. Returns the file's path, or nothing when cancelled.
+#[tauri::command]
+async fn export_config(app: tauri::AppHandle) -> Result<Option<String>, UiError> {
+    use tauri_plugin_dialog::DialogExt;
+    let home = home()?;
+    tauri::async_runtime::spawn_blocking(move || {
+        let export = transfer::export(&home)?;
+        let mut dialog = app
+            .dialog()
+            .file()
+            .set_file_name("agentdeck-export.json")
+            .add_filter("JSON", &["json"]);
+        if let Some(window) = app.get_webview_window("main") {
+            dialog = dialog.set_parent(&window);
+        }
+        let Some(picked) = dialog.blocking_save_file() else {
+            return Ok::<_, UiError>(None);
+        };
+        let path = picked.into_path().map_err(other)?;
+        let mut json = serde_json::to_string_pretty(&export).map_err(other)?;
+        json.push('\n');
+        fs::write(&path, json).map_err(|source| Error::Io {
+            path: path.clone(),
+            source,
+        })?;
+        Ok(Some(path.display().to_string()))
+    })
+    .await
+    .map_err(other)?
+}
+
+/// The export file picked for an import, kept here between its preview and
+/// the import, so the UI never handles the file.
+#[derive(Default)]
+struct PendingImport(Mutex<Option<transfer::Export>>);
+
+#[derive(serde::Serialize)]
+struct ImportPreview {
+    file: String,
+    plan: transfer::Plan,
+}
+
+/// Asks for an export file and says what importing it would change.
+/// Nothing when the picker is cancelled.
+#[tauri::command]
+async fn preview_import(
+    app: tauri::AppHandle,
+    pending: State<'_, PendingImport>,
+) -> Result<Option<ImportPreview>, UiError> {
+    use tauri_plugin_dialog::DialogExt;
+    let home = home()?;
+    let picked = tauri::async_runtime::spawn_blocking(move || {
+        let mut dialog = app.dialog().file().add_filter("JSON", &["json"]);
+        if let Some(window) = app.get_webview_window("main") {
+            dialog = dialog.set_parent(&window);
+        }
+        let Some(picked) = dialog.blocking_pick_file() else {
+            return Ok::<_, UiError>(None);
+        };
+        let path = picked.into_path().map_err(other)?;
+        let content = fs::read_to_string(&path).map_err(|source| Error::Io {
+            path: path.clone(),
+            source,
+        })?;
+        let export = transfer::parse(&content, &path)?;
+        let plan = transfer::plan(&home, &export)?;
+        Ok(Some((path, export, plan)))
+    })
+    .await
+    .map_err(other)??;
+    let Some((path, export, plan)) = picked else {
+        return Ok(None);
+    };
+    *pending.0.lock().unwrap_or_else(|err| err.into_inner()) = Some(export);
+    Ok(Some(ImportPreview {
+        file: path.display().to_string(),
+        plan,
+    }))
+}
+
+#[derive(serde::Serialize)]
+struct ImportDone {
+    undo: u64,
+    summary: transfer::Summary,
+}
+
+/// Imports the file of the last preview, with the secret values typed in.
+#[tauri::command]
+fn apply_import(
+    undo: State<UndoStore>,
+    pending: State<PendingImport>,
+    secrets: Vec<transfer::GivenSecret>,
+    replace: bool,
+) -> Result<ImportDone, UiError> {
+    let export = pending
+        .0
+        .lock()
+        .unwrap_or_else(|err| err.into_inner())
+        .take()
+        .ok_or_else(|| ErrorInfo::new("importExpired", "Pick the file to import again."))?;
+    let done = transfer::import(&home()?, &export, &secrets, replace)?;
+    let mut actions: Vec<UndoAction> = done
+        .servers
+        .into_iter()
+        .map(|(agent, name, previous)| UndoAction::Mcp {
+            agent,
+            name,
+            previous: previous.map(Box::new),
+        })
+        .collect();
+    actions.extend(
+        done.rules
+            .into_iter()
+            .map(|(agent, previous, written)| UndoAction::Rules {
+                agent,
+                previous,
+                written,
+            }),
+    );
+    Ok(ImportDone {
+        undo: undo.push(UndoAction::Many(actions)),
+        summary: done.summary,
+    })
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -748,6 +886,7 @@ pub fn run() {
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_process::init())
         .manage(UndoStore::default())
+        .manage(PendingImport::default())
         .setup(|app| {
             if let Ok(home) = agent::home_dir() {
                 watch::start(app.handle().clone(), home);
@@ -765,6 +904,9 @@ pub fn run() {
             save_profile,
             delete_profile,
             use_profile,
+            export_config,
+            preview_import,
+            apply_import,
             copy_mcp_server,
             edit_mcp_server,
             server_versions,

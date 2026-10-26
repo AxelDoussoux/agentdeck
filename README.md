@@ -100,6 +100,9 @@ agentdeck mcp off cursor github   # kept but not started; `on` to turn it back o
 agentdeck profile save work github linear   # or no server names: the ones on now
 agentdeck profile use work   # its servers on, every other one off, on every agent
 agentdeck profile list
+agentdeck export setup.json   # everything but secret values
+agentdeck import setup.json --dry-run   # what it would add or replace
+agentdeck import setup.json   # add --secret SERVER:KEY for each value it needs
 agentdeck rules list
 agentdeck rules show claude-code
 agentdeck rules copy --from claude-code --to codex gemini

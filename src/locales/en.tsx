@@ -134,6 +134,26 @@ export const en = {
     backupsHint: (n: number, kept: number) =>
       `${count(n, "backup", "backups")}. Each write keeps the previous version; the last ${kept} of each file are kept.`,
     trash: "Skills trash",
+    transfer: "Move to another computer",
+    transferHint:
+      "One file with the MCP servers of every agent, the rules, the skills, the chosen folders and the profiles. Secret values are left out: the import asks for them.",
+    exportButton: "Export…",
+    importButton: "Import…",
+    exported: (path: string) => `Exported to ${path}. Secret values were left out.`,
+    importTitle: "Import",
+    importFrom: (file: string) => `From ${file}`,
+    importChanges: { add: "Added", replace: "Different here", same: "Already the same", skip: "Not on this computer" },
+    importKinds: { server: "Server", rules: "Rules", skill: "Skill", folder: "Folder", profile: "Profile" },
+    importReplace: "Also replace what is different here",
+    importReplaceHint: "Configs keep their backups, and replaced skills go to the trash.",
+    importSecrets: "Secret values",
+    importSecretsHint:
+      "Written in the agent's config like any value: move them to the keychain from Secrets afterwards. Leave one empty to fill it in later.",
+    importGo: "Import",
+    importUndoHint: "Undo puts the servers and rules back; imported skills, folders and profiles stay.",
+    importNothing: "Everything in this file is already here.",
+    imported: (n: number) => `Imported ${count(n, "item", "items")}.`,
+    importMissing: (n: number) => ` ${count(n, "secret", "secrets")} still to fill in.`,
     trashEmpty: "Empty.",
     trashHint: (n: number) =>
       `${count(n, "skill", "skills")} removed or replaced, which you can restore from the Skills page.`,

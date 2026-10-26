@@ -4,7 +4,9 @@ use std::process::ExitCode;
 use agentdeck_core::health::{self, Finding, Severity};
 use agentdeck_core::secrets::{self, Keychain};
 use agentdeck_core::skills::{self, Location};
-use agentdeck_core::{Agent, ServerSpec, Transport, agent, mcp, probe, profiles, rules, usage};
+use agentdeck_core::{
+    Agent, ServerSpec, Transport, agent, mcp, probe, profiles, rules, transfer, usage,
+};
 use clap::{Parser, Subcommand, ValueEnum};
 
 #[derive(Parser)]
@@ -63,6 +65,28 @@ enum Command {
     Profile {
         #[command(subcommand)]
         command: ProfileCommand,
+    },
+    /// Save every server, rules file, skill, chosen folder and profile to one
+    /// file, to set up another computer. Secret values are left out.
+    Export {
+        /// The file to write; standard output when left out
+        file: Option<std::path::PathBuf>,
+    },
+    /// Import a file made by `agentdeck export`
+    ///
+    /// Shows what it adds or replaces first with --dry-run. Configs keep
+    /// their backups, and replaced skills go to the trash.
+    Import {
+        file: std::path::PathBuf,
+        /// Also replace what is already here and different
+        #[arg(long)]
+        replace: bool,
+        /// Only show what would change
+        #[arg(long)]
+        dry_run: bool,
+        /// A secret the servers need, as SERVER:KEY=VALUE
+        #[arg(long = "secret", value_parser = parse_pair)]
+        secrets: Vec<(String, String)>,
     },
     /// Check the agents' configs for problems, like the app's overview
     ///
@@ -507,6 +531,34 @@ fn run(cli: Cli) -> agentdeck_core::Result<()> {
         Command::Skills { command } => run_skills(command, &home, cli.json)?,
         Command::Secrets { command } => run_secrets(command, &home, cli.json)?,
         Command::Profile { command } => run_profile(command, &home, cli.json)?,
+        Command::Export { file } => {
+            let export = transfer::export(&home)?;
+            let mut json = serde_json::to_string_pretty(&export).unwrap();
+            json.push('\n');
+            match file {
+                Some(path) => {
+                    std::fs::write(&path, json).map_err(|source| agentdeck_core::Error::Io {
+                        path: path.clone(),
+                        source,
+                    })?;
+                    eprintln!(
+                        "Exported {} servers, {} rules files, {} skills and {} profiles to {}. Secret values were left out.",
+                        export.servers.len(),
+                        export.rules.len(),
+                        export.skills.len(),
+                        export.profiles.len(),
+                        path.display()
+                    );
+                }
+                None => print!("{json}"),
+            }
+        }
+        Command::Import {
+            file,
+            replace,
+            dry_run,
+            secrets,
+        } => run_import(&home, &file, replace, dry_run, &secrets)?,
         Command::Exec { .. } | Command::Doctor => unreachable!("handled in main"),
         Command::Usage {
             days,
@@ -526,6 +578,67 @@ fn set_enabled(
     mcp::set_enabled(agent, home, name, on)?;
     let state = if on { "on" } else { "off" };
     println!("Turned \"{name}\" {state} for {}", agent.display_name());
+    Ok(())
+}
+
+fn run_import(
+    home: &std::path::Path,
+    file: &std::path::Path,
+    replace: bool,
+    dry_run: bool,
+    secrets: &[(String, String)],
+) -> agentdeck_core::Result<()> {
+    use transfer::{Change, GivenSecret};
+    let content = std::fs::read_to_string(file).map_err(|source| agentdeck_core::Error::Io {
+        path: file.to_path_buf(),
+        source,
+    })?;
+    let export = transfer::parse(&content, file)?;
+    let plan = transfer::plan(home, &export)?;
+    for item in &plan.items {
+        let change = match item.change {
+            Change::Add => "add",
+            Change::Replace if replace => "replace",
+            Change::Replace => "keep (differs; --replace to replace)",
+            Change::Same => "same",
+            Change::Skip => "skip (not on this computer)",
+        };
+        let place = item
+            .agent
+            .map(|agent| agent.display_name().to_owned())
+            .or_else(|| item.location.map(|location| format!("{location:?}")))
+            .unwrap_or_default();
+        let kind = format!("{:?}", item.kind).to_lowercase();
+        println!("{change:<8} {kind:<8} {:<24} {place}", item.name);
+    }
+    if dry_run {
+        for secret in &plan.secrets {
+            println!("needs    secret   {}:{}", secret.server, secret.key);
+        }
+        return Ok(());
+    }
+    let given: Vec<GivenSecret> = secrets
+        .iter()
+        .filter_map(|(target, value)| {
+            let (server, key) = target.split_once(':')?;
+            Some(GivenSecret {
+                server: server.to_owned(),
+                key: key.to_owned(),
+                value: value.clone(),
+            })
+        })
+        .collect();
+    let done = transfer::import(home, &export, &given, replace)?;
+    println!(
+        "Imported {}, left {} as they are.",
+        done.summary.imported, done.summary.skipped
+    );
+    for secret in &done.summary.missing_secrets {
+        eprintln!(
+            "warning: {} has no value for {}: import again with --replace --secret {}:{}=VALUE",
+            secret.server, secret.key, secret.server, secret.key
+        );
+    }
     Ok(())
 }
 

@@ -14,6 +14,7 @@ pub mod profiles;
 pub mod rules;
 pub mod secrets;
 pub mod skills;
+pub mod transfer;
 pub mod usage;
 
 pub use agent::{Agent, AgentInfo};
