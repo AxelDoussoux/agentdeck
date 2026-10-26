@@ -1,5 +1,7 @@
 .dialog {
   width: min(440px, calc(100vw - 32px));
+  max-height: calc(100vh - 32px);
+  overflow-y: auto;
   padding: var(--space-5);
   border: 1px solid var(--border);
   border-radius: var(--radius);

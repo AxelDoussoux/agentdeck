@@ -56,3 +56,84 @@
   flex-wrap: wrap;
   gap: 6px;
 }
+
+.import-groups {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: var(--space-3);
+  max-height: 240px;
+  margin: var(--space-3) 0;
+  overflow-y: auto;
+}
+
+.import-group h4 {
+  margin: 0 0 var(--space-1);
+  color: var(--text);
+  font-size: var(--text-sm);
+}
+
+.import-group .count {
+  color: var(--muted);
+  font-weight: 400;
+}
+
+.import-group ul {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: var(--text-sm);
+}
+
+.import-group li {
+  padding: 2px 0;
+  overflow-wrap: anywhere;
+}
+
+.import-same li,
+.import-skip li {
+  color: var(--faint);
+}
+
+.import-overwrite {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-2);
+  margin: var(--space-2) 0;
+  color: var(--text);
+}
+
+.import-overwrite span,
+.import-secrets label {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.import-overwrite small {
+  color: var(--muted);
+}
+
+.import-secrets {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin: var(--space-3) 0 0;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+}
+
+.import-secrets legend {
+  padding: 0 var(--space-1);
+  font-size: var(--text-sm);
+  font-weight: 600;
+}
+
+.import-secrets .hint {
+  margin: 0;
+}
+
+.import-secrets label {
+  color: var(--text);
+  font-size: var(--text-sm);
+}

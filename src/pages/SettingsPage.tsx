@@ -4,12 +4,21 @@ import { relaunch } from "@tauri-apps/plugin-process";
 import { check, type Update } from "@tauri-apps/plugin-updater";
 import type { Theme } from "../App";
 import { ConfirmDialog } from "../components/ConfirmDialog";
+import { ImportDialog } from "../components/ImportDialog";
 import { LauncherRepair } from "../components/LauncherRepair";
 import { useToast } from "../components/Toasts";
 import { Tooltip } from "../components/Tooltip";
 import { AgentMark, Icon, Notice, PageHeader, Segmented } from "../components/ui";
-import { appSettings, emptySkillTrash, openFolder, pickAgentFolder, resetAgentFolder } from "../lib/api";
-import type { Agent, AgentInfo, AppSettings, SecretListing } from "../lib/types";
+import {
+  appSettings,
+  emptySkillTrash,
+  exportConfig,
+  openFolder,
+  pickAgentFolder,
+  previewImport,
+  resetAgentFolder,
+} from "../lib/api";
+import type { Agent, AgentInfo, AppSettings, ImportPreview, SecretListing } from "../lib/types";
 import { errorText, LANGUAGES, t, type LanguageSetting } from "../lib/i18n";
 
 const RELEASES = "https://github.com/AxelDoussoux/agentdeck/releases";
@@ -41,6 +50,7 @@ export function SettingsPage({ agents, secrets, version, theme, setTheme, langua
   const [loadError, setLoadError] = useState<string | null>(null);
   const [updates, setUpdates] = useState<UpdateState>({ kind: "idle" });
   const [emptying, setEmptying] = useState(false);
+  const [importing, setImporting] = useState<ImportPreview | null>(null);
   const notify = useToast();
 
   async function load() {
@@ -101,6 +111,24 @@ export function SettingsPage({ agents, secrets, version, theme, setTheme, langua
       await relaunch();
     } catch (err) {
       setUpdates({ kind: "error", text: t.update.failed(errorText(err)) });
+    }
+  }
+
+  async function exportAll() {
+    try {
+      const path = await exportConfig();
+      if (path) notify({ tone: "success", text: t.settings.exported(path) });
+    } catch (err) {
+      notify({ tone: "error", text: errorText(err) });
+    }
+  }
+
+  async function pickImport() {
+    try {
+      const preview = await previewImport();
+      if (preview) setImporting(preview);
+    } catch (err) {
+      notify({ tone: "error", text: errorText(err) });
     }
   }
 
@@ -219,6 +247,23 @@ export function SettingsPage({ agents, secrets, version, theme, setTheme, langua
       </section>
 
       <section className="card settings-section">
+        <h2>{t.settings.transfer}</h2>
+        <div className="setting-row">
+          <span className="setting-label">
+            <small>{t.settings.transferHint}</small>
+          </span>
+          <span className="setting-actions">
+            <button className="small" onClick={exportAll}>
+              <Icon name="download" size={14} /> {t.settings.exportButton}
+            </button>
+            <button className="small" onClick={pickImport}>
+              {t.settings.importButton}
+            </button>
+          </span>
+        </div>
+      </section>
+
+      <section className="card settings-section">
         <h2>{t.settings.protected}</h2>
         <div className="setting-row">
           <span className="setting-label">
@@ -265,6 +310,18 @@ export function SettingsPage({ agents, secrets, version, theme, setTheme, langua
           </span>
         </div>
       </section>
+
+      {importing && (
+        <ImportDialog
+          preview={importing}
+          agents={agents}
+          onClose={() => setImporting(null)}
+          onChange={() => {
+            load();
+            onChange();
+          }}
+        />
+      )}
 
       {emptying && settings && (
         <ConfirmDialog

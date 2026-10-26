@@ -21,16 +21,9 @@ import {
 import { moveInGrid } from "../lib/grid";
 import { matches } from "../lib/search";
 import { useFilesChanged } from "../lib/watch";
+import { SKILL_FOLDERS } from "../lib/skills";
 import type { Agent, AgentInfo, Skill, SkillFile, SkillListing, SkillLocation, TrashedSkill } from "../lib/types";
 import { errorText, formatDateTime, formatList, formatNumber, t } from "../lib/i18n";
-
-const LOCATION_LABELS: Record<SkillLocation, string> = {
-  "claude-code": "~/.claude/skills",
-  shared: "~/.agents/skills",
-  codex: "~/.codex/skills",
-  gemini: "~/.gemini/skills",
-  cursor: "~/.cursor/skills",
-};
 
 /** Short names for the grid, where the full path is the cell's tooltip. */
 const shortLabel = (location: SkillLocation): string =>
@@ -144,7 +137,7 @@ export function SkillsPage({ agents, focus }: { agents: AgentInfo[]; focus?: Foc
 
   async function create(location: SkillLocation, name: string, description: string) {
     await createSkill(location, name, description);
-    notify({ tone: "success", text: t.skills.created(name, LOCATION_LABELS[location]) });
+    notify({ tone: "success", text: t.skills.created(name, SKILL_FOLDERS[location]) });
     setCreating(false);
     setCreated(name);
     await load();
@@ -163,7 +156,7 @@ export function SkillsPage({ agents, focus }: { agents: AgentInfo[]; focus?: Foc
   }
 
   async function restore(skill: TrashedSkill, overwrite = false) {
-    const where = LOCATION_LABELS[skill.location];
+    const where = SKILL_FOLDERS[skill.location];
     try {
       await restoreSkill(skill.id, overwrite);
       notify({ tone: "success", text: t.skills.restored(skill.name, where) });
@@ -234,7 +227,7 @@ export function SkillsPage({ agents, focus }: { agents: AgentInfo[]; focus?: Foc
                   <div>
                     <strong>{skill.name}</strong>
                     <span className="hint">
-                      {t.skills.fromRemoved(LOCATION_LABELS[skill.location], formatDateTime(skill.removedMs))}
+                      {t.skills.fromRemoved(SKILL_FOLDERS[skill.location], formatDateTime(skill.removedMs))}
                     </span>
                   </div>
                   <button className="small" onClick={() => restore(skill)}>
@@ -438,7 +431,7 @@ export function SkillsPage({ agents, focus }: { agents: AgentInfo[]; focus?: Foc
                 {trashed.map((skill) => (
                   <li key={skill.id}>
                     <div>
-                      <strong>{LOCATION_LABELS[skill.location]}</strong>
+                      <strong>{SKILL_FOLDERS[skill.location]}</strong>
                       <span className="hint">{t.skills.removedOn(formatDateTime(skill.removedMs))}</span>
                     </div>
                     <button className="small" onClick={() => restore(skill)}>
@@ -475,11 +468,11 @@ export function SkillsPage({ agents, focus }: { agents: AgentInfo[]; focus?: Foc
               >
                 <p>
                   {t.skills.spreadBody(
-                    <code>{LOCATION_LABELS[skill.location]}</code>,
+                    <code>{SKILL_FOLDERS[skill.location]}</code>,
                     replaced.map((other, i) => (
                       <span key={other.location}>
                         {i > 0 && ", "}
-                        <code>{LOCATION_LABELS[other.location]}</code>
+                        <code>{SKILL_FOLDERS[other.location]}</code>
                       </span>
                     )),
                   )}
@@ -502,7 +495,7 @@ export function SkillsPage({ agents, focus }: { agents: AgentInfo[]; focus?: Foc
         >
           <p>
             {t.skills.restoreBody(
-              <code>{LOCATION_LABELS[pendingRestore.location]}</code>,
+              <code>{SKILL_FOLDERS[pendingRestore.location]}</code>,
               pendingRestore.name,
               formatDateTime(pendingRestore.removedMs),
             )}
@@ -583,15 +576,15 @@ function NewSkillForm({ taken, onSubmit, onCancel }: NewSkillProps) {
             aria-describedby="new-skill-name"
           />
           <small id="new-skill-name" className={(name !== "" && !valid) || exists ? "danger-text" : "hint"}>
-            {exists ? t.skills.nameTaken(LOCATION_LABELS[location], name) : t.skills.nameRule}
+            {exists ? t.skills.nameTaken(SKILL_FOLDERS[location], name) : t.skills.nameRule}
           </small>
         </label>
         <label>
           {t.skills.folder}
           <select value={location} onChange={(e) => setLocation(e.target.value as SkillLocation)}>
-            {(Object.keys(LOCATION_LABELS) as SkillLocation[]).map((option) => (
+            {(Object.keys(SKILL_FOLDERS) as SkillLocation[]).map((option) => (
               <option key={option} value={option}>
-                {LOCATION_LABELS[option]}
+                {SKILL_FOLDERS[option]}
               </option>
             ))}
           </select>
@@ -650,11 +643,11 @@ function SkillDifferences({ copies }: { copies: Skill[] }) {
           label={t.skills.copyToCompare}
           value={other.location}
           onChange={setCompared}
-          options={others.map((skill) => ({ value: skill.location, label: LOCATION_LABELS[skill.location] }))}
+          options={others.map((skill) => ({ value: skill.location, label: SKILL_FOLDERS[skill.location] }))}
         />
       )}
       <p className="hint">
-        {t.skills.diffHint(<code>{LOCATION_LABELS[other.location]}</code>, <code>{LOCATION_LABELS[base.location]}</code>)}
+        {t.skills.diffHint(<code>{SKILL_FOLDERS[other.location]}</code>, <code>{SKILL_FOLDERS[base.location]}</code>)}
       </p>
       {before === undefined || after === undefined ? (
         <p className="hint">{t.skills.readingCopies}</p>

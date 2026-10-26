@@ -66,6 +66,7 @@ export type ErrorCode =
   | "unsupported"
   | "profileNotFound"
   | "profileName"
+  | "importExpired"
   | "undoExpired"
   | "rulesChanged"
   | "launcherMissing"
@@ -83,6 +84,37 @@ export interface ErrorInfo {
   /** What the system or a parser said, in English. */
   detail?: string;
   message: string;
+}
+
+export type ImportKind = "server" | "rules" | "skill" | "folder" | "profile";
+
+/** What an import does to one item: `replace` only when asked to replace. */
+export type ImportChange = "add" | "replace" | "same" | "skip";
+
+export interface ImportItem {
+  kind: ImportKind;
+  agent: Agent | null;
+  location: SkillLocation | null;
+  name: string;
+  change: ImportChange;
+}
+
+/** A secret value an import asks for, once per server and name. */
+export interface NeededSecret {
+  server: string;
+  key: string;
+  header: boolean;
+}
+
+export interface ImportPreview {
+  file: string;
+  plan: { items: ImportItem[]; secrets: NeededSecret[] };
+}
+
+export interface ImportSummary {
+  imported: number;
+  skipped: number;
+  missingSecrets: NeededSecret[];
 }
 
 export interface Profile {

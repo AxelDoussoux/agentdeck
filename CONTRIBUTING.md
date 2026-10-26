@@ -21,8 +21,10 @@ Thanks for helping! Bug reports, ideas and pull requests are all welcome.
 
 Agent-specific knowledge (config paths and formats, log formats, prices)
 lives in `crates/agentdeck-core`, one module per area: `mcp.rs`, `rules.rs`,
-`skills.rs`, `secrets.rs`, `usage.rs`, `pricing.rs`. Supporting a new agent
-starts in `agent.rs`.
+`skills.rs`, `secrets.rs`, `usage.rs`, `pricing.rs`. What reads across them
+sits next to them: `health.rs` for the checks of the overview and
+`agentdeck doctor`, `profiles.rs` for server profiles, `transfer.rs` for
+export and import. Supporting a new agent starts in `agent.rs`.
 
 The texts of the app are in `src/locales`: `en.tsx` is the reference, and
 `fr.tsx` must have the same keys, which `pnpm build` checks. A new text goes
