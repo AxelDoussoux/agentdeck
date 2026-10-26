@@ -1,15 +1,18 @@
 import { useEffect, useRef, useState } from "react";
 import { getVersion } from "@tauri-apps/api/app";
+import { listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
+import { exit } from "@tauri-apps/plugin-process";
 import { CommandPalette, type Command } from "./components/CommandPalette";
 import { ConfirmDialog } from "./components/ConfirmDialog";
 import { useToast } from "./components/Toasts";
 import { Tooltip } from "./components/Tooltip";
 import { Icon, type IconName } from "./components/ui";
-import { copyMcpServer, listAgents, listMcpServers, listSecrets, listSkills, undoChange } from "./lib/api";
+import { applyProfile, copyMcpServer, listAgents, listMcpServers, listSecrets, listSkills, undoChange } from "./lib/api";
 import { alertBudget, monthCost, newThreshold, remember } from "./lib/budget";
 import { applyLanguage, errorText, formatList, storedLanguage, t, type LanguageSetting } from "./lib/i18n";
 import { shortcut, withModifier } from "./lib/keys";
+import { keepInTray, updateTray } from "./lib/tray";
 import { byName } from "./lib/servers";
 import { forgetUsage, recentUsage } from "./lib/usage";
 import { useFilesChanged } from "./lib/watch";
@@ -118,7 +121,13 @@ function App() {
     }
     // Only feeds the sidebar badge and the overview; the Secrets page loads its own.
     listSecrets().then(setSecrets, () => setSecrets(null));
+    syncTray();
   }
+
+  const syncTray = () => {
+    // Without a tray icon there is nothing to update.
+    updateTray().catch(() => {});
+  };
 
   useFilesChanged("mcp", refresh);
 
@@ -139,6 +148,7 @@ function App() {
   useFilesChanged("usage", () => {
     forgetUsage();
     checkBudget();
+    syncTray();
   });
 
   useEffect(() => {
@@ -146,6 +156,12 @@ function App() {
     checkBudget();
     getVersion().then(setVersion, () => {});
     const closing = getCurrentWindow().onCloseRequested((event) => {
+      if (keepInTray()) {
+        // Hidden, the page keeps its state: nothing unsaved is lost.
+        event.preventDefault();
+        getCurrentWindow().hide();
+        return;
+      }
       const unsaved = guard.current;
       if (!unsaved) return;
       event.preventDefault();
@@ -170,6 +186,7 @@ function App() {
     // `t` changes at once; the new state re-renders every page with it.
     applyLanguage(setting);
     setLanguage(setting);
+    syncTray();
   }
 
   const serverCount = new Set(listing.servers.map((s) => s.name)).size;
@@ -191,6 +208,49 @@ function App() {
     if (guard.current && target !== page) setLeaving({ what: guard.current.what, proceed: go });
     else go();
   }
+
+  // What the tray menu asks for. The latest handlers are used, so they see
+  // the current page and its unsaved changes.
+  const tray = useRef<{ open: (page: PageId) => void; profile: (name: string) => void; quit: () => void }>(null);
+  tray.current = {
+    open: (target) => navigate(target),
+    profile: async (name) => {
+      try {
+        const { undo, changed } = await applyProfile(name);
+        notify({
+          tone: "success",
+          text: t.mcp.profileUsed(name, changed),
+          undo: async () => {
+            await undoChange(undo);
+            await refresh();
+          },
+        });
+      } catch (err) {
+        notify({ tone: "error", text: errorText(err) });
+      }
+      await refresh();
+    },
+    quit: () => {
+      const unsaved = guard.current;
+      if (!unsaved) {
+        exit(0);
+        return;
+      }
+      const window = getCurrentWindow();
+      window.show().then(() => window.setFocus(), () => {});
+      setLeaving({ what: unsaved.what, proceed: () => exit(0) });
+    },
+  };
+  useEffect(() => {
+    const stops = [
+      listen<PageId>("tray-open", (event) => tray.current?.open(event.payload)),
+      listen<string>("tray-profile", (event) => tray.current?.profile(event.payload)),
+      listen("tray-quit", () => tray.current?.quit()),
+    ];
+    return () => {
+      for (const stop of stops) stop.then((unlisten) => unlisten(), () => {});
+    };
+  }, []);
 
   // A narrow window shows the sidebar as icons, with their labels as tips.
   const narrow = useMediaQuery(NARROW);

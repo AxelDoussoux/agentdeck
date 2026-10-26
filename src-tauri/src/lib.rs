@@ -17,6 +17,7 @@ use agentdeck_core::{
 use tauri::ipc::Channel;
 use tauri::{Manager, State};
 
+mod tray;
 mod watch;
 
 fn home() -> Result<PathBuf, UiError> {
@@ -868,17 +869,20 @@ fn apply_import(
     })
 }
 
+/// Sets what the tray icon's menu shows.
+#[tauri::command]
+fn update_tray(app: tauri::AppHandle, summary: tray::Summary) -> Result<(), UiError> {
+    tray::update(&app, &summary).map_err(other)?;
+    Ok(())
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
         // Two instances would edit the same config files: a second launch
         // brings the open window to the front instead. Must come first.
         .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
-            if let Some(window) = app.get_webview_window("main") {
-                let _ = window.unminimize();
-                let _ = window.show();
-                let _ = window.set_focus();
-            }
+            tray::show(app);
         }))
         .plugin(tauri_plugin_window_state::Builder::default().build())
         .plugin(tauri_plugin_notification::init())
@@ -891,6 +895,10 @@ pub fn run() {
         .setup(|app| {
             if let Ok(home) = agent::home_dir() {
                 watch::start(app.handle().clone(), home);
+            }
+            // Without a tray (some Linux desktops), the app still works.
+            if let Err(err) = tray::create(app.handle()) {
+                eprintln!("no tray icon: {err}");
             }
             Ok(())
         })
@@ -931,6 +939,7 @@ pub fn run() {
             repair_launchers,
             mark_secret_name,
             usage_report,
+            update_tray,
             export_sessions_csv,
             undo_change,
             app_settings,

@@ -130,6 +130,12 @@ export const fr: Messages = {
     budgetOf: (budget: string) => `Budget : ${budget} par mois.`,
     alertsOn: "Activées",
     alertsOff: "Désactivées",
+    tray: "Icône dans la barre système",
+    trayHint:
+      "Son menu montre ce qui demande votre attention, le coût du mois et les profils. Gardé dans la barre système, AgentDeck continue de surveiller les configs et d’envoyer les alertes de budget, fenêtre fermée.",
+    trayClose: "Fermer la fenêtre",
+    trayQuit: "Quitte l’app",
+    trayKeep: "La garde dans la barre",
     updates: "Mises à jour",
     checkedAtStart: "Vérifiées au démarrage de l’app.",
     checking: "Vérification…",
@@ -848,5 +854,14 @@ export const fr: Messages = {
     resume: "Reprendre",
     runIn: (folder: string) => `Lancez-la dans ${folder} pour reprendre cette session.`,
     sessionsOf: (project: string) => `Afficher les sessions de ${project}`,
+  },
+  tray: {
+    open: "Ouvrir AgentDeck",
+    quit: "Quitter AgentDeck",
+    healthy: "Rien ne demande votre attention",
+    attention: (n: number) => (n <= 1 ? "1 point demande votre attention" : `${n} points demandent votre attention`),
+    cost: (spent: string) => `Ce mois-ci : ${spent}`,
+    costOf: (spent: string, budget: string) => `Ce mois-ci : ${spent} sur ${budget}`,
+    profiles: "Profils",
   },
 };

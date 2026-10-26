@@ -4,6 +4,7 @@ import { relaunch } from "@tauri-apps/plugin-process";
 import { check, type Update } from "@tauri-apps/plugin-updater";
 import type { Theme } from "../App";
 import { alertsOn, budget, setAlertsOn } from "../lib/budget";
+import { keepInTray, setKeepInTray } from "../lib/tray";
 import { formatCost } from "../lib/usage";
 import { ConfirmDialog } from "../components/ConfirmDialog";
 import { ImportDialog } from "../components/ImportDialog";
@@ -54,6 +55,7 @@ export function SettingsPage({ agents, secrets, version, theme, setTheme, langua
   const [emptying, setEmptying] = useState(false);
   const [importing, setImporting] = useState<ImportPreview | null>(null);
   const [alerts, setAlerts] = useState(alertsOn);
+  const [keep, setKeep] = useState(keepInTray);
   const monthlyBudget = budget();
   const notify = useToast();
 
@@ -198,6 +200,29 @@ export function SettingsPage({ agents, secrets, version, theme, setTheme, langua
             options={[
               { value: true, label: t.settings.alertsOn },
               { value: false, label: t.settings.alertsOff },
+            ]}
+          />
+        </div>
+      </section>
+
+      <section className="card settings-section">
+        <h2>{t.settings.tray}</h2>
+        <div className="setting-row">
+          <span className="setting-label">
+            {t.settings.trayClose}
+            <small>{t.settings.trayHint}</small>
+          </span>
+          <Segmented
+            radio
+            label={t.settings.trayClose}
+            value={keep}
+            onChange={(on) => {
+              setKeepInTray(on);
+              setKeep(on);
+            }}
+            options={[
+              { value: false, label: t.settings.trayQuit },
+              { value: true, label: t.settings.trayKeep },
             ]}
           />
         </div>
