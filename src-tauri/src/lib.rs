@@ -4,6 +4,7 @@ use std::path::PathBuf;
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
+use agentdeck_core::health;
 use agentdeck_core::rules::{self, Rules};
 use agentdeck_core::secrets::{self, Keychain, SecretRef};
 use agentdeck_core::skills::{self, Location, Skill};
@@ -626,6 +627,16 @@ async fn test_mcp_server(agent: Agent, name: String) -> Result<probe::ProbeRepor
     .map_err(other)?
 }
 
+/// What needs attention across the configs, for the overview. It reads
+/// every config, so it runs off the main thread.
+#[tauri::command]
+async fn health_report() -> Result<Vec<health::Finding>, UiError> {
+    let home = home()?;
+    tauri::async_runtime::spawn_blocking(move || health::check(&home))
+        .await
+        .map_err(other)
+}
+
 /// Parsing months of logs takes a while, so it runs off the main thread.
 #[tauri::command]
 async fn usage_report(progress: Channel<ReadProgress>) -> Result<UsageReport, UiError> {
@@ -720,6 +731,7 @@ pub fn run() {
             test_mcp_server,
             restore_server_version,
             list_rules,
+            health_report,
             save_rules,
             list_skills,
             read_skill,

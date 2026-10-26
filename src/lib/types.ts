@@ -83,6 +83,15 @@ export interface ErrorInfo {
   message: string;
 }
 
+/** Something that needs attention, from the core's health checks. */
+export type Finding =
+  | { kind: "unreadable"; agent: Agent; error: ErrorInfo }
+  | { kind: "launcherMissing"; servers: { agent: Agent; server: string }[] }
+  | { kind: "plainSecrets"; count: number; servers: string[] }
+  | { kind: "differ"; servers: string[] }
+  | { kind: "partial"; servers: string[] }
+  | { kind: "rulesDiffer"; agents: Agent[] };
+
 /** An earlier version of a server, from the backups of its agent's config. */
 export interface ServerVersion {
   /** The backup it comes from. */

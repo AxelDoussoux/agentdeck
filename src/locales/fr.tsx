@@ -556,6 +556,7 @@ export const fr: Messages = {
     description: "Tous les agents de code IA de cet ordinateur, et ce qui demande votre attention.",
     more: (n: number) => `${n} autre${n <= 1 ? "" : "s"}`,
     launcherMissing: (servers: string) => `Le lanceur agentdeck qu’ils utilisent est introuvable : ${servers}.`,
+    unreadableTitle: (agent: string) => `La configuration de ${agent} est illisible`,
     plainTitle: (n: number) =>
       n <= 1 ? `${n} clé d’API est stockée en clair` : `${n} clés d’API sont stockées en clair`,
     plainDetail: (n: number, servers: string) =>
