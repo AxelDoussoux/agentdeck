@@ -173,6 +173,14 @@ tr:hover .row-menu .icon-button,
   outline: none;
 }
 
+.menu-check {
+  display: inline-flex;
+  width: 14px;
+  margin-right: var(--space-2);
+  color: var(--accent);
+  vertical-align: -2px;
+}
+
 .menu button.danger {
   color: var(--danger);
 }

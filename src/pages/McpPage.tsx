@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import type { Focus } from "../App";
 import { AgentMark, Empty, Icon, Notice, PageHeader } from "../components/ui";
 import { ConfirmDialog } from "../components/ConfirmDialog";
+import { ProfilesDialog } from "../components/ProfilesDialog";
 import { Drawer } from "../components/Drawer";
 import { RowMenu, type MenuItem } from "../components/RowMenu";
 import { ServerForm, type ServerDraft } from "../components/ServerForm";
@@ -13,6 +14,8 @@ import {
   copyMcpServer,
   editMcpServer,
   openConfig,
+  applyProfile,
+  listProfiles,
   removeMcpServer,
   setMcpEnabled,
   restoreServerVersion,
@@ -23,7 +26,7 @@ import {
 import { byName, changes, describe, differences, drifting, WITH_OPTIONS } from "../lib/servers";
 import { moveInGrid } from "../lib/grid";
 import { matches } from "../lib/search";
-import type { Agent, AgentInfo, McpListing, McpServer, ServerSpec, ServerVersion } from "../lib/types";
+import type { Agent, AgentInfo, McpListing, McpServer, ProfileListing, ServerSpec, ServerVersion } from "../lib/types";
 import { errorText, formatDateTime, formatList, formatNumber, t } from "../lib/i18n";
 
 interface Props {
@@ -52,6 +55,8 @@ export function McpPage({ agents, listing, onChange, focus }: Props) {
   // Only the servers missing from an installed agent or set up differently.
   const [unsynced, setUnsynced] = useState(false);
   const [confirmSync, setConfirmSync] = useState(false);
+  const [profiles, setProfiles] = useState<ProfileListing | null>(null);
+  const [editingProfiles, setEditingProfiles] = useState(false);
   const [versions, setVersions] = useState<Map<Agent, ServerVersion[]>>(new Map());
   // Server tests by `agent/name`, kept while the page is open.
   const [tests, setTests] = useState<Record<string, TestState>>({});
@@ -125,6 +130,28 @@ export function McpPage({ agents, listing, onChange, focus }: Props) {
       current = false;
     };
   }, [opened?.name, listing, agents]);
+
+  // Which profile the servers match changes with them.
+  useEffect(() => {
+    listProfiles().then(setProfiles, () => setProfiles(null));
+  }, [listing]);
+
+  async function switchProfile(name: string) {
+    try {
+      const { undo, changed } = await applyProfile(name);
+      notify({
+        tone: "success",
+        text: t.mcp.profileUsed(name, changed),
+        undo: async () => {
+          await undoChange(undo);
+          await onChange();
+        },
+      });
+    } catch (err) {
+      notify({ tone: "error", text: errorText(err) });
+    }
+    await onChange();
+  }
 
   async function run(action: () => Promise<number>, done: string): Promise<boolean> {
     let ok = true;
@@ -271,6 +298,27 @@ export function McpPage({ agents, listing, onChange, focus }: Props) {
                 </button>
               </Tooltip>
             )}
+            {rows.size > 0 && (
+              <RowMenu
+                label={t.mcp.profileTip}
+                text={
+                  <>
+                    <Icon name="plug" /> {profiles?.active ? t.mcp.profileButton(profiles.active) : t.mcp.profiles}
+                  </>
+                }
+                items={[
+                  ...(profiles?.profiles ?? []).map((profile) => ({
+                    label: profile.name,
+                    checked: profile.name === profiles?.active,
+                    onSelect: () => switchProfile(profile.name),
+                  })),
+                  {
+                    label: profiles?.profiles.length ? t.mcp.manageProfiles : `${t.mcp.newProfile}…`,
+                    onSelect: () => setEditingProfiles(true),
+                  },
+                ]}
+              />
+            )}
             {gaps.length > 0 && (
               <Tooltip text={t.mcp.syncTip}>
                 <button onClick={() => setConfirmSync(true)}>
@@ -289,6 +337,17 @@ export function McpPage({ agents, listing, onChange, focus }: Props) {
           {t.common.about(error.agent ?? "", errorText(error))}
         </Notice>
       ))}
+
+      {editingProfiles && profiles && (
+        <ProfilesDialog
+          profiles={profiles.profiles}
+          servers={[...rows.keys()]}
+          serversOn={[...rows].filter(([, copies]) => [...copies.values()].some((s) => !s.options.disabled)).map(([name]) => name)}
+          initial={profiles.active ?? profiles.profiles[0]?.name}
+          onClose={() => setEditingProfiles(false)}
+          onChange={() => listProfiles().then(setProfiles, () => undefined)}
+        />
+      )}
 
       {adding && (
         <Drawer

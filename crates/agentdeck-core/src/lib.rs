@@ -10,6 +10,7 @@ pub mod health;
 pub mod mcp;
 pub mod pricing;
 pub mod probe;
+pub mod profiles;
 pub mod rules;
 pub mod secrets;
 pub mod skills;

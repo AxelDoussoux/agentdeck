@@ -64,6 +64,8 @@ export type ErrorCode =
   | "skillNotFound"
   | "skillExists"
   | "unsupported"
+  | "profileNotFound"
+  | "profileName"
   | "undoExpired"
   | "rulesChanged"
   | "launcherMissing"
@@ -81,6 +83,18 @@ export interface ErrorInfo {
   /** What the system or a parser said, in English. */
   detail?: string;
   message: string;
+}
+
+export interface Profile {
+  name: string;
+  /** The servers it turns on, by name. */
+  servers: string[];
+}
+
+export interface ProfileListing {
+  profiles: Profile[];
+  /** The profile the servers match now. */
+  active: string | null;
 }
 
 /** Something that needs attention, from the core's health checks. */

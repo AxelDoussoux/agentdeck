@@ -4,6 +4,7 @@ import type {
   AgentInfo,
   AppSettings,
   Finding,
+  ProfileListing,
   McpListing,
   ProbeReport,
   ProtectPreview,
@@ -40,6 +41,15 @@ export const editMcpServer = (agent: Agent, name: string, edit: ServerEdit) =>
 
 export const removeMcpServer = (agent: Agent, name: string) =>
   invoke<number>("remove_mcp_server", { agent, name });
+
+export const listProfiles = () => invoke<ProfileListing>("list_profiles");
+
+export const saveProfile = (name: string, servers: string[]) => invoke<void>("save_profile", { name, servers });
+
+export const deleteProfile = (name: string) => invoke<void>("delete_profile", { name });
+
+/** Turns the profile's servers on and every other one off. */
+export const applyProfile = (name: string) => invoke<{ undo: number; changed: number }>("use_profile", { name });
 
 /** Turns a server on or off, keeping its settings. Returns the undo id. */
 export const setMcpEnabled = (agent: Agent, name: string, enabled: boolean) =>
