@@ -107,6 +107,12 @@ export const en = {
     budgetOf: (budget: string) => `Budget: ${budget} per month.`,
     alertsOn: "On",
     alertsOff: "Off",
+    tray: "Tray icon",
+    trayHint:
+      "Its menu shows what needs attention, this month's cost and the profiles. Kept in the tray, AgentDeck goes on watching the configs and sending budget alerts with the window closed.",
+    trayClose: "Closing the window",
+    trayQuit: "Quits",
+    trayKeep: "Keeps it in the tray",
     updates: "Updates",
     checkedAtStart: "Checked when the app starts.",
     checking: "Checking…",
@@ -792,6 +798,15 @@ export const en = {
     resume: "Resume",
     runIn: (folder: string) => `Run it in ${folder} to continue this session.`,
     sessionsOf: (project: string) => `Show the sessions of ${project}`,
+  },
+  tray: {
+    open: "Open AgentDeck",
+    quit: "Quit AgentDeck",
+    healthy: "Nothing needs attention",
+    attention: (n: number) => (n === 1 ? "1 thing needs attention" : `${n} things need attention`),
+    cost: (spent: string) => `This month: ${spent}`,
+    costOf: (spent: string, budget: string) => `This month: ${spent} of ${budget}`,
+    profiles: "Profiles",
   },
 };
 

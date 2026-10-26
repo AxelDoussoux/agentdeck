@@ -46,9 +46,13 @@ shows them side by side, and syncs them in one click.
   included. Values are never displayed.
 - **History & costs.** Token usage and estimated cost per day, per agent,
   per project, per model and per session, from Claude Code and Codex logs,
-  over the last days or any period, with an optional monthly budget. Click a
-  session to see its token split, cache hit rate and the command to resume it.
-  Export the sessions shown as CSV for a spreadsheet.
+  over the last days or any period, with an optional monthly budget and a
+  system notification when spending nears or passes it. Click a session to see
+  its token split, cache hit rate and the command to resume it. Export the
+  sessions shown as CSV for a spreadsheet.
+- **Tray icon.** Its menu shows what needs attention, this month's cost and the
+  profiles, which it can switch. Closing the window can keep AgentDeck in the
+  tray, still watching configs and sending budget alerts.
 - **Keyboard.** `Ctrl+K` (`⌘K` on macOS) opens a palette to jump to a page,
   a server, a skill or an agent's rules, or to copy a server to another agent.
   `Ctrl+1` to `Ctrl+6` switch pages, `Ctrl+R` reloads the configs and `Ctrl+S`
