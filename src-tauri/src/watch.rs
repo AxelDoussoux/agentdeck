@@ -9,7 +9,7 @@ use std::sync::mpsc;
 use std::time::Duration;
 
 use agentdeck_core::skills::Location;
-use agentdeck_core::{Agent, mcp};
+use agentdeck_core::{Agent, mcp, usage};
 use notify::{EventKind, RecommendedWatcher, RecursiveMode, Watcher};
 use serde::Serialize;
 use tauri::{AppHandle, Emitter};
@@ -27,6 +27,8 @@ pub enum Scope {
     Mcp,
     Rules,
     Skills,
+    /// The session logs that costs are read from.
+    Usage,
 }
 
 /// Starts watching in a background thread. Errors only mean the app falls
@@ -65,7 +67,7 @@ fn run(app: &AppHandle, home: &Path) -> notify::Result<()> {
         // A folder created since, such as `~/.codex`, is watched from now on.
         // Files may have been written in it before that, so check them all.
         if watch_targets(&mut watcher, &mut watched, home) {
-            scopes.extend([Scope::Mcp, Scope::Rules, Scope::Skills]);
+            scopes.extend([Scope::Mcp, Scope::Rules, Scope::Skills, Scope::Usage]);
         }
         // Claude Code rewrites `~/.claude.json` all the time while it runs:
         // only a change to the servers themselves is worth a reload.
@@ -96,6 +98,9 @@ fn targets(home: &Path) -> Vec<(PathBuf, RecursiveMode)> {
         {
             targets.push((dir, RecursiveMode::NonRecursive));
         }
+    }
+    for dir in usage::log_dirs(home) {
+        targets.push((dir, RecursiveMode::Recursive));
     }
     for location in Location::ALL {
         let dir = location.path(home);
@@ -155,6 +160,13 @@ fn scope_of(home: &Path, path: &Path) -> Option<Scope> {
     {
         return Some(Scope::Skills);
     }
+    if path.extension().is_some_and(|ext| ext == "jsonl")
+        && usage::log_dirs(home)
+            .iter()
+            .any(|dir| path.starts_with(dir))
+    {
+        return Some(Scope::Usage);
+    }
     None
 }
 
@@ -169,6 +181,18 @@ fn servers_fingerprint(home: &Path) -> u64 {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn session_logs_are_the_usage_scope() {
+        let home = tempfile::tempdir().unwrap();
+        let home = home.path();
+        std::fs::create_dir_all(home.join(".claude/projects/app")).unwrap();
+        let scope = |path: &str| scope_of(home, &home.join(path));
+        assert_eq!(scope(".claude/projects/app/a1.jsonl"), Some(Scope::Usage));
+        // Only where the logs are, and only logs.
+        assert_eq!(scope(".claude/projects/app/notes.md"), None);
+        assert_eq!(scope(".codex/history.jsonl"), None);
+    }
 
     #[test]
     fn paths_map_to_scopes() {

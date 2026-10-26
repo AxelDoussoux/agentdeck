@@ -3,6 +3,8 @@ import { openUrl } from "@tauri-apps/plugin-opener";
 import { relaunch } from "@tauri-apps/plugin-process";
 import { check, type Update } from "@tauri-apps/plugin-updater";
 import type { Theme } from "../App";
+import { alertsOn, budget, setAlertsOn } from "../lib/budget";
+import { formatCost } from "../lib/usage";
 import { ConfirmDialog } from "../components/ConfirmDialog";
 import { ImportDialog } from "../components/ImportDialog";
 import { LauncherRepair } from "../components/LauncherRepair";
@@ -51,6 +53,8 @@ export function SettingsPage({ agents, secrets, version, theme, setTheme, langua
   const [updates, setUpdates] = useState<UpdateState>({ kind: "idle" });
   const [emptying, setEmptying] = useState(false);
   const [importing, setImporting] = useState<ImportPreview | null>(null);
+  const [alerts, setAlerts] = useState(alertsOn);
+  const monthlyBudget = budget();
   const notify = useToast();
 
   async function load() {
@@ -172,6 +176,29 @@ export function SettingsPage({ agents, secrets, version, theme, setTheme, langua
                 ? { value: option, label: t.settings.systemLanguage }
                 : { value: option, label: LANGUAGES[option].name, lang: option },
             )}
+          />
+        </div>
+      </section>
+
+      <section className="card settings-section">
+        <h2>{t.settings.budgetAlerts}</h2>
+        <div className="setting-row">
+          <span className="setting-label">
+            <small>{t.settings.budgetAlertsHint}</small>
+            <small>{monthlyBudget ? t.settings.budgetOf(formatCost(monthlyBudget)) : t.settings.budgetNoBudget}</small>
+          </span>
+          <Segmented
+            radio
+            label={t.settings.budgetAlerts}
+            value={alerts}
+            onChange={(on) => {
+              setAlertsOn(on);
+              setAlerts(on);
+            }}
+            options={[
+              { value: true, label: t.settings.alertsOn },
+              { value: false, label: t.settings.alertsOff },
+            ]}
           />
         </div>
       </section>

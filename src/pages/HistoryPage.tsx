@@ -5,6 +5,7 @@ import { useToast } from "../components/Toasts";
 import { AgentMark, Empty, Notice, PageHeader, Segmented } from "../components/ui";
 import { exportSessionsCsv, usageReport } from "../lib/api";
 import { errorText, formatDateTime, formatDay, formatNumber, t } from "../lib/i18n";
+import { budget as currentBudget, forget, monthCost, setBudget as storeBudget } from "../lib/budget";
 import { dateOf, datesBetween, formatCost, lastDays, localDate, localDays } from "../lib/usage";
 import type { Agent, AgentInfo, ReadProgress, Session, Tokens, UsageReport } from "../lib/types";
 
@@ -48,16 +49,6 @@ function customDates(a: string, b: string): string[] {
   return datesBetween(from, to);
 }
 
-/** The monthly budget, kept on this computer only. */
-function storedBudget(): number | null {
-  try {
-    const value = Number(localStorage.getItem("monthlyBudget"));
-    return value > 0 ? value : null;
-  } catch {
-    return null;
-  }
-}
-
 /** Sessions shown at first, and added by each "Show more". */
 const PAGE = 100;
 
@@ -94,7 +85,7 @@ export function HistoryPage({ agents }: { agents: AgentInfo[] }) {
   const [shown, setShown] = useState(PAGE);
   const [view, setView] = useState<View>("sessions");
   const [sort, setSort] = useState<{ key: SortKey; descending: boolean }>({ key: "date", descending: true });
-  const [budget, setBudget] = useState<number | null>(storedBudget);
+  const [budget, setBudget] = useState<number | null>(currentBudget);
   const [editingBudget, setEditingBudget] = useState(false);
   const notify = useToast();
   // The save dialog is open: a second click would open another one.
@@ -153,25 +144,17 @@ export function HistoryPage({ agents }: { agents: AgentInfo[] }) {
       : group(found, (s) => s.models.join(", "), (key) => key || t.history.unknownModel);
 
   // The budget covers every agent since the first of the month.
-  const monthStart = `${localDate(new Date()).slice(0, 8)}01`;
-  const monthCost = report
-    ? localDays(report)
-        .filter((hour) => hour.date >= monthStart)
-        .reduce((sum, hour) => sum + hour.costUsd, 0)
-    : 0;
-  const budgetShare = budget ? monthCost / budget : 0;
+  const spent = report ? monthCost(report) : 0;
+  const budgetShare = budget ? spent / budget : 0;
 
   function saveBudget(value: string) {
     const amount = Number(value);
     const next = amount > 0 ? amount : null;
     setBudget(next);
     setEditingBudget(false);
-    try {
-      if (next) localStorage.setItem("monthlyBudget", String(next));
-      else localStorage.removeItem("monthlyBudget");
-    } catch {
-      // Blocked storage: the budget lasts until the app closes.
-    }
+    storeBudget(next);
+    // A new budget is a new scale: alert about its thresholds again.
+    forget();
   }
 
   function sortBy(key: SortKey) {
@@ -316,7 +299,7 @@ export function HistoryPage({ agents }: { agents: AgentInfo[] }) {
             <div className="stat budget">
               <span className="label">{t.history.thisMonth}</span>
               <span className="value">
-                {formatCost(monthCost)}
+                {formatCost(spent)}
                 {budget && <small> {t.history.of(formatCost(budget))}</small>}
               </span>
               {budget && (
@@ -326,7 +309,7 @@ export function HistoryPage({ agents }: { agents: AgentInfo[] }) {
                   aria-label={t.history.budgetUsed}
                   aria-valuemin={0}
                   aria-valuemax={budget}
-                  aria-valuenow={Math.round(monthCost * 100) / 100}
+                  aria-valuenow={Math.round(spent * 100) / 100}
                 >
                   <i style={{ width: `${Math.min(100, budgetShare * 100)}%` }} />
                 </span>
@@ -364,7 +347,7 @@ export function HistoryPage({ agents }: { agents: AgentInfo[] }) {
           {budget && budgetShare >= 0.8 && (
             <Notice tone={budgetShare >= 1 ? "error" : "warning"}>
               {budgetShare >= 1
-                ? t.history.overBudget(formatCost(monthCost), formatCost(budget))
+                ? t.history.overBudget(formatCost(spent), formatCost(budget))
                 : t.history.nearBudget(formatNumber(budgetShare, { style: "percent" }), formatCost(budget))}
             </Notice>
           )}

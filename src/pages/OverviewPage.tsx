@@ -2,10 +2,10 @@ import { useEffect, useState, type ReactNode } from "react";
 import type { PageId } from "../App";
 import { useToast } from "../components/Toasts";
 import { AgentMark, Icon, PageHeader, type IconName } from "../components/ui";
-import { healthReport, openConfig, repairLaunchers, usageReport } from "../lib/api";
+import { healthReport, openConfig, repairLaunchers } from "../lib/api";
 import { errorText, formatDay, formatList, t } from "../lib/i18n";
 import type { AgentInfo, Finding, McpListing, SecretListing, UsageReport } from "../lib/types";
-import { formatCost, recentCost } from "../lib/usage";
+import { formatCost, recentCost, recentUsage } from "../lib/usage";
 
 interface Props {
   agents: AgentInfo[];
@@ -23,18 +23,6 @@ interface Check {
   title: string;
   detail: ReactNode;
   action: ReactNode;
-}
-
-/** Reading months of logs takes a while: the overview reuses a recent read. */
-let usage: { at: number; report: Promise<UsageReport> } | null = null;
-const USAGE_MAX_AGE = 5 * 60 * 1000;
-
-function recentUsage(): Promise<UsageReport> {
-  if (!usage || Date.now() - usage.at > USAGE_MAX_AGE) {
-    usage = { at: Date.now(), report: usageReport() };
-    usage.report.catch(() => (usage = null));
-  }
-  return usage.report;
 }
 
 /** A short list of names, ending with how many more there are. */

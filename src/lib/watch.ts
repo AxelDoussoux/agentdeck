@@ -2,7 +2,7 @@ import { listen } from "@tauri-apps/api/event";
 import { useEffect, useRef } from "react";
 
 /** Parts of the app whose files the Rust side watches. */
-export type Scope = "mcp" | "rules" | "skills";
+export type Scope = "mcp" | "rules" | "skills" | "usage";
 
 /**
  * Calls `onChange` when files of `scope` change outside the app, such as a

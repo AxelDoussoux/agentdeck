@@ -1,3 +1,4 @@
+import { usageReport } from "./api";
 import { formatNumber } from "./i18n";
 import type { HourUsage, UsageReport } from "./types";
 
@@ -37,6 +38,24 @@ export function datesBetween(from: string, to: string): string[] {
 
 /** Local date of a UTC timestamp from the logs. */
 export const dateOf = (timestamp: string) => localDate(new Date(timestamp));
+
+/** Reading months of logs takes a while: a recent read is reused. */
+let recent: { at: number; report: Promise<UsageReport> } | null = null;
+const MAX_AGE = 5 * 60 * 1000;
+
+/** The usage report, read again when the last one is old or the logs changed. */
+export function recentUsage(): Promise<UsageReport> {
+  if (!recent || Date.now() - recent.at > MAX_AGE) {
+    recent = { at: Date.now(), report: usageReport() };
+    recent.report.catch(() => (recent = null));
+  }
+  return recent.report;
+}
+
+/** Drops the cached report, so the next read sees the logs as they are. */
+export function forgetUsage() {
+  recent = null;
+}
 
 /** The core counts per UTC hour; days start at local midnight here. */
 export const localDays = (report: UsageReport): (HourUsage & { date: string })[] =>
