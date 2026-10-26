@@ -193,6 +193,19 @@ pub struct ReadProgress {
     pub total: usize,
 }
 
+/// The folders where agents write their session logs, those that exist.
+pub fn log_dirs(home: &Path) -> Vec<PathBuf> {
+    let codex = Agent::Codex.folder(home);
+    [
+        Agent::ClaudeCode.folder(home).join("projects"),
+        codex.join("sessions"),
+        codex.join("archived_sessions"),
+    ]
+    .into_iter()
+    .filter(|dir| dir.is_dir())
+    .collect()
+}
+
 /// [`report`], calling `on_progress` after each log file.
 pub fn report_with_progress(home: &Path, mut on_progress: impl FnMut(ReadProgress)) -> UsageReport {
     let cache_path = home.join(".agentdeck").join("cache").join("usage.json");

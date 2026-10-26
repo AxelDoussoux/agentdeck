@@ -12,6 +12,9 @@ repository.workspace = true
 name = "agentdeck_app_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
+[dev-dependencies]
+tempfile = "3"
+
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
 
@@ -19,6 +22,7 @@ tauri-build = { version = "2", features = [] }
 agentdeck-core.workspace = true
 tauri = { version = "2", features = [] }
 tauri-plugin-dialog = "2"
+tauri-plugin-notification = "2"
 tauri-plugin-opener = "2"
 tauri-plugin-process = "2"
 tauri-plugin-single-instance = "2"

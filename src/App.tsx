@@ -7,9 +7,11 @@ import { useToast } from "./components/Toasts";
 import { Tooltip } from "./components/Tooltip";
 import { Icon, type IconName } from "./components/ui";
 import { copyMcpServer, listAgents, listMcpServers, listSecrets, listSkills, undoChange } from "./lib/api";
+import { alertBudget, monthCost, newThreshold, remember } from "./lib/budget";
 import { applyLanguage, errorText, formatList, storedLanguage, t, type LanguageSetting } from "./lib/i18n";
 import { shortcut, withModifier } from "./lib/keys";
 import { byName } from "./lib/servers";
+import { forgetUsage, recentUsage } from "./lib/usage";
 import { useFilesChanged } from "./lib/watch";
 import type { Agent, AgentInfo, McpListing, SecretListing } from "./lib/types";
 import { HistoryPage } from "./pages/HistoryPage";
@@ -120,8 +122,28 @@ function App() {
 
   useFilesChanged("mcp", refresh);
 
+  // Spending is checked when the app starts and when the logs change.
+  const checkBudget = async () => {
+    try {
+      const report = await recentUsage();
+      const threshold = newThreshold(report);
+      if (threshold === null) return;
+      // Marked before the notification goes out, so two checks at once
+      // cannot both send it.
+      remember(threshold);
+      await alertBudget(threshold, monthCost(report));
+    } catch {
+      // No logs to read, or notifications refused: nothing to tell.
+    }
+  };
+  useFilesChanged("usage", () => {
+    forgetUsage();
+    checkBudget();
+  });
+
   useEffect(() => {
     refresh();
+    checkBudget();
     getVersion().then(setVersion, () => {});
     const closing = getCurrentWindow().onCloseRequested((event) => {
       const unsaved = guard.current;
