@@ -1,6 +1,7 @@
 use std::collections::BTreeMap;
 use std::process::ExitCode;
 
+use agentdeck_core::health::{self, Finding, Severity};
 use agentdeck_core::secrets::{self, Keychain};
 use agentdeck_core::skills::{self, Location};
 use agentdeck_core::{Agent, ServerSpec, Transport, agent, mcp, probe, rules, usage};
@@ -58,6 +59,11 @@ enum Command {
         #[arg(last = true, required = true)]
         command: Vec<String>,
     },
+    /// Check the agents' configs for problems, like the app's overview
+    ///
+    /// Exits with status 1 when something needs attention, so it can run in a
+    /// script or a CI job.
+    Doctor,
     /// Show token usage and estimated costs from local session logs
     Usage {
         /// Only count the last N days (UTC)
@@ -318,12 +324,114 @@ fn main() -> ExitCode {
     if let Command::Exec { secrets, command } = cli.command {
         return exec(&secrets, &command);
     }
+    if let Command::Doctor = cli.command {
+        return doctor(cli.json);
+    }
     match run(cli) {
         Ok(()) => ExitCode::SUCCESS,
         Err(err) => {
             eprintln!("error: {err}");
             ExitCode::FAILURE
         }
+    }
+}
+
+/// Prints what needs attention, most severe first. Fails when there is any.
+fn doctor(json: bool) -> ExitCode {
+    let home = match agent::home_dir() {
+        Ok(home) => home,
+        Err(err) => {
+            eprintln!("error: {err}");
+            return ExitCode::FAILURE;
+        }
+    };
+    let findings = health::check(&home);
+    if json {
+        let findings: Vec<_> = findings
+            .iter()
+            .map(|finding| {
+                let mut value = serde_json::to_value(finding).unwrap();
+                value["severity"] = serde_json::to_value(finding.severity()).unwrap();
+                value
+            })
+            .collect();
+        println!("{}", serde_json::to_string_pretty(&findings).unwrap());
+    } else if findings.is_empty() {
+        println!("All good: nothing needs attention.");
+    } else {
+        for finding in &findings {
+            let label = match finding.severity() {
+                Severity::Danger => "problem",
+                Severity::Warn => "warning",
+                Severity::Info => "note",
+            };
+            let (title, detail) = describe(finding);
+            println!("{label:<8} {title}");
+            if !detail.is_empty() {
+                println!("         {detail}");
+            }
+        }
+    }
+    if findings.is_empty() {
+        ExitCode::SUCCESS
+    } else {
+        ExitCode::FAILURE
+    }
+}
+
+/// A finding in English: a title, and the servers or agents concerned.
+fn describe(finding: &Finding) -> (String, String) {
+    let plural =
+        |count: usize, word: &str| format!("{count} {word}{}", if count == 1 { "" } else { "s" });
+    match finding {
+        Finding::Unreadable { agent, error } => (
+            format!("Cannot read the config of {}", agent.display_name()),
+            error.message.clone(),
+        ),
+        Finding::LauncherMissing { servers } => (
+            format!(
+                "{} cannot start: the agentdeck launcher is gone",
+                plural(servers.len(), "protected server")
+            ),
+            servers
+                .iter()
+                .map(|s| format!("{} ({})", s.server, s.agent.display_name()))
+                .collect::<Vec<_>>()
+                .join(", ")
+                + ". Repair them with `agentdeck secrets repair`.",
+        ),
+        Finding::PlainSecrets { count, servers } => (
+            format!(
+                "{} in plain text in agent configs",
+                plural(*count, "secret")
+            ),
+            format!(
+                "In {}. Move them to the keychain with `agentdeck secrets protect <agent> <server>`.",
+                servers.join(", ")
+            ),
+        ),
+        Finding::Differ { servers } => (
+            format!(
+                "{} not the same in every agent",
+                plural(servers.len(), "server")
+            ),
+            servers.join(", "),
+        ),
+        Finding::Partial { servers } => (
+            format!(
+                "{} missing in some installed agents",
+                plural(servers.len(), "server")
+            ),
+            servers.join(", "),
+        ),
+        Finding::RulesDiffer { agents } => (
+            "Rules differ between agents".into(),
+            agents
+                .iter()
+                .map(|agent| agent.display_name())
+                .collect::<Vec<_>>()
+                .join(", "),
+        ),
     }
 }
 
@@ -377,7 +485,7 @@ fn run(cli: Cli) -> agentdeck_core::Result<()> {
         Command::Rules { command } => run_rules(command, &home, cli.json)?,
         Command::Skills { command } => run_skills(command, &home, cli.json)?,
         Command::Secrets { command } => run_secrets(command, &home, cli.json)?,
-        Command::Exec { .. } => unreachable!("handled in main"),
+        Command::Exec { .. } | Command::Doctor => unreachable!("handled in main"),
         Command::Usage {
             days,
             sessions,

@@ -532,6 +532,7 @@ export const en = {
     description: "Every AI coding agent on this computer, and what needs your attention.",
     more: (n: number) => `${n} more`,
     launcherMissing: (servers: string) => `The agentdeck launcher they run is missing: ${servers}.`,
+    unreadableTitle: (agent: string) => `The config of ${agent} cannot be read`,
     plainTitle: (n: number) => `${n === 1 ? "1 API key is" : `${n} API keys are`} stored in plain text`,
     plainDetail: (n: number, servers: string) =>
       `Any program that can read the configs can read ${n === 1 ? "it" : "them"}: ${servers}.`,

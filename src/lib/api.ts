@@ -3,6 +3,7 @@ import type {
   Agent,
   AgentInfo,
   AppSettings,
+  Finding,
   McpListing,
   ProbeReport,
   ProtectPreview,
@@ -56,6 +57,8 @@ export const restoreServerVersion = (agent: Agent, name: string, id: string) =>
   invoke<number>("restore_server_version", { agent, name, id });
 
 export const listRules = () => invoke<Rules[]>("list_rules");
+
+export const healthReport = () => invoke<Finding[]>("health_report");
 
 export const saveRules = (agent: Agent, content: string) =>
   invoke<number>("save_rules", { agent, content });

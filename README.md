@@ -89,6 +89,7 @@ to get started.
 ```sh
 agentdeck agents   # found, no config yet, or missing
 agentdeck agents folder claude-code ~/work/.claude   # --reset for the default
+agentdeck doctor   # what needs attention; exits with 1 when something does
 agentdeck mcp list [--json]
 agentdeck mcp add claude-code github -e GITHUB_TOKEN=ghp_x -- npx -y @modelcontextprotocol/server-github
 agentdeck mcp add cursor linear --url https://mcp.linear.app/mcp
