@@ -62,6 +62,10 @@ pub enum Error {
     SkillExists { path: PathBuf },
     #[error("{} does not support {what}", agent.display_name())]
     Unsupported { agent: Agent, what: &'static str },
+    #[error("no profile named \"{name}\"")]
+    ProfileNotFound { name: String },
+    #[error("a profile needs a name")]
+    ProfileName,
 }
 
 pub type Result<T> = std::result::Result<T, Error>;
@@ -144,6 +148,8 @@ impl From<&Error> for ErrorInfo {
             Error::SkillNotFound { path } => info("skillNotFound").path(path),
             Error::SkillExists { path } => info("skillExists").path(path),
             Error::Unsupported { agent, what } => info("unsupported").agent(*agent).detail(what),
+            Error::ProfileNotFound { name } => info("profileNotFound").name(name),
+            Error::ProfileName => info("profileName"),
         }
     }
 }

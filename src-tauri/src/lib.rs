@@ -5,6 +5,7 @@ use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
 use agentdeck_core::health;
+use agentdeck_core::profiles;
 use agentdeck_core::rules::{self, Rules};
 use agentdeck_core::secrets::{self, Keychain, SecretRef};
 use agentdeck_core::skills::{self, Location, Skill};
@@ -66,6 +67,8 @@ enum UndoAction {
         server: String,
         protect: bool,
     },
+    /// Turn back on or off the servers a profile switched.
+    Profile { changes: Vec<profiles::Switch> },
 }
 
 /// How many recent changes can still be undone.
@@ -131,6 +134,7 @@ fn undo_change(undo: State<UndoStore>, id: u64) -> Result<(), UiError> {
             Err(Error::NotFound { .. }) => Ok(()),
             other => other,
         },
+        UndoAction::Profile { changes } => profiles::revert(&home, &changes),
         UndoAction::Rules {
             agent,
             previous,
@@ -357,6 +361,38 @@ fn edit_mcp_server(
 #[tauri::command]
 fn remove_mcp_server(undo: State<UndoStore>, agent: Agent, name: String) -> Result<u64, UiError> {
     undoable_mcp(&undo, agent, &name, |home| mcp::remove(agent, home, &name)).map(|(id, ())| id)
+}
+
+#[tauri::command]
+fn list_profiles() -> Result<profiles::Listing, UiError> {
+    Ok(profiles::list(&home()?)?)
+}
+
+#[tauri::command]
+fn save_profile(name: String, servers: Vec<String>) -> Result<(), UiError> {
+    Ok(profiles::save(&home()?, &name, &servers)?)
+}
+
+#[tauri::command]
+fn delete_profile(name: String) -> Result<(), UiError> {
+    Ok(profiles::delete(&home()?, &name)?)
+}
+
+#[derive(serde::Serialize)]
+struct ProfileUsed {
+    undo: u64,
+    /// How many servers were turned on or off.
+    changed: usize,
+}
+
+/// Turns the profile's servers on and the others off.
+#[tauri::command]
+fn use_profile(undo: State<UndoStore>, name: String) -> Result<ProfileUsed, UiError> {
+    let changes = profiles::apply(&home()?, &name)?;
+    Ok(ProfileUsed {
+        changed: changes.len(),
+        undo: undo.push(UndoAction::Profile { changes }),
+    })
 }
 
 /// Turns a server on or off, keeping its settings.
@@ -725,6 +761,10 @@ pub fn run() {
             add_mcp_server,
             remove_mcp_server,
             set_mcp_enabled,
+            list_profiles,
+            save_profile,
+            delete_profile,
+            use_profile,
             copy_mcp_server,
             edit_mcp_server,
             server_versions,

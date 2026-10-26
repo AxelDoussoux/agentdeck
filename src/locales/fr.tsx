@@ -206,6 +206,7 @@ export const fr: Messages = {
     editIn: (agent: string) => `Modifier dans ${agent}…`,
     editMenu: "Modifier…",
     removeFrom: (agent: string) => `Retirer de ${agent}`,
+    delete: "Supprimer",
     turnOff: "Désactiver",
     turnOn: "Activer",
     turnOffIn: (agent: string) => `Désactiver dans ${agent}`,
@@ -213,6 +214,24 @@ export const fr: Messages = {
     turnedOffIn: (name: string, agent: string) => `${name} désactivé dans ${agent}.`,
     turnedOnIn: (name: string, agent: string) => `${name} activé dans ${agent}.`,
     offCell: "Désactivé",
+    profiles: "Profils",
+    profileButton: (name: string) => `Profil : ${name}`,
+    profileTip:
+      "Passer d’un ensemble de serveurs à un autre : un profil active ses serveurs et désactive tous les autres, sur chaque agent",
+    manageProfiles: "Gérer les profils…",
+    newProfile: "Nouveau profil",
+    profileTitle: "Profils",
+    profilePick: "Profil",
+    profileName: "Nom",
+    profileNameHint: "Travail, Perso, un client…",
+    profileServers: "Serveurs qu’il active",
+    profileHint: "Tous les autres serveurs sont désactivés, sur chaque agent. Les serveurs gardent leurs réglages.",
+    profileSaved: (name: string) => `Profil ${name} enregistré.`,
+    profileDeleted: (name: string) => `Profil ${name} supprimé. Les serveurs restent tels quels.`,
+    profileUsed: (name: string, n: number) =>
+      n === 0
+        ? `Les serveurs correspondent déjà à ${name}.`
+        : `Profil ${name} utilisé : ${count(n, "serveur activé ou désactivé", "serveurs activés ou désactivés")}.`,
     offTip: "Désactivé : l’agent garde le serveur mais ne le démarre pas",
     different: "Différent",
     installed: "Installé",
@@ -710,6 +729,8 @@ export const fr: Messages = {
       `« ${e.name} » ne peut pas nommer un nouveau skill : utilisez des lettres minuscules, des chiffres et des tirets simples, 64 caractères au plus`,
     skillNotFound: (e) => `Aucun skill dans ${e.path}`,
     skillExists: (e) => `Un skill existe déjà dans ${e.path}`,
+    profileNotFound: (e) => `Aucun profil nommé « ${e.name} »`,
+    profileName: () => "Donnez un nom au profil",
     unsupported: (e) =>
       e.detail === "SSE MCP servers" ? `${e.agent} ne prend pas en charge les serveurs MCP SSE` : e.message,
     undoExpired: () => "Cette modification ne peut plus être annulée.",

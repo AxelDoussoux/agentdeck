@@ -4,7 +4,7 @@ use std::process::ExitCode;
 use agentdeck_core::health::{self, Finding, Severity};
 use agentdeck_core::secrets::{self, Keychain};
 use agentdeck_core::skills::{self, Location};
-use agentdeck_core::{Agent, ServerSpec, Transport, agent, mcp, probe, rules, usage};
+use agentdeck_core::{Agent, ServerSpec, Transport, agent, mcp, probe, profiles, rules, usage};
 use clap::{Parser, Subcommand, ValueEnum};
 
 #[derive(Parser)]
@@ -59,6 +59,11 @@ enum Command {
         #[arg(last = true, required = true)]
         command: Vec<String>,
     },
+    /// Switch between named sets of MCP servers
+    Profile {
+        #[command(subcommand)]
+        command: ProfileCommand,
+    },
     /// Check the agents' configs for problems, like the app's overview
     ///
     /// Exits with status 1 when something needs attention, so it can run in a
@@ -76,6 +81,18 @@ enum Command {
         #[arg(long, conflicts_with = "sessions")]
         csv: bool,
     },
+}
+
+#[derive(Subcommand)]
+enum ProfileCommand {
+    /// List the profiles and their servers
+    List,
+    /// Turn the profile's servers on and every other server off, on every agent
+    Use { name: String },
+    /// Save a profile: the servers given, or else the servers that are on now
+    Save { name: String, servers: Vec<String> },
+    /// Delete a profile. Its servers stay as they are.
+    Delete { name: String },
 }
 
 #[derive(Subcommand)]
@@ -489,6 +506,7 @@ fn run(cli: Cli) -> agentdeck_core::Result<()> {
         Command::Rules { command } => run_rules(command, &home, cli.json)?,
         Command::Skills { command } => run_skills(command, &home, cli.json)?,
         Command::Secrets { command } => run_secrets(command, &home, cli.json)?,
+        Command::Profile { command } => run_profile(command, &home, cli.json)?,
         Command::Exec { .. } | Command::Doctor => unreachable!("handled in main"),
         Command::Usage {
             days,
@@ -508,6 +526,56 @@ fn set_enabled(
     mcp::set_enabled(agent, home, name, on)?;
     let state = if on { "on" } else { "off" };
     println!("Turned \"{name}\" {state} for {}", agent.display_name());
+    Ok(())
+}
+
+fn run_profile(
+    command: ProfileCommand,
+    home: &std::path::Path,
+    json: bool,
+) -> agentdeck_core::Result<()> {
+    match command {
+        ProfileCommand::List => {
+            let listing = profiles::list(home)?;
+            if json {
+                println!("{}", serde_json::to_string_pretty(&listing).unwrap());
+                return Ok(());
+            }
+            if listing.profiles.is_empty() {
+                println!("No profile yet: save one with `agentdeck profile save <name>`.");
+            }
+            for profile in &listing.profiles {
+                let active = listing.active.as_ref() == Some(&profile.name);
+                let mark = if active { "*" } else { " " };
+                println!("{mark} {:<16} {}", profile.name, profile.servers.join(", "));
+            }
+        }
+        ProfileCommand::Use { name } => {
+            let changes = profiles::apply(home, &name)?;
+            for change in &changes {
+                let state = if change.enabled { "on " } else { "off" };
+                println!(
+                    "{state} {:<20} {}",
+                    change.server,
+                    change.agent.display_name()
+                );
+            }
+            println!("Using \"{name}\" ({} changes)", changes.len());
+        }
+        ProfileCommand::Save { name, servers } => {
+            let servers = if servers.is_empty() {
+                profiles::servers_on(home)?
+            } else {
+                servers
+            };
+            profiles::save(home, &name, &servers)?;
+            println!("Saved \"{}\": {}", name.trim(), servers.join(", "));
+        }
+        ProfileCommand::Delete { name } => {
+            profiles::delete(home, &name)?;
+            println!("Deleted \"{name}\"");
+        }
+    }
     Ok(())
 }
 

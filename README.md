@@ -97,6 +97,9 @@ agentdeck mcp copy github --from claude-code --to codex gemini
 agentdeck mcp test claude-code github   # starts it and lists its tools
 agentdeck mcp remove codex github
 agentdeck mcp off cursor github   # kept but not started; `on` to turn it back on
+agentdeck profile save work github linear   # or no server names: the ones on now
+agentdeck profile use work   # its servers on, every other one off, on every agent
+agentdeck profile list
 agentdeck rules list
 agentdeck rules show claude-code
 agentdeck rules copy --from claude-code --to codex gemini
