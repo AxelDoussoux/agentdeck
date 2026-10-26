@@ -41,6 +41,10 @@ export const editMcpServer = (agent: Agent, name: string, edit: ServerEdit) =>
 export const removeMcpServer = (agent: Agent, name: string) =>
   invoke<number>("remove_mcp_server", { agent, name });
 
+/** Turns a server on or off, keeping its settings. Returns the undo id. */
+export const setMcpEnabled = (agent: Agent, name: string, enabled: boolean) =>
+  invoke<number>("set_mcp_enabled", { agent, name, enabled });
+
 /**
  * With `overwrite`, replaces the server in `to` if it already has one.
  * Returns the undo id and the settings `to` could not take.

@@ -359,6 +359,20 @@ fn remove_mcp_server(undo: State<UndoStore>, agent: Agent, name: String) -> Resu
     undoable_mcp(&undo, agent, &name, |home| mcp::remove(agent, home, &name)).map(|(id, ())| id)
 }
 
+/// Turns a server on or off, keeping its settings.
+#[tauri::command]
+fn set_mcp_enabled(
+    undo: State<UndoStore>,
+    agent: Agent,
+    name: String,
+    enabled: bool,
+) -> Result<u64, UiError> {
+    undoable_mcp(&undo, agent, &name, |home| {
+        mcp::set_enabled(agent, home, &name, enabled)
+    })
+    .map(|(id, ())| id)
+}
+
 #[tauri::command]
 fn copy_mcp_server(
     undo: State<UndoStore>,
@@ -710,6 +724,7 @@ pub fn run() {
             list_mcp_servers,
             add_mcp_server,
             remove_mcp_server,
+            set_mcp_enabled,
             copy_mcp_server,
             edit_mcp_server,
             server_versions,

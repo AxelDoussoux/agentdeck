@@ -14,6 +14,7 @@ import {
   editMcpServer,
   openConfig,
   removeMcpServer,
+  setMcpEnabled,
   restoreServerVersion,
   serverVersions,
   testMcpServer,
@@ -397,6 +398,15 @@ export function McpPage({ agents, listing, onChange, focus }: Props) {
                     label: byAgent.size > 1 ? t.mcp.editIn(nameOf(agent)) : t.mcp.editMenu,
                     onSelect: () => open(name, "details", agent),
                   })),
+                  ...[...byAgent.values()].map(({ agent, options }) => {
+                    const on = options.disabled;
+                    const where = nameOf(agent);
+                    return {
+                      label: byAgent.size > 1 ? (on ? t.mcp.turnOnIn : t.mcp.turnOffIn)(where) : on ? t.mcp.turnOn : t.mcp.turnOff,
+                      onSelect: () =>
+                        run(() => setMcpEnabled(agent, name, on), (on ? t.mcp.turnedOnIn : t.mcp.turnedOffIn)(name, where)),
+                    };
+                  }),
                   ...[...byAgent.keys()].map((agent) => ({
                     label: t.mcp.removeFrom(nameOf(agent)),
                     tone: "danger" as const,
@@ -437,6 +447,17 @@ export function McpPage({ agents, listing, onChange, focus }: Props) {
                               >
                                 <Icon name="differs" size={14} /> {t.mcp.different}
                               </button>
+                            </Tooltip>
+                          </td>
+                        );
+                      }
+                      if (server?.options.disabled) {
+                        return (
+                          <td key={agent} className={`agent-col ${off}`}>
+                            <Tooltip text={t.mcp.offTip}>
+                              <span className="cell cell-paused" tabIndex={0}>
+                                {t.mcp.offCell}
+                              </span>
                             </Tooltip>
                           </td>
                         );

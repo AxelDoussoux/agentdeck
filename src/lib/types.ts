@@ -29,7 +29,7 @@ export interface McpServer {
   options: ServerOptions;
 }
 
-/** Settings only Codex and Gemini CLI have, except `disabled`: Codex only. */
+/** Settings only Codex and Gemini CLI have, except `disabled`: every agent. */
 export interface ServerOptions {
   cwd: string | null;
   timeoutMs: number | null;
