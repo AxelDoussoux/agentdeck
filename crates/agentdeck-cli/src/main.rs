@@ -275,6 +275,10 @@ enum McpCommand {
     Remove { agent: AgentArg, name: String },
     /// Start an MCP server and list its tools, to check that it works
     Test { agent: AgentArg, name: String },
+    /// Turn an MCP server off: the agent keeps it but does not start it
+    Off { agent: AgentArg, name: String },
+    /// Turn an MCP server that is off back on
+    On { agent: AgentArg, name: String },
     /// Copy an MCP server, secrets included, from one agent to others
     Copy {
         name: String,
@@ -387,6 +391,18 @@ fn run(cli: Cli) -> agentdeck_core::Result<()> {
     Ok(())
 }
 
+fn set_enabled(
+    home: &std::path::Path,
+    agent: Agent,
+    name: &str,
+    on: bool,
+) -> agentdeck_core::Result<()> {
+    mcp::set_enabled(agent, home, name, on)?;
+    let state = if on { "on" } else { "off" };
+    println!("Turned \"{name}\" {state} for {}", agent.display_name());
+    Ok(())
+}
+
 fn run_mcp(command: McpCommand, home: &std::path::Path, json: bool) -> agentdeck_core::Result<()> {
     match command {
         McpCommand::List => {
@@ -402,8 +418,13 @@ fn run_mcp(command: McpCommand, home: &std::path::Path, json: bool) -> agentdeck
                         Transport::Http { url } => url.clone(),
                         Transport::Sse { url } => format!("{url} (sse)"),
                     };
+                    let off = if server.options.disabled {
+                        " (off)"
+                    } else {
+                        ""
+                    };
                     println!(
-                        "{:<12} {:<20} {}",
+                        "{:<12} {:<20} {}{off}",
                         server.agent.display_name(),
                         server.name,
                         target.trim_end()
@@ -450,6 +471,8 @@ fn run_mcp(command: McpCommand, home: &std::path::Path, json: bool) -> agentdeck
             mcp::remove(agent, home, &name)?;
             println!("Removed \"{name}\" from {}", agent.display_name());
         }
+        McpCommand::Off { agent, name } => set_enabled(home, agent.into(), &name, false)?,
+        McpCommand::On { agent, name } => set_enabled(home, agent.into(), &name, true)?,
         McpCommand::Test { agent, name } => {
             let agent = Agent::from(agent);
             let spec = mcp::get(agent, home, &name)?.ok_or(agentdeck_core::Error::NotFound {

@@ -98,6 +98,11 @@ tr.selected td {
   color: var(--warn);
 }
 
+.cell-paused {
+  border-color: var(--border-strong);
+  color: var(--muted);
+}
+
 .cell-none {
   color: var(--faint);
   font-weight: 400;

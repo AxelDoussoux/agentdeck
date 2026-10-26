@@ -1,7 +1,8 @@
 use std::collections::BTreeMap;
+use std::collections::BTreeSet;
 use std::collections::hash_map::RandomState;
 use std::hash::BuildHasher;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::OnceLock;
 
 use serde::{Deserialize, Serialize};
@@ -97,7 +98,10 @@ pub struct ServerOptions {
     pub cwd: Option<String>,
     /// How long a tool call may take, in milliseconds. Codex and Gemini CLI.
     pub timeout_ms: Option<u64>,
-    /// The server is turned off. Only Codex can turn a server off.
+    /// The server is turned off: the agent keeps it but does not start it.
+    /// Codex and Gemini CLI have a setting for it; AgentDeck keeps the servers
+    /// of the other agents that are off in a file of its own (see
+    /// [`off_path`]).
     #[serde(default)]
     pub disabled: bool,
     /// The only tools the agent may use. Codex and Gemini CLI.
@@ -159,9 +163,6 @@ pub fn untranslated(spec: &ServerSpec, agent: Agent) -> Vec<String> {
     }
     if !full && (options.include_tools.is_some() || options.exclude_tools.is_some()) {
         lost.push("allowed tools".to_owned());
-    }
-    if options.disabled && agent != Agent::Codex {
-        lost.push("turned off (the copy is on)".to_owned());
     }
     if let Some((from, extra)) = &options.extra
         && *from != agent
@@ -297,6 +298,40 @@ struct RawServer {
 struct JsonConfig {
     #[serde(default, rename = "mcpServers")]
     mcp_servers: BTreeMap<String, Map<String, Value>>,
+    /// Gemini CLI: `excluded` lists the servers it does not start.
+    #[serde(default)]
+    mcp: Value,
+    /// Gemini CLI, before its settings were nested under `mcp`.
+    #[serde(default, rename = "excludeMCPServers")]
+    exclude_mcp_servers: Value,
+}
+
+/// Gemini CLI's list of servers that are off, as a JSON pointer: the older
+/// flat key when the settings already use it, the nested one otherwise.
+fn gemini_excluded_pointer(root: &Value) -> &'static str {
+    if root.get("excludeMCPServers").is_some() {
+        "/excludeMCPServers"
+    } else {
+        "/mcp/excluded"
+    }
+}
+
+/// Agents with no setting to turn a server off. AgentDeck moves their
+/// servers that are off to a file of its own, out of the agent's sight.
+fn keeps_off_aside(agent: Agent) -> bool {
+    matches!(agent, Agent::ClaudeCode | Agent::Cursor)
+}
+
+/// Where AgentDeck keeps the servers of `agent` that are off, in the format
+/// of the agent's own config.
+pub fn off_path(agent: Agent, home: &Path) -> PathBuf {
+    let file = match agent {
+        Agent::ClaudeCode => "claude-code.json",
+        Agent::Codex => "codex.json",
+        Agent::Cursor => "cursor.json",
+        Agent::Gemini => "gemini.json",
+    };
+    home.join(".agentdeck").join("off").join(file)
 }
 
 #[derive(Debug, Deserialize)]
@@ -371,11 +406,23 @@ fn into_strings(map: BTreeMap<String, Value>) -> BTreeMap<String, String> {
         .collect()
 }
 
-/// Reads every MCP server of `agent`, secrets included.
+/// Reads every MCP server of `agent`, secrets included, those that are off
+/// too.
 pub(crate) fn read_specs(agent: Agent, home: &Path) -> Result<BTreeMap<String, ServerSpec>> {
-    let path = agent.mcp_config_path(home);
-    match config_file::read_optional(&path)? {
-        Some(content) => parse_specs(agent, &path, &content),
+    let mut specs = read_file(agent, &agent.mcp_config_path(home))?;
+    if keeps_off_aside(agent) {
+        for (name, mut spec) in read_file(agent, &off_path(agent, home))? {
+            spec.options.disabled = true;
+            specs.entry(name).or_insert(spec);
+        }
+    }
+    Ok(specs)
+}
+
+/// The servers in `path`, a config in the format of `agent`.
+fn read_file(agent: Agent, path: &Path) -> Result<BTreeMap<String, ServerSpec>> {
+    match config_file::read_optional(path)? {
+        Some(content) => parse_specs(agent, path, &content),
         None => Ok(BTreeMap::new()),
     }
 }
@@ -383,6 +430,7 @@ pub(crate) fn read_specs(agent: Agent, home: &Path) -> Result<BTreeMap<String, S
 /// Every MCP server in `content`, the config of `agent` read from `path`.
 fn parse_specs(agent: Agent, path: &Path, content: &str) -> Result<BTreeMap<String, ServerSpec>> {
     let path = path.to_path_buf();
+    let mut off = BTreeSet::<String>::new();
     let entries: BTreeMap<String, Map<String, Value>> = match agent {
         Agent::Codex => toml::from_str::<CodexConfig>(content)
             .map_err(|source| Error::Toml {
@@ -400,12 +448,25 @@ fn parse_specs(agent: Agent, path: &Path, content: &str) -> Result<BTreeMap<Stri
             })
             .collect(),
         _ => {
-            serde_json::from_str::<JsonConfig>(content)
-                .map_err(|source| Error::Json {
+            let config =
+                serde_json::from_str::<JsonConfig>(content).map_err(|source| Error::Json {
                     path: path.clone(),
                     source,
-                })?
-                .mcp_servers
+                })?;
+            if agent == Agent::Gemini {
+                let names = config
+                    .exclude_mcp_servers
+                    .as_array()
+                    .or_else(|| config.mcp.get("excluded")?.as_array());
+                off.extend(
+                    names
+                        .into_iter()
+                        .flatten()
+                        .filter_map(Value::as_str)
+                        .map(str::to_owned),
+                );
+            }
+            config.mcp_servers
         }
     };
 
@@ -421,7 +482,8 @@ fn parse_specs(agent: Agent, path: &Path, content: &str) -> Result<BTreeMap<Stri
                 source,
             }
         })?;
-        if let Some(spec) = raw.into_spec(agent, extra) {
+        if let Some(mut spec) = raw.into_spec(agent, extra) {
+            spec.options.disabled |= off.contains(&name);
             specs.insert(name, spec);
         }
     }
@@ -691,11 +753,80 @@ impl Edit<'_> {
     }
 }
 
+/// Turns a server of `agent` on or off, keeping its settings.
+pub fn set_enabled(agent: Agent, home: &Path, name: &str, enabled: bool) -> Result<()> {
+    let mut spec = get(agent, home, name)?.ok_or_else(|| Error::NotFound {
+        agent,
+        name: name.to_owned(),
+    })?;
+    if spec.options.disabled == !enabled {
+        return Ok(());
+    }
+    spec.options.disabled = !enabled;
+    add(agent, home, name, &spec, true)
+}
+
 fn edit(agent: Agent, home: &Path, edit: Edit) -> Result<()> {
     let path = agent.mcp_config_path(home);
-    config_file::update(home, &path, |content| match agent {
-        Agent::Codex => edit_toml(&path, content, &edit),
-        _ => edit_json(agent, &path, content, &edit),
+    if !keeps_off_aside(agent) {
+        return edit_file(agent, home, &path, &edit);
+    }
+    // A server that is off lives in the file AgentDeck keeps aside: an edit
+    // goes to the file that has it, and turning it on or off moves it.
+    let aside = off_path(agent, home);
+    let on = read_file(agent, &path)?.contains_key(edit.name());
+    let off = !on && read_file(agent, &aside)?.contains_key(edit.name());
+    edit.check(agent, on || off)?;
+    match edit {
+        Edit::Upsert { name, spec, .. } => {
+            let (to, from, there) = if spec.options.disabled {
+                private_dir(&aside)?;
+                (&aside, &path, on)
+            } else {
+                (&path, &aside, off)
+            };
+            let upsert = Edit::Upsert {
+                name,
+                spec,
+                overwrite: true,
+            };
+            edit_file(agent, home, to, &upsert)?;
+            if there {
+                edit_file(agent, home, from, &Edit::Remove { name })?;
+            }
+            Ok(())
+        }
+        _ => edit_file(agent, home, if off { &aside } else { &path }, &edit),
+    }
+}
+
+/// Creates the folder of `file`, readable only by the user: the servers kept
+/// there hold the same secrets as the agents' configs.
+fn private_dir(file: &Path) -> Result<()> {
+    let Some(dir) = file.parent() else {
+        return Ok(());
+    };
+    std::fs::create_dir_all(dir).map_err(|source| Error::Io {
+        path: dir.to_path_buf(),
+        source,
+    })?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(dir, std::fs::Permissions::from_mode(0o700)).map_err(
+            |source| Error::Io {
+                path: dir.to_path_buf(),
+                source,
+            },
+        )?;
+    }
+    Ok(())
+}
+
+fn edit_file(agent: Agent, home: &Path, path: &Path, edit: &Edit) -> Result<()> {
+    config_file::update(home, path, |content| match agent {
+        Agent::Codex => edit_toml(path, content, edit),
+        _ => edit_json(agent, path, content, edit),
     })
 }
 
@@ -766,10 +897,42 @@ fn edit_json(agent: Agent, path: &Path, content: &str, edit: &Edit) -> Result<St
             }
         }
     }
+    if agent == Agent::Gemini && !matches!(edit, Edit::Launch { .. }) {
+        let off = matches!(edit, Edit::Upsert { spec, .. } if spec.options.disabled);
+        let pointer = gemini_excluded_pointer(&root);
+        set_listed(&mut root, pointer, edit.name(), off)
+            .ok_or_else(|| invalid("the list of excluded MCP servers is not an array"))?;
+    }
 
     let mut output = serde_json::to_string_pretty(&root).expect("a JSON value always serializes");
     output.push('\n');
     Ok(output)
+}
+
+/// Adds `name` to the list of strings at `pointer` in `root`, or takes it
+/// out, creating the list and its parents when needed. `None` when something
+/// on the way is not an object, or the list not an array.
+fn set_listed(root: &mut Value, pointer: &str, name: &str, listed: bool) -> Option<()> {
+    let mut node = root;
+    let mut keys = pointer.split('/').skip(1).peekable();
+    while let Some(key) = keys.next() {
+        let object = node.as_object_mut()?;
+        if !listed && !object.contains_key(key) {
+            return Some(());
+        }
+        let empty = if keys.peek().is_some() {
+            Value::Object(Map::new())
+        } else {
+            Value::Array(Vec::new())
+        };
+        node = object.entry(key).or_insert(empty);
+    }
+    let list = node.as_array_mut()?;
+    list.retain(|item| item != name);
+    if listed {
+        list.push(name.into());
+    }
+    Some(())
 }
 
 fn json_entry(agent: Agent, spec: &ServerSpec) -> Value {
@@ -1191,8 +1354,9 @@ command = \"x\"
         write(home, ".codex/config.toml", CODEX_DOCS);
 
         let lost = copy(home, "docs", Agent::Codex, Agent::Gemini, false).unwrap();
-        assert_eq!(lost, ["turned off (the copy is on)", "startup_timeout_sec"]);
+        assert_eq!(lost, ["startup_timeout_sec"]);
         let gemini = &read_specs(Agent::Gemini, home).unwrap()["docs"].options;
+        assert!(gemini.disabled);
         assert_eq!(gemini.cwd.as_deref(), Some("/work"));
         assert_eq!(gemini.timeout_ms, Some(30_000));
         assert_eq!(gemini.include_tools, Some(vec!["search".to_owned()]));
@@ -1205,9 +1369,13 @@ command = \"x\"
                 "working directory",
                 "timeout",
                 "allowed tools",
-                "turned off (the copy is on)",
                 "startup_timeout_sec"
             ]
+        );
+        assert!(
+            read_specs(Agent::ClaudeCode, home).unwrap()["docs"]
+                .options
+                .disabled
         );
 
         // And back: Gemini's settings become Codex's.
@@ -1216,6 +1384,101 @@ command = \"x\"
         let codex = read(home, ".codex/config.toml");
         assert!(codex.contains("tool_timeout_sec = 30\n"));
         assert!(codex.contains("enabled_tools = [\"search\"]"));
+    }
+
+    #[test]
+    fn a_server_turned_off_moves_aside_and_back_with_its_settings() {
+        let home = tempfile::tempdir().unwrap();
+        let home = home.path();
+        write(
+            home,
+            ".claude.json",
+            r#"{"mcpServers": {"gh": {"type": "stdio", "command": "npx", "args": [], "env": {"TOKEN": "t"}, "alwaysAllow": ["x"]}}, "other": 1}"#,
+        );
+
+        set_enabled(Agent::ClaudeCode, home, "gh", false).unwrap();
+        assert!(!read(home, ".claude.json").contains("\"gh\""));
+        let aside = fs::read_to_string(off_path(Agent::ClaudeCode, home)).unwrap();
+        assert!(aside.contains("alwaysAllow"));
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let dir = off_path(Agent::ClaudeCode, home);
+            let mode = fs::metadata(dir.parent().unwrap())
+                .unwrap()
+                .permissions()
+                .mode();
+            assert_eq!(mode & 0o777, 0o700);
+        }
+        let listed = list_for_agent(Agent::ClaudeCode, home).unwrap();
+        assert!(listed[0].options.disabled && listed[0].env_keys == ["TOKEN"]);
+        // An edit while off stays aside.
+        set_launch(Agent::ClaudeCode, home, "gh", "uvx", &[], &BTreeMap::new()).unwrap();
+        assert!(
+            get(Agent::ClaudeCode, home, "gh")
+                .unwrap()
+                .unwrap()
+                .options
+                .disabled
+        );
+
+        set_enabled(Agent::ClaudeCode, home, "gh", true).unwrap();
+        let config = read(home, ".claude.json");
+        assert!(
+            config.contains("alwaysAllow")
+                && config.contains("uvx")
+                && config.contains("\"other\": 1")
+        );
+        let aside = fs::read_to_string(off_path(Agent::ClaudeCode, home)).unwrap();
+        assert!(!aside.contains("gh"));
+
+        set_enabled(Agent::ClaudeCode, home, "gh", false).unwrap();
+        remove(Agent::ClaudeCode, home, "gh").unwrap();
+        assert!(list_for_agent(Agent::ClaudeCode, home).unwrap().is_empty());
+        assert!(matches!(
+            set_enabled(Agent::ClaudeCode, home, "gh", true),
+            Err(Error::NotFound { .. })
+        ));
+    }
+
+    #[test]
+    fn gemini_lists_the_servers_that_are_off() {
+        let home = tempfile::tempdir().unwrap();
+        let home = home.path();
+        write(
+            home,
+            ".gemini/settings.json",
+            r#"{"mcpServers": {"a": {"command": "x"}, "b": {"command": "y"}}, "mcp": {"excluded": ["b"]}}"#,
+        );
+        let off = |name: &str| {
+            get(Agent::Gemini, home, name)
+                .unwrap()
+                .unwrap()
+                .options
+                .disabled
+        };
+        assert!(!off("a") && off("b"));
+
+        set_enabled(Agent::Gemini, home, "a", false).unwrap();
+        set_enabled(Agent::Gemini, home, "b", true).unwrap();
+        assert!(off("a") && !off("b"));
+        let settings: Value = serde_json::from_str(&read(home, ".gemini/settings.json")).unwrap();
+        assert_eq!(settings["mcp"]["excluded"], serde_json::json!(["a"]));
+
+        remove(Agent::Gemini, home, "a").unwrap();
+        let settings: Value = serde_json::from_str(&read(home, ".gemini/settings.json")).unwrap();
+        assert_eq!(settings["mcp"]["excluded"], serde_json::json!([]));
+
+        // The older flat key is kept when the settings use it.
+        write(
+            home,
+            ".gemini/settings.json",
+            r#"{"mcpServers": {"a": {"command": "x"}}, "excludeMCPServers": []}"#,
+        );
+        set_enabled(Agent::Gemini, home, "a", false).unwrap();
+        let settings: Value = serde_json::from_str(&read(home, ".gemini/settings.json")).unwrap();
+        assert_eq!(settings["excludeMCPServers"], serde_json::json!(["a"]));
+        assert!(settings.get("mcp").is_none());
     }
 
     #[test]

@@ -222,7 +222,7 @@ export function ServerForm({ agents, editing, has = () => false, onSubmit, onCan
         timeoutMs: anyOptions && timeoutText.trim() ? Math.round(seconds * 1000) : null,
         includeTools: anyOptions ? list(includeTools) : null,
         excludeTools: anyOptions ? list(excludeTools) : null,
-        disabled: chosen.includes("codex") && disabled,
+        disabled,
       },
       alsoTo: initial ? alsoTo : others,
     });
@@ -475,7 +475,7 @@ export function ServerForm({ agents, editing, has = () => false, onSubmit, onCan
       </fieldset>
 
       {withOptions.length > 0 && (
-        <details className="advanced" open={Boolean(cwd || timeoutText || includeTools || excludeTools || disabled)}>
+        <details className="advanced" open={Boolean(cwd || timeoutText || includeTools || excludeTools)}>
           <summary>{f.advanced}</summary>
           {!initial && withOptions.length < chosen.length && (
             <p className="hint">{f.onlyUse(formatList(withOptions.map(nameOf)))}</p>
@@ -500,14 +500,13 @@ export function ServerForm({ agents, editing, has = () => false, onSubmit, onCan
               <input value={excludeTools} onChange={(e) => setExcludeTools(e.target.value)} placeholder={t.common.none} />
             </label>
           </div>
-          {chosen.includes("codex") && (
-            <label className="check">
-              <input type="checkbox" checked={disabled} onChange={(e) => setDisabled(e.target.checked)} />
-              {f.turnedOff}
-            </label>
-          )}
         </details>
       )}
+
+      <label className="check">
+        <input type="checkbox" checked={disabled} onChange={(e) => setDisabled(e.target.checked)} />
+        {f.turnedOff}
+      </label>
 
       {editing && editing.others.length > 0 && (
         <fieldset className="also">
