@@ -259,11 +259,11 @@ pub fn mark_name(home: &Path, key: &str, secret: Option<bool>) -> Result<()> {
 }
 
 /// A server started through `agentdeck exec`.
-struct Wrapped {
+pub(crate) struct Wrapped {
     /// Environment variable name to keychain id.
-    secrets: BTreeMap<String, String>,
-    command: String,
-    args: Vec<String>,
+    pub(crate) secrets: BTreeMap<String, String>,
+    pub(crate) command: String,
+    pub(crate) args: Vec<String>,
 }
 
 const EXEC: &str = "exec";
@@ -276,7 +276,7 @@ fn is_launcher(command: &str) -> bool {
 }
 
 /// Recognizes `agentdeck exec --secret KEY=ID ... -- command args...`.
-fn unwrap(command: &str, args: &[String]) -> Option<Wrapped> {
+pub(crate) fn unwrap(command: &str, args: &[String]) -> Option<Wrapped> {
     if !is_launcher(command) || args.first().map(String::as_str) != Some(EXEC) {
         return None;
     }

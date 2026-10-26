@@ -2,10 +2,9 @@ import { useEffect, useState, type ReactNode } from "react";
 import type { PageId } from "../App";
 import { useToast } from "../components/Toasts";
 import { AgentMark, Icon, PageHeader, type IconName } from "../components/ui";
-import { listRules, openConfig, repairLaunchers, usageReport } from "../lib/api";
+import { healthReport, openConfig, repairLaunchers, usageReport } from "../lib/api";
 import { errorText, formatDay, formatList, t } from "../lib/i18n";
-import { drifting } from "../lib/servers";
-import type { AgentInfo, McpListing, Rules, SecretListing, UsageReport } from "../lib/types";
+import type { AgentInfo, Finding, McpListing, SecretListing, UsageReport } from "../lib/types";
 import { formatCost, recentCost } from "../lib/usage";
 
 interface Props {
@@ -26,8 +25,6 @@ interface Check {
   action: ReactNode;
 }
 
-const ORDER: Severity[] = ["danger", "warn", "info"];
-
 /** Reading months of logs takes a while: the overview reuses a recent read. */
 let usage: { at: number; report: Promise<UsageReport> } | null = null;
 const USAGE_MAX_AGE = 5 * 60 * 1000;
@@ -46,17 +43,30 @@ function names(list: string[], max = 3): string {
 }
 
 export function OverviewPage({ agents, listing, secrets, onNavigate, onChange }: Props) {
-  const [rules, setRules] = useState<Rules[] | null>(null);
+  // The core runs the checks, the same ones as `agentdeck doctor`.
+  const [findings, setFindings] = useState<Finding[] | null>(null);
   const [report, setReport] = useState<UsageReport | null>(null);
   const [repairing, setRepairing] = useState(false);
   const notify = useToast();
 
   useEffect(() => {
-    listRules().then(setRules, () => setRules(null));
     recentUsage().then(setReport, () => setReport(null));
   }, []);
 
+  // The listing and secrets change with the configs: check again then.
+  useEffect(() => {
+    let current = true;
+    healthReport().then(
+      (found) => current && setFindings(found),
+      (err) => current && notify({ tone: "error", text: errorText(err) }),
+    );
+    return () => {
+      current = false;
+    };
+  }, [listing, secrets]);
+
   const nameOf = (agent: string) => agents.find((a) => a.agent === agent)?.name ?? agent;
+  const failed = (err: unknown) => notify({ tone: "error", text: errorText(err) });
   const go = (page: PageId, label: string) => (
     <button className="small" onClick={() => onNavigate(page)}>
       {label}
@@ -75,71 +85,67 @@ export function OverviewPage({ agents, listing, secrets, onNavigate, onChange }:
     onChange();
   }
 
-  const checks: Check[] = [];
-  const stranded = secrets?.stranded ?? [];
-  if (stranded.length > 0) {
-    checks.push({
-      severity: "danger",
-      icon: "alert",
-      title: t.launcher.title(stranded.length),
-      detail: t.overview.launcherMissing(names(stranded.map((s) => `${s.server} (${nameOf(s.agent)})`))),
-      action: (
-        <button className="primary small" disabled={!secrets?.launcher || repairing} onClick={repair}>
-          {repairing ? t.launcher.repairing : t.launcher.repair}
-        </button>
-      ),
-    });
-  }
-
-  const plain = secrets?.secrets.filter((s) => s.likely && !s.vaultId && !s.envVar) ?? [];
-  if (plain.length > 0) {
-    checks.push({
-      severity: "danger",
-      icon: "shield",
-      title: t.overview.plainTitle(plain.length),
-      detail: t.overview.plainDetail(plain.length, names([...new Set(plain.map((s) => s.server))])),
-      action: go("secrets", t.overview.moveToKeychain),
-    });
-  }
-
-  const different = drifting(listing);
-  if (different.length > 0) {
-    checks.push({
-      severity: "warn",
-      icon: "differs",
-      title: t.overview.differTitle(different.length),
-      detail: t.overview.differDetail(names(different)),
-      action: go("mcp", t.overview.review),
-    });
-  }
-
-  const serverNames = [...new Set(listing.servers.map((s) => s.name))];
-  // Servers some detected agent is missing: one click away from being synced.
-  const partial = serverNames.filter((name) =>
-    agents.some((info) => info.installed && !listing.servers.some((s) => s.name === name && s.agent === info.agent)),
-  );
-  if (partial.length > 0) {
-    checks.push({
-      severity: "info",
-      icon: "plug",
-      title: t.overview.partialTitle(partial.length),
-      detail: names(partial),
-      action: go("mcp", t.overview.copy),
-    });
-  }
-
-  // Agents with rules whose rules differ from the others'.
-  const written = (rules ?? []).filter((r) => r.content?.trim());
-  if (new Set(written.map((r) => r.content!.trim())).size > 1) {
-    checks.push({
-      severity: "info",
-      icon: "rules",
-      title: t.overview.rulesTitle,
-      detail: t.overview.rulesDetail(names(written.map((r) => nameOf(r.agent)))),
-      action: go("rules", t.overview.compare),
-    });
-  }
-  checks.sort((a, b) => ORDER.indexOf(a.severity) - ORDER.indexOf(b.severity));
+  const checks: Check[] = (findings ?? []).map((finding): Check => {
+    switch (finding.kind) {
+      case "unreadable":
+        return {
+          severity: "danger",
+          icon: "alert",
+          title: t.overview.unreadableTitle(nameOf(finding.agent)),
+          detail: errorText(finding.error),
+          action: (
+            <button className="small" onClick={() => openConfig(finding.agent, true).catch(failed)}>
+              {t.skills.showInFolder}
+            </button>
+          ),
+        };
+      case "launcherMissing":
+        return {
+          severity: "danger",
+          icon: "alert",
+          title: t.launcher.title(finding.servers.length),
+          detail: t.overview.launcherMissing(names(finding.servers.map((s) => `${s.server} (${nameOf(s.agent)})`))),
+          action: (
+            <button className="primary small" disabled={!secrets?.launcher || repairing} onClick={repair}>
+              {repairing ? t.launcher.repairing : t.launcher.repair}
+            </button>
+          ),
+        };
+      case "plainSecrets":
+        return {
+          severity: "danger",
+          icon: "shield",
+          title: t.overview.plainTitle(finding.count),
+          detail: t.overview.plainDetail(finding.count, names(finding.servers)),
+          action: go("secrets", t.overview.moveToKeychain),
+        };
+      case "differ":
+        return {
+          severity: "warn",
+          icon: "differs",
+          title: t.overview.differTitle(finding.servers.length),
+          detail: t.overview.differDetail(names(finding.servers)),
+          action: go("mcp", t.overview.review),
+        };
+      case "partial":
+        return {
+          severity: "info",
+          icon: "plug",
+          title: t.overview.partialTitle(finding.servers.length),
+          detail: names(finding.servers),
+          action: go("mcp", t.overview.copy),
+        };
+      case "rulesDiffer":
+        return {
+          severity: "info",
+          icon: "rules",
+          title: t.overview.rulesTitle,
+          detail: t.overview.rulesDetail(names(finding.agents.map(nameOf))),
+          action: go("rules", t.overview.compare),
+        };
+    }
+  });
+  const serverNames = new Set(listing.servers.map((s) => s.name));
 
   const week = report ? recentCost(report, 7) : null;
   const weekCost = week?.reduce((sum, day) => sum + day.cost, 0) ?? 0;
@@ -162,14 +168,14 @@ export function OverviewPage({ agents, listing, secrets, onNavigate, onChange }:
             {check.action}
           </li>
         ))}
-        {checks.length === 0 && (
+        {findings?.length === 0 && (
           <li className="health-row health-ok">
             <span className="health-icon">
               <Icon name="check" />
             </span>
             <span className="health-text">
               <strong>{t.overview.allGood}</strong>
-              <span>{t.overview.allGoodDetail(serverNames.length)}</span>
+              <span>{t.overview.allGoodDetail(serverNames.size)}</span>
             </span>
           </li>
         )}
@@ -198,7 +204,7 @@ export function OverviewPage({ agents, listing, secrets, onNavigate, onChange }:
         {agents.map((info) => {
           const servers = listing.servers.filter((s) => s.agent === info.agent).length;
           const open = (reveal: boolean) =>
-            openConfig(info.agent, reveal).catch((err) => notify({ tone: "error", text: errorText(err) }));
+            openConfig(info.agent, reveal).catch(failed);
           return (
             <article key={info.agent} className={`agent-card ${info.installed ? "" : "agent-missing"}`}>
               <header>
